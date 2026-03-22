@@ -1,0 +1,7 @@
+{
+  "name": "EL ROPERO - Showroom Management",
+  "description": "A sophisticated management system for an apparel showroom, featuring inventory control, sales tracking, expense management, and financial analytics with a minimalist luxury aesthetic.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
