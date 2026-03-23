@@ -4,7 +4,7 @@ import { Plus, Trash2, Edit2, X, Gift, CheckCircle, XCircle, AlertCircle } from 
 
 interface GiftCardsProps {
   giftCards: GiftCard[];
-  onAddGiftCard: (data: { destinatario: string; montoInicial: number }) => void;
+  onAddGiftCard: (data: { destinatario: string; montoInicial: number; pago?: { efectivo: number; tarjeta: number } }) => void;
   onUpdateGiftCard: (gc: GiftCard) => void;
   onCancelGiftCard: (id: string) => void;
 }
@@ -23,6 +23,8 @@ const GiftCards: React.FC<GiftCardsProps> = ({
 }) => {
   const [destinatario, setDestinatario] = React.useState('');
   const [monto, setMonto] = React.useState<number>(0);
+  const [pagoEfectivo, setPagoEfectivo] = React.useState(100);
+  const [pagoTarjeta, setPagoTarjeta] = React.useState(0);
   const [editing, setEditing] = React.useState<GiftCard | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
   
@@ -39,9 +41,15 @@ const GiftCards: React.FC<GiftCardsProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!destinatario.trim() || monto <= 0) return;
-    onAddGiftCard({ destinatario: destinatario.trim(), montoInicial: monto });
+    onAddGiftCard({ 
+      destinatario: destinatario.trim(), 
+      montoInicial: monto,
+      pago: { efectivo: pagoEfectivo, tarjeta: pagoTarjeta }
+    });
     setDestinatario('');
     setMonto(0);
+    setPagoEfectivo(100);
+    setPagoTarjeta(0);
   };
 
   // ─── EDITAR — calcula saldo al modificar montoInicial ────────────────
@@ -202,6 +210,53 @@ const GiftCards: React.FC<GiftCardsProps> = ({
                 className="w-full py-2.5 bg-transparent focus:outline-none text-[#1A1A1A] text-sm placeholder:text-gray-400"
                 placeholder="0"
               />
+            </div>
+          </div>
+
+          {/* Selector de Medios de Pago */}
+          <div className="col-span-2 border-t border-[#C9B8A8]/20 pt-3 space-y-3">
+            <p className="text-[9px] uppercase font-bold tracking-[2px] text-[#1A1A1A]">Medio de Pago</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] text-[#1A1A1A]/60 font-medium">Efectivo %</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={pagoEfectivo}
+                  onChange={e => {
+                    const v = Math.max(0, Math.min(100, Number(e.target.value)));
+                    setPagoEfectivo(v);
+                    setPagoTarjeta(100 - v);
+                  }}
+                  className="w-full border-b border-[#C9B8A8]/40 py-1.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-sm text-[#1A1A1A] font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#1A1A1A]/60 font-medium">Tarjeta %</label>
+                <input
+                  type="number"
+                  value={pagoTarjeta}
+                  readOnly
+                  className="w-full border-b border-[#C9B8A8]/40 py-1.5 bg-[#F5F1EB]/50 focus:outline-none text-sm text-[#1A1A1A] font-bold"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setPagoEfectivo(100); setPagoTarjeta(0); }}
+                className="text-[10px] uppercase underline hover:text-[#C9B8A8] text-[#1A1A1A] font-medium"
+              >
+                100% Efectivo
+              </button>
+              <button
+                type="button"
+                onClick={() => { setPagoEfectivo(0); setPagoTarjeta(100); }}
+                className="text-[10px] uppercase underline hover:text-[#C9B8A8] text-[#1A1A1A] font-medium"
+              >
+                100% Tarjeta
+              </button>
             </div>
           </div>
         </div>

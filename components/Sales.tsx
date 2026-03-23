@@ -26,6 +26,7 @@ interface SalesProps {
   onAddSale: (sale: Omit<Sale, 'id'>) => void;
   recentSales: Sale[];
   onDeleteSale: (id: string) => void;
+  onUpdateSalePago?: (saleId: string, pago: { efectivo: number; tarjeta: number }) => void;
   isSyncing?: boolean;
 }
 
@@ -35,6 +36,7 @@ const Sales: React.FC<SalesProps> = ({
   onAddSale,
   recentSales,
   onDeleteSale,
+  onUpdateSalePago,
   isSyncing = false,
 }) => {
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -356,7 +358,7 @@ const devolucionLabel = pagoOriginal
         ventaOriginalId: ventaOriginal.id,
         itemsDevueltos,
         itemsNuevos,
-        pago: diferenciaCambio > 0 ? { efectivo: pagoEfectivo, tarjeta: pagoTarjeta } : undefined,
+        pago: { efectivo: pagoEfectivo, tarjeta: pagoTarjeta },
         total: Math.max(0, diferenciaCambio),
         diferencia: diferenciaCambio,
         items: [], // Los cambios no usan items, usan itemsDevueltos e itemsNuevos
@@ -789,8 +791,12 @@ const devolucionLabel = pagoOriginal
             <input
               type="number"
               value={pagoTarjeta}
-              readOnly
-              className="border border-[#C9B8A8]/50 rounded-lg w-20 p-2 text-center font-bold bg-[#F5F1EB]/50 text-[#1A1A1A] shadow-sm"
+              onChange={e => {
+                const v = Math.max(0, Math.min(100, Number(e.target.value)));
+                setPagoTarjeta(v);
+                setPagoEfectivo(100 - v);
+              }}
+              className="border border-[#C9B8A8]/50 rounded-lg w-20 p-2 text-center font-bold text-[#1A1A1A] focus:outline-none focus:border-[#C9B8A8] shadow-sm"
             />
 
             <span className="text-xs text-[#1A1A1A]/70">%</span>
@@ -989,6 +995,21 @@ const devolucionLabel = pagoOriginal
     </span>
   )}
 </span>
+
+                {onUpdateSalePago && (
+                  <select
+                    value={s.pago?.tarjeta === 100 ? 'T' : 'E'}
+                    onChange={(e) => {
+                      const mode = e.target.value;
+                      const pago = mode === 'T' ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 };
+                      onUpdateSalePago(s.id, pago);
+                    }}
+                    className="text-[10px] bg-transparent hover:bg-[#C9B8A8]/20 border border-[#C9B8A8]/30 rounded px-1 py-0.5 font-bold cursor-pointer text-[#1A1A1A]/70"
+                  >
+                    <option value="E">E</option>
+                    <option value="T">T</option>
+                  </select>
+                )}
 
                 <button
                   onClick={() => {

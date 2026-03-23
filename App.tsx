@@ -26,6 +26,7 @@ const App: React.FC = () => {
 
   const [isSyncing, setIsSyncing] = React.useState(false);
   const [lastUpdate, setLastUpdate] = React.useState<number>(0);
+  const [hasMigrated, setHasMigrated] = React.useState(false);
 
   // =======================
   // APLICAR DATA REMOTA
@@ -102,6 +103,104 @@ const App: React.FC = () => {
     }
   };
 
+
+  // =======================
+  // REPARACIÓN DE DATOS VIEJOS
+  // =======================
+  React.useEffect(() => {
+    if (!isEntered || hasMigrated || sales.length === 0 || isSyncing) return;
+
+    let hasChanges = false;
+    const repairedSales = sales.map(sale => {
+      let saleChanged = false;
+      let repairedPago = sale.pago;
+
+      // 1. REPARAR: Falta de medio de pago (default a Efectivo para historial)
+      if (!repairedPago) {
+        repairedPago = { efectivo: 100, tarjeta: 0 };
+        saleChanged = true;
+      }
+
+      const repairedItems = (sale.items || []).map(item => {
+        let itemChanged = false;
+         
+        const parsedPrecioTarjeta = typeof item.precioTarjeta === 'string' ? (Number(item.precioTarjeta) || 0) : item.precioTarjeta;
+        if (parsedPrecioTarjeta !== item.precioTarjeta) itemChanged = true;
+
+        const parsedPrecioEfectivo = typeof item.precioEfectivo === 'string' ? (Number(item.precioEfectivo) || 0) : item.precioEfectivo;
+        if (parsedPrecioEfectivo !== item.precioEfectivo) itemChanged = true;
+
+        const parsedCosto = typeof item.costo === 'string' ? (Number(item.costo) || 0) : item.costo;
+        if (parsedCosto !== item.costo) itemChanged = true;
+
+        const parsedDescuento = typeof item.descuento === 'string' ? (Number(item.descuento) || 0) : item.descuento;
+        if (parsedDescuento !== item.descuento) itemChanged = true;
+
+        if (itemChanged) saleChanged = true;
+
+        return {
+          ...item,
+          precioTarjeta: parsedPrecioTarjeta,
+          precioEfectivo: parsedPrecioEfectivo,
+          costo: parsedCosto,
+          descuento: parsedDescuento
+        };
+      });
+
+      // 2. DETECCIÓN INTELIGENTE (Precios E vs T)
+      if (repairedItems.length > 0 && sale.tipo === 'venta') {
+        let teóricoTarjeta = 0;
+        let teóricoEfectivo = 0;
+
+        repairedItems.forEach(item => {
+          const cant = item.cantidad || 0;
+          const desc = item.descuento || 0;
+          
+          const pTar = item.precioTarjeta * (1 - desc / 100);
+          const pEfe = item.precioEfectivo * (1 - Math.max(0, desc - 20) / 100);
+
+          teóricoTarjeta += pTar * cant;
+          teóricoEfectivo += pEfe * cant;
+        });
+
+        const diffT = Math.abs(sale.total - teóricoTarjeta);
+        const diffE = Math.abs(sale.total - teóricoEfectivo);
+
+        let nuevoPago = { ...repairedPago };
+        let localChanged = false;
+
+        // Si el precio coincide perfecto con Tarjeta y No con Efectivo (Margen de 2 por redondeos)
+        if (diffT < 2 && diffE > 2 && repairedPago?.tarjeta !== 100) {
+          nuevoPago = { efectivo: 0, tarjeta: 100 };
+          localChanged = true;
+        } 
+        // Si el precio coincide perfecto con Efectivo y No con Tarjeta
+        else if (diffE < 2 && diffT > 2 && repairedPago?.efectivo !== 100) {
+          nuevoPago = { efectivo: 100, tarjeta: 0 };
+          localChanged = true;
+        }
+
+        if (localChanged) {
+          repairedPago = nuevoPago;
+          saleChanged = true;
+        }
+      }
+
+      if (saleChanged) {
+        hasChanges = true;
+        return { ...sale, pago: repairedPago, items: repairedItems };
+      }
+      return sale;
+    });
+
+    if (hasChanges) {
+      console.log('🔧 Reparando tipos de datos en ventas...');
+      setHasMigrated(true); // Bloquear futuras ejecuciones inmediatamente
+      handleDataChange(inventory, repairedSales, expenses, giftCards).catch(console.error);
+    } else {
+      setHasMigrated(true);
+    }
+  }, [sales, isEntered, hasMigrated, isSyncing, inventory, expenses, giftCards]);
 
   // =======================
   // POLLING DE SINCRONIZACIÓN
@@ -407,9 +506,18 @@ const App: React.FC = () => {
     );
     
   };
+
   // =======================
-// 🗑️ DELETE SALE (REVERSA CONTABLE COMPLETA)
-// =======================
+  // ✏️ UPDATE SALE PAGO/MEDIO
+  // =======================
+  const handleUpdateSalePago = (saleId: string, pago: { efectivo: number; tarjeta: number }) => {
+    const nextSales = sales.map(s => s.id === saleId ? { ...s, pago } : s);
+    handleDataChange(inventory, nextSales, expenses, giftCards);
+  };
+
+  // =======================
+  // 🗑️ DELETE SALE (REVERSA CONTABLE COMPLETA)
+  // =======================
 const handleDeleteSale = (saleId: string) => {
   const sale = sales.find(s => s.id === saleId);
   if (!sale) return;
@@ -512,7 +620,7 @@ const handleDeleteSale = (saleId: string) => {
  // =======================
 // GIFT CARDS
 // =======================
-const handleAddGiftCard = (data: { destinatario: string; montoInicial: number; codigo?: string }) => {
+const handleAddGiftCard = (data: { destinatario: string; montoInicial: number; codigo?: string; pago?: { efectivo: number; tarjeta: number } }) => {
   // 1. Crear el objeto de la Gift Card
   const nuevoCodigo = data.codigo || `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   const newGift: GiftCard = {
@@ -531,9 +639,8 @@ const handleAddGiftCard = (data: { destinatario: string; montoInicial: number; c
     tipo: 'gift',
     fecha: new Date().toISOString(),
     total: data.montoInicial,
-    // Las gift cards se venden en efectivo por defecto
-    // (necesario para que aparezcan correctamente en Caja Efectivo del Dashboard)
-    pago: { efectivo: 100, tarjeta: 0 },
+    // Se usa el mix de pago especificado o efectivo por defecto
+    pago: data.pago || { efectivo: 100, tarjeta: 0 },
     items: [{
       id: nuevoCodigo,
       sku: nuevoCodigo,
@@ -686,7 +793,7 @@ const handleCancelGiftCard = (id: string) => {
       onForceSync={forceSync}
     >
       {section === 'admin' && <Dashboard inventory={inventory} sales={sales} expenses={expenses} onUpdateItem={handleUpdateItem} onDeleteItem={handleDeleteItem} />}
-      {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} giftCards={giftCards} isSyncing={isSyncing} />}
+      {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} onUpdateSalePago={handleUpdateSalePago} giftCards={giftCards} isSyncing={isSyncing} />}
       {section === 'stock' && <Stock onAddItem={handleAddItem} inventory={inventory} />}
       {section === 'gastos' && <Expenses expenses={expenses} onAddExpense={handleAddExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />}
       {section === 'giftcards' && (

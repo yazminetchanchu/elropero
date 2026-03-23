@@ -56,7 +56,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   // HELPERS COMPAT
   // ==========================
   const getItemSnapshot = (item: any) => {
-    const costo = typeof item.costo === 'number' ? item.costo : item.costoUnidad ?? 0;
+    const costo = typeof item.costo === 'number' ? item.costo : Number(item.costoUnidad) || 0;
 
     const precioTarjeta =
       typeof item.precioTarjeta === 'number'
@@ -65,16 +65,16 @@ const Dashboard: React.FC<DashboardProps> = ({
           ? item.ventaTarjeta
           : typeof item.precio === 'number'
             ? item.precio
-            : 0;
+            : Number(item.precioTarjeta) || Number(item.ventaTarjeta) || Number(item.precio) || 0;
 
     const precioEfectivo =
       typeof item.precioEfectivo === 'number'
         ? item.precioEfectivo
         : typeof item.ventaEfectivo === 'number'
           ? item.ventaEfectivo
-          : precioTarjeta;
+          : Number(item.precioEfectivo) || Number(item.ventaEfectivo) || precioTarjeta;
 
-    const descuento = typeof item.descuento === 'number' ? item.descuento : 0;
+    const descuento = typeof item.descuento === 'number' ? item.descuento : Number(item.descuento) || 0;
 
     return { costo, precioEfectivo, precioTarjeta, descuento };
   };
@@ -607,6 +607,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 </td>
                                 <td className="px-3 py-2.5 text-right text-[#1A1A1A] font-medium">
                                   ${(breakdown.totalCobrado * signo).toLocaleString()}
+                                  {(() => {
+                                    if (!sale.pago) return null;
+                                    const label = sale.pago.efectivo === 100 ? 'E' : sale.pago.tarjeta === 100 ? 'T' : `E ${sale.pago.efectivo}% / T ${sale.pago.tarjeta}%`;
+                                    return <span className="ml-1.5 text-[9px] font-bold text-[#1A1A1A]/50">({label})</span>;
+                                  })()}
                                 </td>
                                 <td className="px-3 py-2.5 text-right text-[#1A1A1A]/60">
                                   ${(breakdown.costoTotal * signo).toLocaleString()}
