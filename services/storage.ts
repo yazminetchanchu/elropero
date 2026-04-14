@@ -1,4 +1,4 @@
-import { InventoryItem, Sale, Expense, GiftCard } from '../types';
+import { InventoryItem, Sale, Expense, GiftCard, MonthlyClosure } from '../types';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot, runTransaction } from "firebase/firestore";
 
@@ -7,6 +7,7 @@ export interface DatabaseState {
   sales: Sale[];
   expenses: Expense[];
   giftCards: GiftCard[];
+  closures?: MonthlyClosure[];
   lastSync?: number
 }
 
@@ -43,6 +44,7 @@ const getLocalBackup = (): DatabaseState => {
       sales: [],
       expenses: [],
       giftCards: [],
+      closures: [],
       lastSync: Date.now()
     };
   }
@@ -75,16 +77,17 @@ const subscribe = (onData: (data: DatabaseState) => void) => {
     if (snap.exists()) {
       const data = snap.data() as DatabaseState;
       if (!data.giftCards) data.giftCards = [];
+      if (!data.closures) data.closures = [];
       updateLocalOnly(data);
       onData(data);
       return;
     }
-
     const empty: DatabaseState = {
       inventory: [],
       sales: [],
       expenses: [],
       giftCards: [],
+      closures: [],
       lastSync: Date.now()
     };
 

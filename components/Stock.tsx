@@ -1,9 +1,9 @@
 import React from 'react';
 import { InventoryItem } from '../types';
-import { Tag, Sparkles, PackagePlus } from 'lucide-react';
+import { Tag, Sparkles, PackagePlus, CheckCircle2 } from 'lucide-react';
 
 interface StockProps {
-  onAddItem: (item: Omit<InventoryItem, 'id' | 'costoTotal'>) => void;
+  onAddItem: (item: Omit<InventoryItem, 'id'>) => void;
   inventory: InventoryItem[];
 }
 
@@ -17,6 +17,9 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
   const [ventaEfectivo, setVentaEfectivo] = React.useState(0);
   const [ventaTarjeta, setVentaTarjeta] = React.useState(0);
   const [generatedSku, setGeneratedSku] = React.useState('');
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [recentlyAdded, setRecentlyAdded] = React.useState<any[]>([]);
+  const [showSuccess, setShowSuccess] = React.useState(false);
 
   const handlePriceInput = (value: string, callback: (num: number) => void) => {
     const numericValue = value.replace(/\D/g, ''); // 1. Elimina letras/puntos
@@ -59,22 +62,35 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
     setVentaTarjeta(sugeridoTar);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.descripcion || !formData.proveedor || !generatedSku) return;
+    if (!formData.descripcion || !formData.proveedor || !generatedSku || isSaving) return;
     
-    onAddItem({
+    setIsSaving(true);
+
+    const newItem = {
       fechaIngreso: new Date().toLocaleDateString('es-AR'),
       sku: generatedSku,
       ventaEfectivo,
       ventaTarjeta,
       ...formData
-    });
+    };
 
+    onAddItem(newItem);
+
+    // Mantener en lista local de la sesión
+    setRecentlyAdded(prev => [newItem, ...prev].slice(0, 5));
+    
+    // Feedback de éxito
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 3000);
+
+    // Reset form
     setFormData({ descripcion: '', proveedor: '', cantidad: 1, costo: 0 });
     setVentaEfectivo(0);
     setVentaTarjeta(0);
     setGeneratedSku('');
+    setIsSaving(false);
   };
 
   return (
@@ -193,14 +209,38 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
               
               <button 
                 type="submit" 
-                disabled={!generatedSku}
-                className="group flex items-center gap-2 bg-[#C9B8A8] text-[#1A1A1A] px-6 py-3 text-[10px] tracking-[4px] font-medium uppercase hover:bg-[#B8A696] transition-all disabled:opacity-30 flex-shrink-0 border border-[#C9B8A8]/50 rounded-lg shadow-md hover:shadow-lg"
+                disabled={!generatedSku || isSaving}
+                className={`group flex items-center gap-2 px-6 py-3 text-[10px] tracking-[4px] font-medium uppercase transition-all flex-shrink-0 border rounded-[2px] shadow-sm ${
+                  showSuccess 
+                    ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' 
+                    : 'bg-[#C9B8A8] text-[#1A1A1A] border-[#C9B8A8]/50 hover:bg-[#B8A696]'
+                }`}
               >
-                <span>Confirmar</span>
-                <Sparkles size={12} className="group-hover:rotate-12 transition-transform" />
+                <span>{isSaving ? 'Guardando...' : showSuccess ? '¡Confirmado!' : 'Confirmar'}</span>
+                {showSuccess ? <CheckCircle2 size={12} /> : <Sparkles size={12} className="group-hover:rotate-12 transition-transform" />}
               </button>
           </div>
         </form>
+
+        {recentlyAdded.length > 0 && (
+          <div className="w-full mt-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h3 className="font-serif text-xl italic mb-4 text-[#1A1A1A] opacity-30 tracking-tight">Recién cargados</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {recentlyAdded.map((item, idx) => (
+                <div key={idx} className="bg-white/40 border border-[#C9B8A8]/30 rounded-sm p-5 flex justify-between items-center">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black text-[#1A1A1A] uppercase tracking-[1px] truncate max-w-[140px]">{item.descripcion}</p>
+                    <p className="text-[9px] font-mono text-[#1A1A1A]/40">REF: {item.sku}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-serif italic text-lg text-[#1A1A1A]">${item.ventaEfectivo.toLocaleString()}</p>
+                    <p className="text-[8px] uppercase tracking-[2px] text-[#1A1A1A]/30">{item.cantidad} UNIDS</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       
       <div className="mt-12 text-center opacity-30">

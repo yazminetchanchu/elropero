@@ -82,40 +82,38 @@ const Sales: React.FC<SalesProps> = ({
     return inventory.find(p => p.id === key || p.sku === key);
   };
 
-  const getStockDisponible = (productKey: string) => {
-    const product = findProduct(productKey);
+  const getStockDisponible = (prod: InventoryItem) => {
+    // Optimización: Ya tenemos el objeto, no hay que buscarlo en el array gigante
+    const inCart = cart
+      .filter(ci => ci.id === prod.id)
+      .reduce((sum, ci) => sum + ci.cantidad, 0);
 
-    const inCart = cart.reduce((sum, ci) => {
-      const same =
-        ci.id === productKey ||
-        (product && ci.id === product.id) ||
-        (product && ci.id === product.sku);
-
-      return sum + (same ? ci.cantidad : 0);
-    }, 0);
-
-    return (product?.cantidad || 0) - inCart;
+    return prod.cantidad - inCart;
   };
 
   const filteredProducts = React.useMemo(() => {
     if (!searchTerm.trim()) return [];
-    return inventory
+    
+    const query = searchTerm.toLowerCase();
+
+    // Acceso directo al inventario invertido
+    return [...inventory]
+      .reverse() 
       .filter(p => {
-        // Solo mostrar prendas con stock disponible
-        const disponible = getStockDisponible(p.id);
+        const disponible = getStockDisponible(p);
         if (disponible <= 0) return false;
 
-        const q = searchTerm.toLowerCase();
         return (
-          p.sku.toLowerCase().includes(q) ||
-          p.descripcion.toLowerCase().includes(q)
+          (p.sku?.toLowerCase() || "").includes(query) ||
+          (p.descripcion?.toLowerCase() || "").includes(query) ||
+          (p.proveedor?.toLowerCase() || "").includes(query)
         );
       })
-      .slice(0, 8);
+      .slice(0, 25);
   }, [inventory, searchTerm, cart]);
 
   const addToCart = (product: InventoryItem) => {
-    const disponible = getStockDisponible(product.id);
+    const disponible = getStockDisponible(product);
     if (disponible <= 0) return;
 
     const cant = Math.min(quantity, disponible);
@@ -126,8 +124,8 @@ const Sales: React.FC<SalesProps> = ({
 
     if (index !== -1) {
       const copy = [...cart];
-      const stockActual = getStockDisponible(product.id);
-      const nuevaCantidad = Math.min(copy[index].cantidad + cant, stockActual);
+      const stockActual = getStockDisponible(product);
+      const nuevaCantidad = Math.min(copy[index].cantidad + cant, stockActual + copy[index].cantidad);
       copy[index].cantidad = nuevaCantidad;
       setCart(copy);
     } else {
@@ -229,9 +227,29 @@ const Sales: React.FC<SalesProps> = ({
   // CAMBIO: totales y diferencia
   // =============  // 1️⃣ TOTALES EN BASE TARJETA (Valor absoluto más alto)
   // Se usa Tarjeta para ambos para que la resta sea matemáticamente proporcional.
-  const totalDevuelto = modoCambio
-    ? itemsDevueltos.reduce((sum, item) => sum + item.precioTarjeta * item.cantidad, 0)
-    : 0;
+  const totalDevuelto = React.useMemo(() => {
+    if (!modoCambio) return 0;
+
+    // Para devoluciones/cambios, el valor devuelto debe respetar el precio realmente pagado
+    // según el medio de pago de la venta original (no el precio de tarjeta por defecto).
+    const origPctE = ventaOriginal?.pago?.efectivo ?? 100;
+    const origPctT = ventaOriginal?.pago?.tarjeta ?? 0;
+
+    return itemsDevueltos.reduce((sum, item) => {
+      const cant = item.cantidad ?? 0;
+      const desc = item.descuento || 0;
+
+      // Tarjeta: descuento manual completo
+      const pT = item.precioTarjeta * (1 - desc / 100);
+
+      // Efectivo: el descuento manual solo aplica el excedente sobre el 20% implícito
+      const descuentoExtraEfectivo = Math.max(0, desc - 20);
+      const pE = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
+
+      const totalPagado = pE * (origPctE / 100) + pT * (origPctT / 100);
+      return sum + totalPagado * cant;
+    }, 0);
+  }, [modoCambio, itemsDevueltos, ventaOriginal?.pago?.efectivo, ventaOriginal?.pago?.tarjeta]);
 
   const totalNuevo = modoCambio
     ? cart.reduce((sum, item) => {
@@ -576,14 +594,20 @@ const devolucionLabel = pagoOriginal
                     }}
                     className="p-3.5 hover:bg-[#C9B8A8]/15 cursor-pointer border-b border-[#C9B8A8]/20 last:border-b-0 text-sm transition-colors"
                   >
-                    <div className="flex justify-between items-start gap-2">
+                    <div className="flex justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-[#1A1A1A] truncate">{p.descripcion}</div>
-                        <div className="text-xs text-[#1A1A1A]/60 font-mono mt-1.5">Código: {p.sku}</div>
+                        <div className="flex items-center gap-3 mt-1.5 opacity-40">
+                          <span className="text-[9px] font-mono">REF: {p.sku}</span>
+                          <span className="text-[9px] font-mono">{p.proveedor}</span>
+                        </div>
                       </div>
-                      <span className="text-[#1A1A1A]/60 flex-shrink-0 text-xs font-medium">
-                        Stock: {getStockDisponible(p.id)}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className="text-[11px] font-bold text-[#1A1A1A]">${p.ventaEfectivo.toLocaleString()}</span>
+                        <span className="text-[8px] tracking-[2px] uppercase font-black text-[#1A1A1A]/30">
+                          {getStockDisponible(p)} DISPONIBLES
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))}

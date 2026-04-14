@@ -4,10 +4,11 @@ import Dashboard from './components/Dashboard';
 import Sales from './components/Sales';
 import Stock from './components/Stock';
 import Expenses from './components/Expenses';
-import { InventoryItem, Sale, Expense, Section, GiftCard } from './types';
+import { InventoryItem, Sale, Expense, Section, GiftCard, MonthlyClosure } from './types';
 import { database, DatabaseState } from './services/storage';
 import { Store, Lock, Loader2, Monitor, ArrowRightLeft, Smartphone } from 'lucide-react';
 import GiftCards from './components/GiftCard';
+import { computeSaleBreakdown, isMonth } from './services/finance';
 
 const SYSTEM_PASSWORD = "Danisa0302";
 
@@ -23,6 +24,7 @@ const App: React.FC = () => {
   const [sales, setSales] = React.useState<Sale[]>([]);
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [giftCards, setGiftCards] = React.useState<GiftCard[]>([]);
+  const [closures, setClosures] = React.useState<MonthlyClosure[]>([]);
 
   const [isSyncing, setIsSyncing] = React.useState(false);
   const [lastUpdate, setLastUpdate] = React.useState<number>(0);
@@ -43,6 +45,7 @@ const App: React.FC = () => {
     setSales(data.sales || []);
     setExpenses(data.expenses || []);
     setGiftCards(data.giftCards || []);
+    setClosures(data.closures || []);
     setLastUpdate(data.lastSync || Date.now());
     database.updateLocalOnly(data);
   // Los setters de useState son estables, no necesitan ser dependencias
@@ -56,46 +59,54 @@ const App: React.FC = () => {
     newInv: InventoryItem[],
     newSales: Sale[],
     newExp: Expense[],
-    newGift: GiftCard[] = giftCards
+    newGift: GiftCard[] = giftCards,
+    newClosures: MonthlyClosure[] = closures
   ) => {
+    // 1. ACTUALIZACIÓN OPTIMISTA (React State primero)
+    setInventory(newInv);
+    setSales(newSales);
+    setExpenses(newExp);
+    setGiftCards(newGift);
+    setClosures(newClosures);
+
     setIsSyncing(true);
     try {
       const confirmed = await database.persistSafe(
-        { inventory: newInv, sales: newSales, expenses: newExp, giftCards: newGift },
+        { inventory: newInv, sales: newSales, expenses: newExp, giftCards: newGift, closures: newClosures },
         lastUpdate  // timestamp del estado que el cliente cree tener
       );
 
-      // Actualizar React state SOLO después de que Firebase confirme el write
-      setInventory(confirmed.inventory);
-      setSales(confirmed.sales);
-      setExpenses(confirmed.expenses);
-      setGiftCards(confirmed.giftCards);
+      // 2. SINCRONIZACIÓN DE TIMESTAMPS (Post-confirmación)
       setLastUpdate(confirmed.lastSync ?? Date.now());
+      
+      // Actualizar backup local inmediatamente
+      database.updateLocalOnly(confirmed);
 
     } catch (error: any) {
 
       if (error?.type === 'CONFLICT') {
-        // Otro dispositivo guardó datos más nuevos — sincronizar automáticamente
         console.warn('⚠️ Conflicto detectado: el servidor tiene datos más nuevos. Sincronizando...');
         const serverState = error.serverState;
         applyRemoteData(serverState);
         alert(
-          '⚠️ Datos actualizados desde otro dispositivo antes de que pudieras guardar.\n' +
-          'Tu operación fue cancelada. Revisá el estado actual e intentá de nuevo.'
+          '⚠️ Datos actualizados desde otro dispositivo.\n' +
+          'Se sincronizó tu dispositivo. Por favor, verificá los últimos cambios y reintentá tu última acción si no aparece.'
         );
       } else if (!navigator.onLine) {
-        // Offline: guardar solo localmente, actualizar UI igual
-        const payload = { inventory: newInv, sales: newSales, expenses: newExp, giftCards: newGift, lastSync: Date.now() };
+        // Offline: ya actualizamos la UI, solo asegurar el backup
+        const payload = { 
+          inventory: newInv, 
+          sales: newSales, 
+          expenses: newExp, 
+          giftCards: newGift, 
+          closures: newClosures,
+          lastSync: Date.now() 
+        };
         database.updateLocalOnly(payload);
-        setInventory(newInv);
-        setSales(newSales);
-        setExpenses(newExp);
-        setGiftCards(newGift);
         setLastUpdate(payload.lastSync);
       } else {
         console.error('❌ Error al guardar cambios:', error);
-        alert('❌ Error al guardar. Los cambios no fueron registrados.\nVerificá tu conexión e intentá de nuevo.');
-        // No actualizamos el estado → la UI sigue mostrando el estado anterior (consistente con DB)
+        alert('❌ Error al guardar en la nube. Los cambios se mantienen localmente pero verificá tu conexión.');
       }
 
     } finally {
@@ -233,6 +244,97 @@ const App: React.FC = () => {
   }, [isEntered, isSyncing, applyRemoteData]);
 
   // =======================
+  // CIERRES MENSUALES AUTOMÁTICOS
+  // =======================
+  React.useEffect(() => {
+    if (!isEntered || isSyncing || sales.length === 0) return;
+
+    const now = new Date();
+    // Determinamos el mes anterior
+    let prevMonth = now.getMonth(); // 0-indexed, so if now is April (3), prev is March (2)
+    let prevYear = now.getFullYear();
+
+    if (prevMonth === 0) { // Si es Enero, el anterior es Diciembre del año pasado
+      prevMonth = 12;
+      prevYear -= 1;
+    } else {
+      // Ajustar a 1-indexed para consistencia con Dashboard
+      // No necesitamos sumar 1 a 'prevMonth' porque now.getMonth() ya nos da el mes anterior en formato 1-indexed relativo?
+      // No: Enero=0, Feb=1, Mar=2, Abril=3.
+      // Si hoy es Abril (3), el mes pasado es Marzo (2).
+      // Queremos guardar Marzo como "3" (1-indexed).
+      // Así que: mesPasado1Indexed = now.getMonth() (que es 3 para Abril).
+      prevMonth = now.getMonth();
+    }
+
+    const closureId = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+    const alreadyClosed = closures.some(c => c.id === closureId);
+
+    if (!alreadyClosed) {
+      console.log(`📋 Detectado mes finalizado: ${closureId}. Calculando cierre...`);
+
+      // 1. Filtrar datos de ese mes
+      const sMes = sales.filter(s => isMonth(s.fecha, prevMonth, prevYear));
+      const gMes = expenses.filter(e => isMonth(e.fecha, prevMonth, prevYear));
+
+      if (sMes.length === 0 && gMes.length === 0) {
+        // Si no hubo actividad, creamos un cierre en cero para no volver a intentar
+        const zeroClosure: MonthlyClosure = {
+          id: closureId,
+          month: prevMonth,
+          year: prevYear,
+          gananciaNeta: 0,
+          cajaEfectivo: 0,
+          cajaTarjeta: 0,
+          gastos: 0,
+          fechaCierre: new Date().toISOString()
+        };
+        setClosures(prev => [...prev, zeroClosure]);
+        handleDataChange(inventory, sales, expenses, giftCards, [...closures, zeroClosure]);
+        return;
+      }
+
+      // 2. Calcular totales (usando la misma lógica que el Dashboard)
+      const gastos = gMes.reduce((acc, e) => acc + e.monto, 0);
+      
+      const efVentas = sMes.reduce((acc, sale) => {
+        const { efectivo } = computeSaleBreakdown(sale, sales);
+        const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
+        return acc + signo * efectivo;
+      }, 0);
+      const cajaEfectivo = efVentas - gastos;
+
+      const cajaTarjeta = sMes.reduce((acc, sale) => {
+        const { tarjeta } = computeSaleBreakdown(sale, sales);
+        const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
+        return acc + signo * tarjeta;
+      }, 0);
+
+      const gBruta = sMes.reduce((acc, sale) => {
+        const { ganancia } = computeSaleBreakdown(sale, sales);
+        const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
+        return acc + signo * ganancia;
+      }, 0);
+      const gananciaNeta = gBruta - gastos;
+
+      const newClosure: MonthlyClosure = {
+        id: closureId,
+        month: prevMonth,
+        year: prevYear,
+        gananciaNeta,
+        cajaEfectivo,
+        cajaTarjeta,
+        gastos,
+        fechaCierre: new Date().toISOString()
+      };
+
+      console.log('✅ Cierre calculado con éxito:', newClosure);
+      setClosures(prev => [...prev, newClosure]);
+      handleDataChange(inventory, sales, expenses, giftCards, [...closures, newClosure]);
+    }
+  }, [isEntered, isSyncing, sales, expenses, closures]);
+
+  // =======================
   // FORZAR SINCRONIZACIÓN MANUAL
   // =======================
   const forceSync = React.useCallback(async () => {
@@ -292,6 +394,7 @@ const App: React.FC = () => {
           setSales(local.sales || []);
           setExpenses(local.expenses || []);
           setGiftCards(local.giftCards || []);
+          setClosures(local.closures || []);
           setLastUpdate(local.lastSync || Date.now()); // Evita que el polling sobreescriba inmediatamente
         }
       } catch (error) {
@@ -302,6 +405,7 @@ const App: React.FC = () => {
         setSales(local.sales || []);
         setExpenses(local.expenses || []);
         setGiftCards(local.giftCards || []);
+        setClosures(local.closures || []);
         setLastUpdate(local.lastSync || Date.now()); // Evita que el polling sobreescriba inmediatamente
         alert('Error al conectar con Firebase. Se cargaron datos locales. Verifica tu conexión.');
       }
@@ -324,17 +428,27 @@ const App: React.FC = () => {
       id: `inv_${Date.now()}`
     };
   
-    handleDataChange([...inventory, newItem], sales, expenses, giftCards);
+    setInventory(prev => {
+      const next = [...prev, newItem];
+      handleDataChange(next, sales, expenses, giftCards);
+      return next;
+    });
   };
 
   const handleUpdateItem = (updatedItem: InventoryItem) => {
-    const nextInv = inventory.map(item => item.id === updatedItem.id ? updatedItem : item);
-    handleDataChange(nextInv, sales, expenses, giftCards);
+    setInventory(prev => {
+      const next = prev.map(item => item.id === updatedItem.id ? updatedItem : item);
+      handleDataChange(next, sales, expenses, giftCards);
+      return next;
+    });
   };
 
   const handleDeleteItem = (id: string) => {
-    const nextInv = inventory.filter(item => item.id !== id);
-    handleDataChange(nextInv, sales, expenses, giftCards);
+    setInventory(prev => {
+      const next = prev.filter(item => item.id !== id);
+      handleDataChange(next, sales, expenses, giftCards);
+      return next;
+    });
   };
 
   // =======================
@@ -498,105 +612,108 @@ const App: React.FC = () => {
       };      
     });
     
-    handleDataChange(
-      nextInv,
-      [...sales, newSale],
-      expenses,
-      giftGenerada ? [...nextGiftCards, giftGenerada] : nextGiftCards
-    );
-    
+    const nextSales = [...sales, newSale];
+    const finalGiftCards = giftGenerada ? [...nextGiftCards, giftGenerada] : nextGiftCards;
+
+    handleDataChange(nextInv, nextSales, expenses, finalGiftCards);
   };
 
   // =======================
   // ✏️ UPDATE SALE PAGO/MEDIO
   // =======================
   const handleUpdateSalePago = (saleId: string, pago: { efectivo: number; tarjeta: number }) => {
-    const nextSales = sales.map(s => s.id === saleId ? { ...s, pago } : s);
-    handleDataChange(inventory, nextSales, expenses, giftCards);
+    setSales(prev => {
+      const next = prev.map(s => s.id === saleId ? { ...s, pago } : s);
+      handleDataChange(inventory, next, expenses, giftCards);
+      return next;
+    });
   };
 
   // =======================
   // 🗑️ DELETE SALE (REVERSA CONTABLE COMPLETA)
   // =======================
 const handleDeleteSale = (saleId: string) => {
-  const sale = sales.find(s => s.id === saleId);
-  if (!sale) return;
-  
-  // 1. Devolver stock
-  let nextInv = [...inventory];
+  setSales(prevSales => {
+    const sale = prevSales.find(s => s.id === saleId);
+    if (!sale) return prevSales;
+    
+    // 1. Devolver stock
+    let nextInv = [...inventory];
 
-  if (sale.tipo === 'cambio') {
-    // Para cambios: devolver items nuevos y quitar items devueltos
-    if (sale.itemsNuevos) {
-      sale.itemsNuevos.forEach(itemNuevo => {
-        const idx = nextInv.findIndex(i => i.id === itemNuevo.id);
-        if (idx !== -1) {
-          nextInv[idx] = {
-            ...nextInv[idx],
-            cantidad: nextInv[idx].cantidad + itemNuevo.cantidad
-          };
-        }
-      });
-    }
-    if (sale.itemsDevueltos) {
-      sale.itemsDevueltos.forEach(itemDevuelto => {
-        const idx = nextInv.findIndex(i => i.id === itemDevuelto.id);
-        if (idx !== -1) {
-          nextInv[idx] = {
-            ...nextInv[idx],
-            cantidad: Math.max(0, nextInv[idx].cantidad - itemDevuelto.cantidad)
-          };
-        }
-      });
-    }
-  } else {
-    // Para ventas normales: devolver todos los items
-    if (sale.items) {
-      sale.items.forEach(si => {
-        const idx = nextInv.findIndex(i => i.id === si.id);
-        if (idx !== -1) {
-          nextInv[idx] = {
-            ...nextInv[idx],
-            cantidad: nextInv[idx].cantidad + si.cantidad
-          };
-        }
-      });
-    }
-  }
-
-  // 2. Devolver saldo a gift si hubo
-  let nextGiftCards = [...giftCards];
-  if (sale.giftCardUsada) {
-    nextGiftCards = giftCards.map(gc => {
-      if (gc.codigo === sale.giftCardUsada!.codigo) {
-        return {
-          ...gc,
-          saldo: gc.saldo + sale.giftCardUsada!.montoUsado,
-          estado: 'ACTIVA' as const
-        };
+    if (sale.tipo === 'cambio') {
+      // Para cambios: devolver items nuevos y quitar items devueltos
+      if (sale.itemsNuevos) {
+        sale.itemsNuevos.forEach(itemNuevo => {
+          const idx = nextInv.findIndex(i => i.id === itemNuevo.id);
+          if (idx !== -1) {
+            nextInv[idx] = {
+              ...nextInv[idx],
+              cantidad: nextInv[idx].cantidad + itemNuevo.cantidad
+            };
+          }
+        });
       }
-      return gc;
-    });
-  }
-
-  // 3. Si fue una venta de gift card, eliminar la gift card del array
-  if (sale.tipo === 'gift') {
-    const giftSku = sale.items?.[0]?.sku;
-    if (giftSku) {
-      nextGiftCards = nextGiftCards.filter(gc => gc.codigo !== giftSku);
+      if (sale.itemsDevueltos) {
+        sale.itemsDevueltos.forEach(itemDevuelto => {
+          const idx = nextInv.findIndex(i => i.id === itemDevuelto.id);
+          if (idx !== -1) {
+            nextInv[idx] = {
+              ...nextInv[idx],
+              cantidad: Math.max(0, nextInv[idx].cantidad - itemDevuelto.cantidad)
+            };
+          }
+        });
+      }
+    } else {
+      // Para ventas normales: devolver todos los items
+      if (sale.items) {
+        sale.items.forEach(si => {
+          const idx = nextInv.findIndex(i => i.id === si.id);
+          if (idx !== -1) {
+            nextInv[idx] = {
+              ...nextInv[idx],
+              cantidad: nextInv[idx].cantidad + si.cantidad
+            };
+          }
+        });
+      }
     }
-  }
 
-  // 4. Si se generó una gift card en este cambio, eliminarla
-  if (sale.giftGeneradaId) {
-    nextGiftCards = nextGiftCards.filter(gc => gc.id !== sale.giftGeneradaId);
-  }
+    // 2. Devolver saldo a gift si hubo
+    let nextGiftCards = [...giftCards];
+    if (sale.giftCardUsada) {
+      nextGiftCards = giftCards.map(gc => {
+        if (gc.codigo === sale.giftCardUsada!.codigo) {
+          return {
+            ...gc,
+            saldo: gc.saldo + sale.giftCardUsada!.montoUsado,
+            estado: 'ACTIVA' as const
+          };
+        }
+        return gc;
+      });
+    }
 
-  // 4. Eliminar la venta
-  const nextSales = sales.filter(s => s.id !== saleId);
+    // 3. Si fue una venta de gift card, eliminar la gift card del array
+    if (sale.tipo === 'gift') {
+      const giftSku = sale.items?.[0]?.sku;
+      if (giftSku) {
+        nextGiftCards = nextGiftCards.filter(gc => gc.codigo !== giftSku);
+      }
+    }
 
-  // 5. Guardar todo
-  handleDataChange(nextInv, nextSales, expenses, nextGiftCards);
+    // 4. Si se generó una gift card en este cambio, eliminarla
+    if (sale.giftGeneradaId) {
+      nextGiftCards = nextGiftCards.filter(gc => gc.id !== sale.giftGeneradaId);
+    }
+
+    // 4. Eliminar la venta
+    const nextSales = prevSales.filter(s => s.id !== saleId);
+
+    // 5. Guardar todo
+    handleDataChange(nextInv, nextSales, expenses, nextGiftCards);
+    return nextSales;
+  });
 };
 
   // =======================
@@ -792,7 +909,17 @@ const handleCancelGiftCard = (id: string) => {
       isSyncing={isSyncing}
       onForceSync={forceSync}
     >
-      {section === 'admin' && <Dashboard inventory={inventory} sales={sales} expenses={expenses} onUpdateItem={handleUpdateItem} onDeleteItem={handleDeleteItem} />}
+      {section === 'admin' && (
+        <Dashboard 
+          inventory={inventory} 
+          sales={sales} 
+          expenses={expenses} 
+          giftCards={giftCards}
+          closures={closures}
+          onUpdateItem={handleUpdateItem} 
+          onDeleteItem={handleDeleteItem} 
+        />
+      )}
       {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} onUpdateSalePago={handleUpdateSalePago} giftCards={giftCards} isSyncing={isSyncing} />}
       {section === 'stock' && <Stock onAddItem={handleAddItem} inventory={inventory} />}
       {section === 'gastos' && <Expenses expenses={expenses} onAddExpense={handleAddExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />}

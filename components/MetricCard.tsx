@@ -12,6 +12,7 @@ interface MetricCardProps {
     label: string;
     isPositive: boolean;
   };
+  dataTestId?: string;
 }
 
 const MetricCard: React.FC<MetricCardProps> = ({ 
@@ -20,10 +21,12 @@ const MetricCard: React.FC<MetricCardProps> = ({
   subValue, 
   onClick,
   clickable = false,
-  trend
+  trend,
+  dataTestId
 }) => {
   return (
     <div 
+      data-testid={dataTestId}
       onClick={clickable ? onClick : undefined}
       className={`bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-xl p-6 text-left shadow-lg flex flex-col justify-center min-h-[130px] transition-all ${
         clickable 

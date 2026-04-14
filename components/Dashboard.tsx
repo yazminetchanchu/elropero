@@ -1,12 +1,15 @@
 import React from 'react';
-import { InventoryItem, Sale, Expense } from '../types';
+import { InventoryItem, Sale, Expense, GiftCard, MonthlyClosure } from '../types';
 import MetricCard from './MetricCard';
-import { Edit2, Trash2, X, Search, TrendingUp, TrendingDown, DollarSign, Calendar } from 'lucide-react';
+import { Edit2, Trash2, X, Search, TrendingUp, TrendingDown, DollarSign, Calendar, CreditCard, Banknote, ChevronLeft, ChevronRight } from 'lucide-react';
+import { computeSaleBreakdown, isMonth, calcTrend } from '../services/finance';
 
 interface DashboardProps {
   inventory: InventoryItem[];
   sales: Sale[];
   expenses: Expense[];
+  giftCards: GiftCard[];
+  closures: MonthlyClosure[];
   onUpdateItem: (item: InventoryItem) => void;
   onDeleteItem: (id: string) => void;
 }
@@ -15,24 +18,21 @@ const Dashboard: React.FC<DashboardProps> = ({
   inventory,
   sales,
   expenses,
+  giftCards,
+  closures,
   onUpdateItem,
   onDeleteItem
 }) => {
   const [editingItem, setEditingItem] = React.useState<InventoryItem | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
-  const [showProfitDetails, setShowProfitDetails] = React.useState(false);
+  const [detailView, setDetailView] = React.useState<{ month: number; year: number; type: 'ganancia' | 'efectivo' | 'tarjeta' | 'gastos' } | null>(null);
   const [showSinStock, setShowSinStock] = React.useState(false);
 
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
 
-  const isMonth = (dateStr: string, month: number, year: number) => {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return false;
-    return d.getMonth() + 1 === month && d.getFullYear() === year;
-  };
 
   const isCurrentMonth = (dateStr: string) => isMonth(dateStr, currentMonth, currentYear);
   
@@ -53,287 +53,79 @@ const Dashboard: React.FC<DashboardProps> = ({
   const previousMonthlyExpenses = expenses.filter(e => isMonth(e.fecha, prevMonth, prevYear));
 
   // ==========================
-  // HELPERS COMPAT
+  // MÉTRICAS
   // ==========================
-  const getItemSnapshot = (item: any) => {
-    const costo = typeof item.costo === 'number' ? item.costo : Number(item.costoUnidad) || 0;
+  const expensesThisMonth = monthlyExpenses.reduce((acc, expense) => acc + expense.monto, 0);
 
-    const precioTarjeta =
-      typeof item.precioTarjeta === 'number'
-        ? item.precioTarjeta
-        : typeof item.ventaTarjeta === 'number'
-          ? item.ventaTarjeta
-          : typeof item.precio === 'number'
-            ? item.precio
-            : Number(item.precioTarjeta) || Number(item.ventaTarjeta) || Number(item.precio) || 0;
-
-    const precioEfectivo =
-      typeof item.precioEfectivo === 'number'
-        ? item.precioEfectivo
-        : typeof item.ventaEfectivo === 'number'
-          ? item.ventaEfectivo
-          : Number(item.precioEfectivo) || Number(item.ventaEfectivo) || precioTarjeta;
-
-    const descuento = typeof item.descuento === 'number' ? item.descuento : Number(item.descuento) || 0;
-
-    return { costo, precioEfectivo, precioTarjeta, descuento };
-  };
-
-  // ==========================
-  // CÁLCULO POR VENTA
-  // ==========================
-  /**
-   * Regla pedida:
-   * - Caja efectivo y caja tarjeta: se calculan por el % de pago real.
-   * - Ganancia:
-   *   - si es 100% tarjeta => la ganancia se calcula con PRECIO EFECTIVO (precio base),
-   *     pero la caja sigue siendo tarjeta (lo cobrado).
-   *   - si es mixto => ganancia se calcula con los precios según el mix (E usa precio efectivo, T usa precio tarjeta).
-   * - GiftCard NO entra a caja (se descuenta proporcionalmente de E/T para reflejar lo realmente cobrado).
-   */
-
-  
-  const computeSaleBreakdown = (sale: Sale) => {
-
-    if (sale.tipo === 'gift') {
-      return {
-        efectivo: sale.pago?.efectivo ? sale.total * (sale.pago.efectivo / 100) : 0,
-        tarjeta: sale.pago?.tarjeta ? sale.total * (sale.pago.tarjeta / 100) : 0,
-        totalCobrado: sale.total,
-        costoTotal: 0,
-        ganancia: sale.total
-      };
-    }
-
-    // ===========================
-    // CAMBIO: usa diferencia directamente
-    // ===========================
-    if (sale.tipo === 'cambio') {
-      const diferencia = sale.diferencia ?? sale.total ?? 0;
-      const cobrado = Math.max(0, diferencia);
-      
-      const pctE = sale.pago?.efectivo ?? 100;
-      const pctT = sale.pago?.tarjeta ?? 0;
-
-      // FACTOR 1: Reversión de ganancia de los items devueltos (Originales)
-      // Buscar la venta original para saber EXACTAMENTE qué mix de pago (E/T) se usó al venderla
-      const findOriginalSale = sales.find(s => s.id === sale.ventaOriginalId);
-      const origPctE = findOriginalSale?.pago?.efectivo ?? 100;
-      const origPctT = findOriginalSale?.pago?.tarjeta ?? 0;
-
-      const gananciaDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, raw: any) => {
-        const { costo, precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(raw);
-        const cant = raw.cantidad ?? 0;
-        const desc = descuento || 0;
-        
-        const pT = precioTarjeta * (1 - desc / 100);
-        const pE = precioEfectivo * (1 - Math.max(0, desc - 20) / 100);
-        
-        // Usar mix de pago original para la reversión exacta
-        const totLinea = (pE * (origPctE / 100) + pT * (origPctT / 100)) * cant;
-        const costTotal = costo * cant;
-        
-        return sum + (totLinea - costTotal);
-      }, 0);
-
-      // FACTOR 2: Registro de ganancia de los items nuevos (Nuevos)
-      const gananciaNuevos = (sale.itemsNuevos ?? []).reduce((sum, raw: any) => {
-        const { costo, precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(raw);
-        const cant = raw.cantidad ?? 0;
-        const desc = descuento || 0;
-        const pT = precioTarjeta * (1 - desc / 100);
-        const pE = precioEfectivo * (1 - Math.max(0, desc - 20) / 100);
-        
-        const totLinea = (pE * (pctE / 100) + pT * (pctT / 100)) * cant;
-        const costTotal = costo * cant;
-        return sum + (totLinea - costTotal);
-      }, 0);
-
-      // FACTOR 3: Diferencial de crédito (si hay gift automática)
-      const gananciaGiftManual = diferencia < 0 ? Math.abs(diferencia) : 0;
-
-      // Ganancia Algebraica = (- Reversión) + Nueva + Crédito
-      const gananciaFinal = (-gananciaDevueltos) + gananciaNuevos + gananciaGiftManual;
-
-      const costoNuevos = (sale.itemsNuevos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
-      const costoDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
-      const costoNeto = costoNuevos - costoDevueltos;
-
-      return {
-        efectivo: cobrado * (pctE / 100),
-        tarjeta:  cobrado * (pctT / 100),
-        totalCobrado: cobrado,
-        costoTotal: costoNeto,
-        ganancia: gananciaFinal
-      };
-    }
-
-    let efectivo = 0;
-    let tarjeta = 0;
-
-    let costoTotal = 0;
-
-    // Totales teóricos por línea (sin repartir por medio)
-    let totalLineaEfectivo = 0; // suma (precioEfectivo * cant) ya con descuento
-    let totalLineaTarjeta = 0;  // suma (precioTarjeta * cant) ya con descuento
-
-    const pctE = sale.pago?.efectivo ?? 100;
-    const pctT = sale.pago?.tarjeta ?? 0;
-
-    // Protección: sale.items puede ser undefined en datos viejos
-    (sale.items ?? []).forEach((raw: any) => {
-      const { costo, precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(raw);
-      const cant = raw.cantidad ?? 0;
-      const desc = descuento || 0;
-
-      // Tarjeta: descuento manual completo
-      const pT = precioTarjeta * (1 - desc / 100);
-
-      // Efectivo: el precio ya incluye ~20% de descuento implícito vs tarjeta.
-      // Solo se aplica el excedente del descuento manual sobre ese 20%.
-      const DESCUENTO_BASE_EFECTIVO = 20;
-      const descuentoExtraEfe = Math.max(0, desc - DESCUENTO_BASE_EFECTIVO);
-      const pE = precioEfectivo * (1 - descuentoExtraEfe / 100);
-
-      // Caja (reparto por %)
-      const tE = pE * cant * (pctE / 100);
-      const tT = pT * cant * (pctT / 100);
-
-      efectivo += tE;
-      tarjeta += tT;
-
-      // Totales base por línea (para ganancia según regla)
-      totalLineaEfectivo += pE * cant;
-      totalLineaTarjeta += pT * cant;
-
-      // Costo
-      costoTotal += costo * cant;
-    });
-
-
-    // ==========================
-    // APLICAR GIFTCARD (no entra a caja)
-    // ==========================
-    const gift = sale.giftCardUsada?.montoUsado ?? 0;
-    if (gift > 0) {
-      const totalCobradoAntesGift = efectivo + tarjeta;
-
-      if (totalCobradoAntesGift > 0) {
-        const ratioE = efectivo / totalCobradoAntesGift;
-        const ratioT = tarjeta / totalCobradoAntesGift;
-
-        efectivo = Math.max(0, efectivo - gift * ratioE);
-        tarjeta = Math.max(0, tarjeta - gift * ratioT);
-      }
-    }
-
-    const totalCobrado = efectivo + tarjeta;
-
-    // ==========================
-    // GANANCIA (según regla del usuario)
-    // ==========================
-    const es100Tarjeta = pctT === 100 && pctE === 0;
-
-    // En 100% tarjeta: ganancia usa precio efectivo (base) y también descuenta gift si existió
-    // En mixto: ganancia usa el total efectivamente cobrado (E+T) ya sin gift
-    const ingresoParaGanancia = es100Tarjeta
-      ? Math.max(0, totalLineaEfectivo - gift)
-      : totalCobrado;
-      
-    const ganancia = ingresoParaGanancia - costoTotal;
-
-    return {
-      efectivo,
-      tarjeta,
-      totalCobrado,
-      costoTotal,
-      ganancia
-    };
-  };
-
-
-  // ==========================
-  // CAJA
-  // ==========================
-  const totalEfectivo = monthlySales.reduce((acc, sale) => {
-    const { efectivo } = computeSaleBreakdown(sale);
+  const totalEfectivoVentas = monthlySales.reduce((acc, sale) => {
+    const { efectivo } = computeSaleBreakdown(sale, sales);
     const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
     return acc + signo * efectivo;
   }, 0);
+
+  const totalEfectivo = totalEfectivoVentas - expensesThisMonth;
 
   const totalTarjeta = monthlySales.reduce((acc, sale) => {
-    const { tarjeta } = computeSaleBreakdown(sale);
+    const { tarjeta } = computeSaleBreakdown(sale, sales);
     const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
     return acc + signo * tarjeta;
   }, 0);
 
-  // ==========================
-  // GANANCIA
-  // ==========================
   const gBrutaMes = monthlySales.reduce((acc, sale) => {
-    const { ganancia } = computeSaleBreakdown(sale);
+    const { ganancia } = computeSaleBreakdown(sale, sales);
     const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
     return acc + signo * ganancia;
   }, 0);
 
-  const totalGastosMes = monthlyExpenses.reduce((acc, expense) => acc + expense.monto, 0);
-  const gNetaMes = gBrutaMes - totalGastosMes;
+  const gNetaMes = gBrutaMes - expensesThisMonth;
 
-  // ==========================
-  // COMPARACIÓN MES ANTERIOR
-  // ==========================
-  const prevTotalEfectivo = previousMonthlySales.reduce((acc, sale) => {
-    const { efectivo } = computeSaleBreakdown(sale);
-    const signo = sale.tipo === 'devolucion' ? -1 : 1;
-    return acc + signo * efectivo;
-  }, 0);
+  const prevClosure = closures.find(c => c.month === prevMonth && c.year === prevYear);
 
-  const prevTotalTarjeta = previousMonthlySales.reduce((acc, sale) => {
-    const { tarjeta } = computeSaleBreakdown(sale);
-    const signo = sale.tipo === 'devolucion' ? -1 : 1;
+  const prevExpensesTotal = prevClosure ? prevClosure.gastos : previousMonthlyExpenses.reduce((acc, expense) => acc + expense.monto, 0);
+  const prevTotalEfectivo = prevClosure ? prevClosure.cajaEfectivo : (() => {
+    const efVentas = previousMonthlySales.reduce((acc, sale) => {
+      const { efectivo } = computeSaleBreakdown(sale, sales);
+      const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
+      return acc + signo * efectivo;
+    }, 0);
+    return efVentas - prevExpensesTotal;
+  })();
+
+  const prevTotalTarjeta = prevClosure ? prevClosure.cajaTarjeta : previousMonthlySales.reduce((acc, sale) => {
+    const { tarjeta } = computeSaleBreakdown(sale, sales);
+    const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
     return acc + signo * tarjeta;
   }, 0);
 
-  const prevGBruta = previousMonthlySales.reduce((acc, sale) => {
-    const { ganancia } = computeSaleBreakdown(sale);
-    const signo = sale.tipo === 'devolucion' ? -1 : 1;
-    return acc + signo * ganancia;
-  }, 0);
-
-  const prevGastos = previousMonthlyExpenses.reduce((acc, expense) => acc + expense.monto, 0);
-  const prevGNeta = prevGBruta - prevGastos;
-
-  // Calcular porcentajes de cambio
-  const calcTrend = (actual: number, anterior: number) => {
-    if (anterior === 0) return actual > 0 ? { value: 100, isPositive: true } : { value: 0, isPositive: true };
-    const cambio = ((actual - anterior) / anterior) * 100;
-    return { value: Math.abs(cambio), isPositive: cambio >= 0 };
-  };
+  const prevGNeta = prevClosure ? prevClosure.gananciaNeta : (() => {
+    const gBruta = previousMonthlySales.reduce((acc, sale) => {
+      const { ganancia } = computeSaleBreakdown(sale, sales);
+      const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
+      return acc + signo * ganancia;
+    }, 0);
+    return gBruta - prevExpensesTotal;
+  })();
 
   const trendGanancia = calcTrend(gNetaMes, prevGNeta);
   const trendEfectivo = calcTrend(totalEfectivo, prevTotalEfectivo);
   const trendTarjeta = calcTrend(totalTarjeta, prevTotalTarjeta);
 
-  // ==========================
-  // STOCK
-  // ==========================
-  // Prendas con stock disponible (las que se muestran por defecto)
   const conStock = inventory.filter(item => item.cantidad > 0);
-  // Prendas agotadas (ocultas por defecto, visibles con el toggle)
   const sinStock = inventory.filter(item => item.cantidad <= 0);
-
-  // Total de unidades en stock (solo las activas)
   const stockTotal = conStock.reduce((acc, item) => acc + item.cantidad, 0);
 
-  // Base para buscar: según toggle muestra ambas o solo las activas
-  const baseInventory = showSinStock ? inventory : conStock;
+  const baseInventory = showSinStock ? sinStock : conStock;
 
-  const filteredInventory = baseInventory.filter(item =>
-    item.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.proveedor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
+  const filteredInventory = [...baseInventory]
+    .reverse()
+    .filter(item => {
+      const q = searchTerm.toLowerCase();
+      return (
+        (item.descripcion?.toLowerCase() || "").includes(q) ||
+        (item.proveedor?.toLowerCase() || "").includes(q) ||
+        (item.sku?.toLowerCase() || "").includes(q)
+      );
+    });
 
   const handleDelete = (id: string) => {
     if (pendingDeleteId === id) {
@@ -345,9 +137,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  // ==========================
-  // UI
-  // ==========================
   return (
     <div className="space-y-6 text-left">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -356,12 +145,13 @@ const Dashboard: React.FC<DashboardProps> = ({
           value={`$ ${gNetaMes.toLocaleString()}`}
           subValue={`${currentMonth}/${currentYear}`}
           clickable={true}
-          onClick={() => setShowProfitDetails(true)}
+          onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'ganancia' })}
           trend={{
             value: trendGanancia.value,
             label: `mes anterior`,
             isPositive: trendGanancia.isPositive
           }}
+          dataTestId="metric-ganancia"
         />
         <MetricCard
           label="Caja Efectivo"
@@ -372,6 +162,9 @@ const Dashboard: React.FC<DashboardProps> = ({
             label: `mes anterior`,
             isPositive: trendEfectivo.isPositive
           }}
+          clickable={true}
+          onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'efectivo' })}
+          dataTestId="metric-efectivo"
         />
         <MetricCard
           label="Caja Tarjeta"
@@ -382,6 +175,9 @@ const Dashboard: React.FC<DashboardProps> = ({
             label: `mes anterior`,
             isPositive: trendTarjeta.isPositive
           }}
+          clickable={true}
+          onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'tarjeta' })}
+          dataTestId="metric-tarjeta"
         />
         <MetricCard
           label="Stock Total"
@@ -397,25 +193,44 @@ const Dashboard: React.FC<DashboardProps> = ({
           <h3 className="font-serif text-2xl italic text-[#1A1A1A]">Comparación Mensual</h3>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-[#F5F1EB]/50 rounded-lg border border-[#C9B8A8]/20">
-            <p className="text-[9px] uppercase tracking-[2px] text-[#1A1A1A]/60 mb-2">Ganancia Neta</p>
-            <p className="text-lg font-bold text-[#1A1A1A] mb-1">${gNetaMes.toLocaleString()}</p>
-            <p className="text-xs text-[#1A1A1A]/50">vs ${prevGNeta.toLocaleString()}</p>
+          <div 
+            data-testid="compare-ganancia"
+            onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'ganancia' })}
+            className="text-center p-8 bg-[#F5F1EB]/30 rounded-lg border border-[#C9B8A8]/10 cursor-pointer hover:bg-[#F5F1EB] transition-colors group"
+          >
+            <p className="text-[9px] uppercase tracking-[3px] text-[#1A1A1A]/40 mb-4 font-bold group-hover:text-[#1A1A1A]">Ganancia Neta</p>
+            <p className="text-2xl font-bold text-[#1A1A1A] mb-2">${gNetaMes.toLocaleString()}</p>
+            <p className="text-xs text-[#1A1A1A]/30 font-medium">vs ${prevGNeta.toLocaleString()}</p>
           </div>
-          <div className="text-center p-4 bg-[#F5F1EB]/50 rounded-lg border border-[#C9B8A8]/20">
-            <p className="text-[9px] uppercase tracking-[2px] text-[#1A1A1A]/60 mb-2">Caja Efectivo</p>
-            <p className="text-lg font-bold text-[#1A1A1A] mb-1">${totalEfectivo.toLocaleString()}</p>
-            <p className="text-xs text-[#1A1A1A]/50">vs ${prevTotalEfectivo.toLocaleString()}</p>
+
+          <div 
+            data-testid="compare-efectivo"
+            onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'efectivo' })}
+            className="text-center p-8 bg-[#F5F1EB]/30 rounded-lg border border-[#C9B8A8]/10 cursor-pointer hover:bg-[#F5F1EB] transition-colors group"
+          >
+            <p className="text-[9px] uppercase tracking-[3px] text-[#1A1A1A]/40 mb-4 font-bold group-hover:text-[#1A1A1A]">Caja Efectivo</p>
+            <p className="text-2xl font-bold text-[#1A1A1A] mb-2">${totalEfectivo.toLocaleString()}</p>
+            <p className="text-xs text-[#1A1A1A]/30 font-medium">vs ${prevTotalEfectivo.toLocaleString()}</p>
           </div>
-          <div className="text-center p-4 bg-[#F5F1EB]/50 rounded-lg border border-[#C9B8A8]/20">
-            <p className="text-[9px] uppercase tracking-[2px] text-[#1A1A1A]/60 mb-2">Caja Tarjeta</p>
-            <p className="text-lg font-bold text-[#1A1A1A] mb-1">${totalTarjeta.toLocaleString()}</p>
-            <p className="text-xs text-[#1A1A1A]/50">vs ${prevTotalTarjeta.toLocaleString()}</p>
+
+          <div 
+            data-testid="compare-tarjeta"
+            onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'tarjeta' })}
+            className="text-center p-8 bg-[#F5F1EB]/30 rounded-lg border border-[#C9B8A8]/10 cursor-pointer hover:bg-[#F5F1EB] transition-colors group"
+          >
+            <p className="text-[9px] uppercase tracking-[3px] text-[#1A1A1A]/40 mb-4 font-bold group-hover:text-[#1A1A1A]">Caja Tarjeta</p>
+            <p className="text-2xl font-bold text-[#1A1A1A] mb-2">${totalTarjeta.toLocaleString()}</p>
+            <p className="text-xs text-[#1A1A1A]/30 font-medium">vs ${prevTotalTarjeta.toLocaleString()}</p>
           </div>
-          <div className="text-center p-4 bg-[#F5F1EB]/50 rounded-lg border border-[#C9B8A8]/20">
-            <p className="text-[9px] uppercase tracking-[2px] text-[#1A1A1A]/60 mb-2">Gastos</p>
-            <p className="text-lg font-bold text-[#1A1A1A] mb-1">${totalGastosMes.toLocaleString()}</p>
-            <p className="text-xs text-[#1A1A1A]/50">vs ${prevGastos.toLocaleString()}</p>
+
+          <div 
+            data-testid="compare-gastos"
+            onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'gastos' })}
+            className="text-center p-8 bg-[#F5F1EB]/30 rounded-lg border border-[#C9B8A8]/10 cursor-pointer hover:bg-[#F5F1EB] transition-colors group"
+          >
+            <p className="text-[9px] uppercase tracking-[3px] text-[#1A1A1A]/40 mb-4 font-bold group-hover:text-[#1A1A1A]">Gastos</p>
+            <p className="text-2xl font-bold text-[#1A1A1A] mb-2">${expensesThisMonth.toLocaleString()}</p>
+            <p className="text-xs text-[#1A1A1A]/30 font-medium">vs ${prevExpensesTotal.toLocaleString()}</p>
           </div>
         </div>
       </div>
@@ -433,7 +248,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     : 'bg-transparent text-[#1A1A1A]/50 border-[#C9B8A8]/50 hover:border-[#1A1A1A]/30'
                 }`}
               >
-                {showSinStock ? '✕ Ocultar agotadas' : `Ver agotadas (${sinStock.length})`}
+                {showSinStock ? '✕ Ver disponibles' : `Ver agotadas (${sinStock.length})`}
               </button>
             )}
           </div>
@@ -467,301 +282,400 @@ const Dashboard: React.FC<DashboardProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#C9B8A8]/20">
-              {filteredInventory.map(item => {
-                const agotada = item.cantidad <= 0;
-                return (
-                  <tr
-                    key={item.id}
-                    className={`transition-colors ${agotada ? 'bg-gray-50 opacity-60' : 'hover:bg-[#C9B8A8]/5'}`}
-                  >
-                    <td className="px-3 py-2.5 text-xs font-mono text-[#1A1A1A]">{item.sku}</td>
-                    <td className="px-3 py-2.5 text-xs text-[#1A1A1A]">{item.descripcion}</td>
-                    <td className="px-3 py-2.5 text-xs text-[#1A1A1A]">{item.proveedor}</td>
-                    <td className="px-3 py-2.5 text-xs text-right text-[#1A1A1A]">$ {item.costo.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-xs text-right text-[#1A1A1A]">$ {item.ventaEfectivo.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-xs text-right text-[#1A1A1A]">$ {(item.ventaTarjeta ?? item.ventaEfectivo).toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-xs text-center font-medium">
-                      {agotada
-                        ? <span className="inline-flex items-center gap-1">
-                            <span className="line-through text-red-400 text-[10px]">0</span>
-                            <span className="bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full text-[8px] uppercase tracking-widest font-bold">Agotada</span>
-                          </span>
-                        : <span className="text-[#1A1A1A]">{item.cantidad}</span>
-                      }
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex gap-1.5 items-center justify-center">
-                        <button
-                          onClick={() => setEditingItem(item)}
-                          className="p-1.5 hover:bg-[#C9B8A8]/20 text-[#1A1A1A] rounded-lg transition-colors"
-                          title="Editar"
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm("¿Eliminar permanentemente esta prenda del sistema?")) {
-                              onDeleteItem(item.id);
-                            }
-                          }}
-                          className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
-                          title="Eliminar permanentemente"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filteredInventory.map(item => (
+                <tr
+                  key={item.id}
+                  className={`transition-colors ${item.cantidad <= 0 ? 'bg-gray-50 opacity-60' : 'hover:bg-[#C9B8A8]/5'}`}
+                >
+                  <td className="px-3 py-2.5 text-xs font-mono text-[#1A1A1A]">{item.sku}</td>
+                  <td className="px-3 py-2.5 text-xs text-[#1A1A1A]">{item.descripcion}</td>
+                  <td className="px-3 py-2.5 text-xs text-[#1A1A1A]">{item.proveedor}</td>
+                  <td className="px-3 py-2.5 text-xs text-right text-[#1A1A1A]">$ {item.costo.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-xs text-right text-[#1A1A1A]">$ {item.ventaEfectivo.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-xs text-right text-[#1A1A1A]">$ {(item.ventaTarjeta ?? item.ventaEfectivo).toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-xs text-center">
+                    {item.cantidad <= 0
+                      ? <span className="text-red-400 font-bold text-[9px] uppercase tracking-[2px]">Agotado</span>
+                      : <span className={`font-bold ${item.cantidad <= 2 ? 'text-amber-600' : 'text-[#1A1A1A]'}`}>
+                          {item.cantidad}
+                          <span className="ml-1 text-[9px] font-normal opacity-40 uppercase tracking-tighter">unids</span>
+                        </span>
+                    }
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex gap-1.5 items-center justify-center">
+                      <button onClick={() => setEditingItem(item)} className="p-1.5 hover:bg-[#C9B8A8]/20 text-[#1A1A1A] rounded-lg transition-colors"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDelete(item.id)} className={`p-1.5 rounded-lg transition-all ${pendingDeleteId === item.id ? 'bg-red-600 text-white' : 'hover:bg-red-50 text-red-600'}`}><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Modal de Detalles de Ganancia */}
-      {showProfitDetails && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setShowProfitDetails(false)}>
-          <div className="bg-white/95 backdrop-blur-md border border-[#C9B8A8]/50 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white/95 backdrop-blur-md border-b-2 border-[#C9B8A8]/30 p-6 flex justify-between items-center z-10">
-              <div>
-                <h3 className="font-serif text-3xl italic text-[#1A1A1A]">Desglose de Ganancias</h3>
-                <p className="text-xs text-[#1A1A1A]/60 mt-1">Mes: {currentMonth}/{currentYear}</p>
+      {detailView && (() => {
+        const vMonth = detailView.month;
+        const vYear = detailView.year;
+        const vClosure = closures.find(c => c.month === vMonth && c.year === vYear);
+        const vSales = sales.filter(s => isMonth(s.fecha, vMonth, vYear));
+        const vExpensesList = expenses.filter(e => isMonth(e.fecha, vMonth, vYear));
+
+        // Mes comparativo dentro del modal
+        let pMonth = vMonth - 1;
+        let pYear = vYear;
+        if (pMonth === 0) { pMonth = 12; pYear -= 1; }
+        
+        const pClosure = closures.find(c => c.month === pMonth && c.year === pYear);
+        const pSales = sales.filter(s => isMonth(s.fecha, pMonth, pYear));
+        const pExpensesList = expenses.filter(e => isMonth(e.fecha, pMonth, pYear));
+
+        // Cálculos Mes Seleccionado
+        const vGastos = vClosure ? vClosure.gastos : vExpensesList.reduce((acc, e) => acc + e.monto, 0);
+        
+        const vBreakdown = vSales.reduce((acc, s) => {
+          const { efectivo, tarjeta, ganancia } = computeSaleBreakdown(s, sales);
+          const signo = (s.tipo === 'devolucion' || s.tipo === 'anulacion') ? -1 : 1;
+          
+          let prendas = 0;
+          if (s.tipo === 'cambio') {
+            prendas = (s.itemsNuevos ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
+          } else if (s.tipo === 'venta') {
+            prendas = (s.items ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
+          }
+
+          return {
+            efectivo: acc.efectivo + (efectivo * signo),
+            tarjeta: acc.tarjeta + (tarjeta * signo),
+            ganancia: acc.ganancia + (ganancia * signo),
+            prendas: acc.prendas + prendas
+          };
+        }, { efectivo: 0, tarjeta: 0, ganancia: 0, prendas: 0 });
+
+        const vGNeta = vClosure ? vClosure.gananciaNeta : (vBreakdown.ganancia - vGastos);
+        const vGBruta = vGNeta + vGastos;
+        const vEfectivo = vClosure ? vClosure.cajaEfectivo : (vBreakdown.efectivo - vGastos);
+        const vTarjeta = vClosure ? vClosure.cajaTarjeta : vBreakdown.tarjeta;
+
+        // Cálculos Mes Anterior (para el ∆ del modal)
+        const pGastos = pClosure ? pClosure.gastos : pExpensesList.reduce((acc, e) => acc + e.monto, 0);
+        const pBreakdown = pSales.reduce((acc, s) => {
+          const { efectivo, tarjeta, ganancia } = computeSaleBreakdown(s, sales);
+          const signo = (s.tipo === 'devolucion' || s.tipo === 'anulacion') ? -1 : 1;
+          
+          let prendas = 0;
+          if (s.tipo === 'cambio') {
+             prendas = (s.itemsNuevos ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
+          } else if (s.tipo === 'venta') {
+             prendas = (s.items ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
+          }
+
+          return {
+            efectivo: acc.efectivo + (efectivo * signo),
+            tarjeta: acc.tarjeta + (tarjeta * signo),
+            ganancia: acc.ganancia + (ganancia * signo),
+            prendas: acc.prendas + prendas
+          };
+        }, { efectivo: 0, tarjeta: 0, ganancia: 0, prendas: 0 });
+
+        const pGNeta = pClosure ? pClosure.gananciaNeta : (pBreakdown.ganancia - pGastos);
+        const pEfectivo = pClosure ? pClosure.cajaEfectivo : (pBreakdown.efectivo - pGastos);
+        const pTarjeta = pClosure ? pClosure.cajaTarjeta : pBreakdown.tarjeta;
+        const pPrendas = pBreakdown.prendas;
+
+        const getDelta = (val: number, prev: number) => {
+          const diff = val - prev;
+          const pct = prev !== 0 ? (diff / Math.abs(prev)) * 100 : (val > 0 ? 100 : 0);
+          return { diff, pct, isPos: diff >= 0 };
+        };
+
+        const dG = getDelta(vGNeta, pGNeta);
+        const dE = getDelta(vEfectivo, pEfectivo);
+        const dT = getDelta(vTarjeta, pTarjeta);
+        const dEx = getDelta(vGastos, pGastos);
+
+        const changeMonth = (offset: number) => {
+          let newMonth = vMonth + offset;
+          let newYear = vYear;
+          if (newMonth === 0) { newMonth = 12; newYear -= 1; }
+          else if (newMonth === 13) { newMonth = 1; newYear += 1; }
+          setDetailView({ month: newMonth, year: newYear, type: detailView.type });
+        };
+
+        // Preparar lista con saldo acumulado (solo relevante en caja efectivo)
+        const sortedSales = vSales.slice().sort((a,b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+        let runningBalance = 0;
+        const salesWithBalance = sortedSales.map(sale => {
+          const b = computeSaleBreakdown(sale, sales);
+          const s = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
+          const cashImpact = b.efectivo * s;
+          runningBalance += cashImpact;
+          return { ...sale, breakdown: b, impact: cashImpact, balance: runningBalance };
+        }).reverse(); // Mostramos más reciente primero en la tabla, pero el saldo se calculó cronológicamente
+
+        // Helper para gráfico de barras
+        const RenderBarChart = (val: number, prev: number, label: string, prefix = '$') => {
+          const max = Math.max(val, prev, 1);
+          const valPct = (val / max) * 100;
+          const prevPct = (prev / max) * 100;
+          const diff = val - prev;
+          const diffPct = prev !== 0 ? (diff / Math.abs(prev)) * 100 : (val > 0 ? 100 : 0);
+
+          return (
+            <div className="bg-white/50 p-6 rounded-2xl border border-[#C9B8A8]/30 space-y-6">
+              <div className="flex justify-between items-end">
+                <h5 className="text-[10px] uppercase tracking-[2px] font-bold text-[#1A1A1A]/60">{label}</h5>
+                <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${diff >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                  {diff >= 0 ? '↑' : '↓'} {prefix}{Math.abs(diff).toLocaleString()} ({diffPct.toFixed(1)}%)
+                </div>
               </div>
-              <button onClick={() => setShowProfitDetails(false)} className="p-2 hover:bg-[#C9B8A8]/20 rounded-lg transition-colors text-[#1A1A1A]">
-                <X size={24} />
-              </button>
+              
+              <div className="space-y-4">
+                {/* BARRA ACTUAL */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-tighter">
+                    <span>Mes Actual</span>
+                    <span>{prefix}{val.toLocaleString()}</span>
+                  </div>
+                  <div className="h-4 bg-[#F5F1EB] rounded-full overflow-hidden border border-[#C9B8A8]/20">
+                    <div 
+                      className="h-full bg-[#1A1A1A] transition-all duration-1000 ease-out"
+                      style={{ width: `${valPct}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* BARRA ANTERIOR */}
+                <div className="space-y-1.5 opacity-60">
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-tighter">
+                    <span>Mes Anterior</span>
+                    <span>{prefix}{prev.toLocaleString()}</span>
+                  </div>
+                  <div className="h-4 bg-[#F5F1EB] rounded-full overflow-hidden border border-[#C9B8A8]/20">
+                    <div 
+                      className="h-full bg-[#C9B8A8] transition-all duration-1000 ease-out"
+                      style={{ width: `${prevPct}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
+          );
+        };
 
-            <div className="p-6 space-y-4">
-              {/* Resumen */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="bg-[#F5F1EB]/60 p-4 border border-[#C9B8A8]/30 rounded-lg">
-                  <p className="text-[9px] uppercase tracking-[2px] text-[#1A1A1A]/60 mb-1">Ganancia Bruta</p>
-                  <p className="text-xl font-bold text-[#1A1A1A]">${gBrutaMes.toLocaleString()}</p>
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setDetailView(null)}>
+            <div className="bg-white/95 backdrop-blur-md border border-[#C9B8A8]/50 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              
+              {/* HEADER ESPECIALIZADO CON NAVEGACIÓN */}
+              <div className="sticky top-0 bg-white/95 backdrop-blur-md border-b-2 border-[#C9B8A8]/30 p-6 flex justify-between items-center z-10">
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-2">
+                    <button data-testid="chevron-left" onClick={() => changeMonth(-1)} className="p-2 hover:bg-[#C9B8A8]/20 rounded-full transition-colors text-[#1A1A1A]/40 hover:text-[#1A1A1A]">
+                      <ChevronLeft size={20} />
+                    </button>
+                    <div className="p-3 bg-[#C9B8A8]/20 rounded-xl text-[#1A1A1A]">
+                      {detailView.type === 'ganancia' && <TrendingUp size={24} />}
+                      {detailView.type === 'efectivo' && <Banknote size={24} />}
+                      {detailView.type === 'tarjeta' && <CreditCard size={24} />}
+                      {detailView.type === 'prendas' && <Calendar size={24} />}
+                      {detailView.type === 'gastos' && <TrendingDown size={24} />}
+                    </div>
+                    {(vMonth !== currentMonth || vYear !== currentYear) && (
+                      <button data-testid="chevron-right" onClick={() => changeMonth(1)} className="p-2 hover:bg-[#C9B8A8]/20 rounded-full transition-colors text-[#1A1A1A]/40 hover:text-[#1A1A1A]">
+                        <ChevronRight size={20} />
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-3xl italic text-[#1A1A1A]">
+                      {detailView.type === 'ganancia' && 'Análisis de Ganancias'}
+                      {detailView.type === 'efectivo' && 'Análisis de Efectivo'}
+                      {detailView.type === 'tarjeta' && 'Análisis de Tarjetas'}
+                      {detailView.type === 'prendas' && 'Análisis de Unidades'}
+                      {detailView.type === 'gastos' && 'Análisis de Gastos'}
+                    </h3>
+                    <p className="text-[10px] text-[#1A1A1A]/60 uppercase tracking-[2px] mt-1 font-medium">
+                      MES: {vMonth}/{vYear} (vs {pMonth}/{pYear}) {vClosure ? '• [PERIODO CERRADO]' : '• [EN CURSO]'}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-[#F5F1EB]/60 p-4 border border-[#C9B8A8]/30 rounded-lg">
-                  <p className="text-[9px] uppercase tracking-[2px] text-[#1A1A1A]/60 mb-1">Gastos</p>
-                  <p className="text-xl font-bold text-red-700">-${totalGastosMes.toLocaleString()}</p>
-                </div>
-                <div className="bg-[#C9B8A8] p-4 border-2 border-[#1A1A1A]/10 rounded-lg shadow-md">
-                  <p className="text-[9px] uppercase tracking-[2px] text-[#1A1A1A] mb-1">Ganancia Neta</p>
-                  <p className="text-2xl font-bold text-[#1A1A1A]">${gNetaMes.toLocaleString()}</p>
-                </div>
+                <button onClick={() => setDetailView(null)} className="p-2 hover:bg-[#C9B8A8]/20 rounded-lg transition-colors text-[#1A1A1A]"><X size={24} /></button>
               </div>
 
-              {/* Tabla de ventas */}
-              <div>
-                <h4 className="font-serif text-xl italic text-[#1A1A1A] mb-3">Ventas del Mes ({monthlySales.length})</h4>
-                <div className="border border-[#C9B8A8]/50 rounded-xl overflow-auto max-h-[400px] shadow-sm">
-                  <table className="w-full text-sm">
-                    <thead className="bg-[#C9B8A8]/80 sticky top-0">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-[10px] uppercase">Fecha</th>
-                        <th className="px-3 py-2 text-left text-[10px] uppercase">Tipo</th>
-                        <th className="px-3 py-2 text-left text-[10px] uppercase">Items</th>
-                        <th className="px-3 py-2 text-right text-[10px] uppercase">Total</th>
-                        <th className="px-3 py-2 text-right text-[10px] uppercase">Costo</th>
-                        <th className="px-3 py-2 text-right text-[10px] uppercase">Ganancia</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#C9B8A8]/20">
-                      {monthlySales.length === 0 ? (
+              <div className="p-8 space-y-10">
+                
+                {/* 1. SECCIÓN DE GRÁFICOS COMPARATIVOS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {detailView.type === 'ganancia' && RenderBarChart(vGNeta, pGNeta, 'Ganancia Neta Mensual')}
+                  {detailView.type === 'efectivo' && RenderBarChart(vEfectivo, pEfectivo, 'Caja Efectivo (Física)')}
+                  {detailView.type === 'tarjeta' && RenderBarChart(vTarjeta, pTarjeta, 'Caja Tarjeta (Bancos)')}
+                  {detailView.type === 'gastos' && RenderBarChart(vGastos, pGastos, 'Gastos Operativos')}
+
+                  {/* MINI INDICADORES COMPLEMENTARIOS AL LADO DEL GRÁFICO */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {detailView.type === 'ganancia' && (
+                      <>
+                        <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Ganancia Bruta</p>
+                          <p className="text-lg font-bold font-mono">${vGBruta.toLocaleString()}</p>
+                        </div>
+                        <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Gastos Totales</p>
+                          <p className="text-lg font-bold font-mono text-red-700">-${vGastos.toLocaleString()}</p>
+                        </div>
+                      </>
+                    )}
+                    {detailView.type === 'efectivo' && (
+                      <>
+                        <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Ventas Brutas</p>
+                          <p className="text-lg font-bold font-mono text-emerald-800">${vBreakdown.efectivo.toLocaleString()}</p>
+                        </div>
+                        <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Gastos Pagados</p>
+                          <p className="text-lg font-bold font-mono text-red-700">-${vGastos.toLocaleString()}</p>
+                        </div>
+                      </>
+                    )}
+                    {detailView.type === 'gastos' && (
+                      <>
+                        <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Egresos Efectivo</p>
+                          <p className="text-lg font-bold font-mono text-red-700">${vGastos.toLocaleString()}</p>
+                        </div>
+                        <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
+                          <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Frecuencia</p>
+                          <p className="text-lg font-bold font-mono">{vExpensesList.length} puros</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. LISTA DE VENTAS O GASTOS (FILTRADA POR CONTEXTO) */}
+                <div className="space-y-4">
+                  <h4 className="font-serif text-xl italic text-[#1A1A1A] border-b border-[#C9B8A8]/30 pb-2">
+                    {detailView.type === 'gastos' ? `Egresos del Periodo (${vExpensesList.length})` : `Ventas del Periodo (${vSales.length})`}
+                  </h4>
+                  <div className="border border-[#C9B8A8]/50 rounded-2xl overflow-auto max-h-[400px] shadow-sm bg-white">
+                    {detailView.type === 'gastos' ? (
+                       <table className="w-full text-sm">
+                       <thead className="bg-[#C9B8A8]/20 sticky top-0 backdrop-blur-md">
+                         <tr>
+                           <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Fecha</th>
+                           <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Concepto</th>
+                           <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Monto</th>
+                         </tr>
+                       </thead>
+                       <tbody className="divide-y divide-[#C9B8A8]/10 text-xs text-left">
+                         {vExpensesList.slice().sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).map(exp => (
+                           <tr key={exp.id} className="hover:bg-[#F5F1EB]/30 transition-colors">
+                             <td className="px-4 py-3 text-gray-500 font-medium">{new Date(exp.fecha).toLocaleDateString('es-AR')}</td>
+                             <td className="px-4 py-3 uppercase tracking-tighter font-bold">{exp.concepto}</td>
+                             <td className="px-4 py-3 text-right font-mono font-bold text-red-700">-${exp.monto.toLocaleString()}</td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                    ) : (
+                      <table className="w-full text-sm">
+                      <thead className="bg-[#C9B8A8]/20 sticky top-0 backdrop-blur-md">
                         <tr>
-                          <td colSpan={6} className="px-3 py-8 text-center text-[#1A1A1A]/40 text-sm">
-                            No hay ventas este mes
-                          </td>
+                          <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Fecha</th>
+                          <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Tipo</th>
+                          <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">
+                            {detailView.type === 'efectivo' ? 'Impacto Efectivo' : detailView.type === 'tarjeta' ? 'Cobrado Tarj.' : 'Total'}
+                          </th>
+                          {detailView.type === 'efectivo' && (
+                            <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Saldo Acum.</th>
+                          )}
+                          {detailView.type === 'ganancia' && (
+                            <>
+                              <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Costo</th>
+                              <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Ganancia</th>
+                            </>
+                          )}
+                          {detailView.type === 'prendas' && (
+                            <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Prendas</th>
+                          )}
                         </tr>
-                      ) : (
-                        monthlySales
-                          .slice()
-                          .reverse()
-                          .map((sale) => {
-                            const breakdown = computeSaleBreakdown(sale);
-                            const signo = sale.tipo === 'devolucion' ? -1 : 1;
-                            return (
-                              <tr key={sale.id} className="hover:bg-[#C9B8A8]/5 transition-colors">
-                                <td className="px-3 py-2.5 text-[#1A1A1A]">
-                                  {new Date(sale.fecha).toLocaleDateString('es-AR', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
-                                </td>
-                                <td className="px-3 py-2.5">
-                                  <span className={`text-xs uppercase px-2.5 py-1 rounded-lg ${
-                                    sale.tipo === 'venta' ? 'bg-emerald-100 text-emerald-800' :
-                                    sale.tipo === 'devolucion' ? 'bg-rose-100 text-rose-800' :
-                                    sale.tipo === 'cambio' ? 'bg-blue-100 text-blue-800' :
-                                    'bg-gray-100 text-gray-700'
-                                  }`}>
-                                    {sale.tipo}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2.5 text-[#1A1A1A] text-xs">
-                                  {sale.items?.length || 0} items
-                                  {sale.itemsDevueltos && sale.itemsNuevos && (
-                                    <span className="text-[#1A1A1A]/60"> (Cambio)</span>
+                      </thead>
+                      <tbody className="divide-y divide-[#C9B8A8]/10 text-xs text-left">
+                        {salesWithBalance.map(item => {
+                              return (
+                                <tr key={item.id} className="hover:bg-[#F5F1EB]/30 transition-colors">
+                                  <td className="px-4 py-3 text-gray-500 font-medium">{new Date(item.fecha).toLocaleDateString('es-AR')}</td>
+                                  <td className="px-4 py-3">
+                                    <span className="px-2 py-0.5 bg-[#C9B8A8]/10 text-[#1A1A1A] rounded text-[9px] font-bold uppercase tracking-tighter">
+                                      {item.tipo}
+                                    </span>
+                                  </td>
+                                  <td className={`px-4 py-3 text-right font-mono font-bold ${item.impact >= 0 ? 'text-[#1A1A1A]' : 'text-rose-600'}`}>
+                                    {detailView.type === 'efectivo' ? `$${item.impact.toLocaleString()}` : 
+                                     detailView.type === 'tarjeta' ? `$${(item.breakdown.tarjeta * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}` : 
+                                     `$${(item.breakdown.totalCobrado * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}`}
+                                  </td>
+                                  {detailView.type === 'efectivo' && (
+                                    <td className="px-4 py-3 text-right font-mono text-gray-500 font-bold">
+                                      ${item.balance.toLocaleString()}
+                                    </td>
                                   )}
-                                </td>
-                                <td className="px-3 py-2.5 text-right text-[#1A1A1A] font-medium">
-                                  ${(breakdown.totalCobrado * signo).toLocaleString()}
-                                  {(() => {
-                                    if (!sale.pago) return null;
-                                    const label = sale.pago.efectivo === 100 ? 'E' : sale.pago.tarjeta === 100 ? 'T' : `E ${sale.pago.efectivo}% / T ${sale.pago.tarjeta}%`;
-                                    return <span className="ml-1.5 text-[9px] font-bold text-[#1A1A1A]/50">({label})</span>;
-                                  })()}
-                                </td>
-                                <td className="px-3 py-2.5 text-right text-[#1A1A1A]/60">
-                                  ${(breakdown.costoTotal * signo).toLocaleString()}
-                                </td>
-                                <td className={`px-3 py-2.5 text-right font-bold ${
-                                  breakdown.ganancia * signo >= 0 ? 'text-emerald-700' : 'text-rose-700'
-                                }`}>
-                                  ${(breakdown.ganancia * signo).toLocaleString()}
-                                </td>
-                              </tr>
-                            );
-                          })
-                      )}
-                    </tbody>
-                    <tfoot className="bg-[#F5F1EB]/60 sticky bottom-0">
-                      <tr className="font-bold">
-                        <td colSpan={3} className="px-3 py-3 text-right text-[#1A1A1A]">TOTALES:</td>
-                        <td className="px-3 py-3 text-right text-[#1A1A1A]">
-                          ${(totalEfectivo + totalTarjeta).toLocaleString()}
-                        </td>
-                        <td className="px-3 py-3 text-right text-[#1A1A1A]/60">
-                          ${monthlySales.reduce((acc, sale) => {
-                            const breakdown = computeSaleBreakdown(sale);
-                            const signo = sale.tipo === 'devolucion' ? -1 : 1;
-                            return acc + breakdown.costoTotal * signo;
-                          }, 0).toLocaleString()}
-                        </td>
-                        <td className="px-3 py-3 text-right text-emerald-700">
-                          ${gBrutaMes.toLocaleString()}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                                  {detailView.type === 'ganancia' && (
+                                    <>
+                                      <td className="px-4 py-3 text-right text-gray-400 font-mono">${(item.breakdown.costoTotal * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}</td>
+                                      <td className={`px-4 py-3 text-right font-mono font-bold ${item.breakdown.ganancia * (item.tipo.includes('devolucion') ? -1 : 1) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        ${(item.breakdown.ganancia * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}
+                                      </td>
+                                    </>
+                                  )}
+                                  {detailView.type === 'gastos' && (
+                                    <td className="px-4 py-3 text-right font-mono font-bold">
+                                      -
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                      </tbody>
+                    </table>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {editingItem && (
-  <div className="fixed inset-0 z-50 bg-black/20 flex justify-center items-center">
-    <div className="bg-white p-8 w-full max-w-xl space-y-6 border border-[#D4C4B0]">
-
-      <div className="flex justify-between items-center border-b-2 border-[#C9B8A8]/30 pb-4">
-        <h3 className="font-serif text-2xl italic text-[#1A1A1A]">Editar producto</h3>
-        <button onClick={() => setEditingItem(null)} className="p-1 hover:bg-[#C9B8A8]/20 rounded-lg transition-colors text-[#1A1A1A]">
-          <X size={20} />
-        </button>
-      </div>
-
-      {/* DESCRIPCIÓN */}
-      <div>
-        <label className="text-xs text-black font-medium">Descripción</label>
-        <input
-          className="w-full border border-[#D4C4B0] p-2 text-black focus:outline-none focus:border-[#D4C4B0]"
-          value={editingItem.descripcion}
-          onChange={(e) =>
-            setEditingItem({ ...editingItem, descripcion: e.target.value })
-          }
-        />
-      </div>
-
-      {/* PROVEEDOR */}
-      <div>
-        <label className="text-xs text-black font-medium">Proveedor</label>
-        <input
-          className="w-full border border-[#D4C4B0] p-2 text-black focus:outline-none focus:border-[#D4C4B0]"
-          value={editingItem.proveedor}
-          onChange={(e) =>
-            setEditingItem({ ...editingItem, proveedor: e.target.value })
-          }
-        />
-      </div>
-
-      {/* COSTO */}
-      <div>
-        <label className="text-xs text-black font-medium">Costo</label>
-        <input
-          type="number"
-          className="w-full border border-[#D4C4B0] p-2 text-black focus:outline-none focus:border-[#D4C4B0]"
-          value={editingItem.costo}
-          onChange={(e) =>
-            setEditingItem({ ...editingItem, costo: Number(e.target.value) })
-          }
-        />
-      </div>
-
-      {/* PRECIO EFECTIVO */}
-      <div>
-        <label className="text-xs text-black font-medium">Precio efectivo</label>
-        <input
-          type="number"
-          className="w-full border border-[#D4C4B0] p-2 text-black focus:outline-none focus:border-[#D4C4B0]"
-          value={editingItem.ventaEfectivo}
-          onChange={(e) =>
-            setEditingItem({ ...editingItem, ventaEfectivo: Number(e.target.value) })
-          }
-        />
-      </div>
-
-      {/* PRECIO TARJETA */}
-      <div>
-        <label className="text-xs text-black font-medium">Precio tarjeta</label>
-        <input
-          type="number"
-          className="w-full border border-[#D4C4B0] p-2 text-black focus:outline-none focus:border-[#D4C4B0]"
-          value={editingItem.ventaTarjeta ?? editingItem.ventaEfectivo}
-          onChange={(e) =>
-            setEditingItem({ ...editingItem, ventaTarjeta: Number(e.target.value) })
-          }
-        />
-      </div>
-
-      {/* STOCK */}
-      <div>
-        <label className="text-xs text-black font-medium">Cantidad en stock</label>
-        <input
-          type="number"
-          className="w-full border border-[#D4C4B0] p-2 text-black focus:outline-none focus:border-[#D4C4B0]"
-          value={editingItem.cantidad}
-          onChange={(e) =>
-            setEditingItem({ ...editingItem, cantidad: Number(e.target.value) })
-          }
-        />
-      </div>
-
-      {/* BOTONES */}
-      <div className="flex justify-end gap-4 pt-4 border-t">
-        <button
-          className="px-4 py-2 border border-[#D4C4B0] text-black hover:bg-[#D4C4B0]/20 transition-all text-sm font-medium"
-          onClick={() => setEditingItem(null)}
-        >
-          Cancelar
-        </button>
-
-        <button
-          className="px-4 py-2 bg-[#D4C4B0] text-black hover:opacity-90 transition-all text-sm font-medium"
-          onClick={() => {
-            onUpdateItem(editingItem);
-            setEditingItem(null);
-          }}
-        >
-          Guardar cambios
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
+        <div className="fixed inset-0 z-50 bg-black/20 flex justify-center items-center">
+          <div className="bg-white p-8 w-full max-w-xl space-y-4 border border-[#D4C4B0]">
+            <h3 className="font-serif text-2xl italic">Editar producto</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-gray-500">Descripción</label>
+                <input className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" value={editingItem.descripcion} onChange={e => setEditingItem({...editingItem, descripcion: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-gray-500">Costo</label>
+                  <input type="number" className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" value={editingItem.costo} onChange={e => setEditingItem({...editingItem, costo: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-gray-500">Stock</label>
+                  <input type="number" className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" value={editingItem.cantidad} onChange={e => setEditingItem({...editingItem, cantidad: Number(e.target.value)})} />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-4 pt-6">
+              <button onClick={() => setEditingItem(null)} className="text-xs uppercase tracking-widest">Cancelar</button>
+              <button onClick={() => { onUpdateItem(editingItem); setEditingItem(null); }} className="bg-black text-white px-6 py-2 text-xs uppercase tracking-widest">Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

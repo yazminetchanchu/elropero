@@ -63,6 +63,17 @@ export interface Expense {
   concepto: string;
 }
 
+export interface MonthlyClosure {
+  id: string; // formato YYYY-MM
+  month: number;
+  year: number;
+  gananciaNeta: number;
+  cajaEfectivo: number;
+  cajaTarjeta: number;
+  gastos: number;
+  fechaCierre: string;
+}
+
 export interface GiftCard {
   id: string;
   codigo: string;
