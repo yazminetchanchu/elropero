@@ -225,71 +225,40 @@ const Sales: React.FC<SalesProps> = ({
 
   // =======================
   // CAMBIO: totales y diferencia
-  // =============  // 1️⃣ TOTALES EN BASE TARJETA (Valor absoluto más alto)
-  // Se usa Tarjeta para ambos para que la resta sea matemáticamente proporcional.
+  // =======================
+  // 1️⃣ VALOR DEVUELTO (Calculado según medio de pago seleccionado actualmente)
   const totalDevuelto = React.useMemo(() => {
     if (!modoCambio) return 0;
-
-    // Para devoluciones/cambios, el valor devuelto debe respetar el precio realmente pagado
-    // según el medio de pago de la venta original (no el precio de tarjeta por defecto).
-    const origPctE = ventaOriginal?.pago?.efectivo ?? 100;
-    const origPctT = ventaOriginal?.pago?.tarjeta ?? 0;
 
     return itemsDevueltos.reduce((sum, item) => {
       const cant = item.cantidad ?? 0;
       const desc = item.descuento || 0;
 
-      // Tarjeta: descuento manual completo
+      // Usamos la misma lógica de pesaje que la venta normal
       const pT = item.precioTarjeta * (1 - desc / 100);
-
-      // Efectivo: el descuento manual solo aplica el excedente sobre el 20% implícito
       const descuentoExtraEfectivo = Math.max(0, desc - 20);
       const pE = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
 
-      const totalPagado = pE * (origPctE / 100) + pT * (origPctT / 100);
-      return sum + totalPagado * cant;
+      const valPesado = pE * (pagoEfectivo / 100) + pT * (pagoTarjeta / 100);
+      return sum + valPesado * cant;
     }, 0);
-  }, [modoCambio, itemsDevueltos, ventaOriginal?.pago?.efectivo, ventaOriginal?.pago?.tarjeta]);
+  }, [modoCambio, itemsDevueltos, pagoEfectivo, pagoTarjeta]);
 
   const totalNuevo = modoCambio
     ? cart.reduce((sum, item) => {
         const desc = item.descuento || 0;
-        // precioTarjeta ya es la base con descuento manual
-        const precioTarjetaFinal = item.precioTarjeta * (1 - desc / 100);
-        return sum + precioTarjetaFinal * item.cantidad;
+        const pT = item.precioTarjeta * (1 - desc / 100);
+        const descuentoExtraEfectivo = Math.max(0, desc - 20);
+        const pE = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
+
+        const valPesado = pE * (pagoEfectivo / 100) + pT * (pagoTarjeta / 100);
+        return sum + valPesado * item.cantidad;
       }, 0)
     : totalVentaNormal;
 
   let diferenciaCambio = 0;
-
   if (modoCambio) {
-    const diferenciaBase = totalNuevo - totalDevuelto;
-    diferenciaCambio = diferenciaBase;
-
-    // 2️⃣ AJUSTES PROPORCIONALES SEGÚN MEDIOS si diferencia es positiva (el cliente paga)
-    if (diferenciaBase > 0) {
-      const pagoOriginal = ventaOriginal?.pago;
-
-      if (pagoOriginal) {
-        // Multiplicador sobre la diferencia basado en cuánto de ese excedente se paga en Efectivo/Tarjeta
-        // El factor Efectivo es 0.8 (20% de descuento)
-        const factorActual = (pagoEfectivo / 100) * 0.8 + (pagoTarjeta / 100) * 1.0;
-
-        if (pagoOriginal.tarjeta === 100) {
-          // De Tarjeta a Efectivo/Mix: aplica el descuento al pagar diferencial en efectivo
-          diferenciaCambio = diferenciaBase * factorActual;
-        } 
-        else if (pagoOriginal.efectivo === 100) {
-          // De Efectivo a Tarjeta/Mix: usa el recargo teórico fijo (1.27) si paga con tarjeta
-          const factorRecargo = (pagoEfectivo / 100) * 1.0 + (pagoTarjeta / 100) * 1.27;
-          diferenciaCambio = diferenciaBase * factorRecargo;
-        } 
-        else {
-          // Mixto original: aplica factor actual directamente
-          diferenciaCambio = diferenciaBase * factorActual;
-        }
-      }
-    }
+    diferenciaCambio = totalNuevo - totalDevuelto;
   }
   
 

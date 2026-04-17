@@ -1,5 +1,11 @@
 import { Sale, InventoryItem, SaleItem } from '../types';
 
+export const calculatePricesFromCost = (cost: number) => {
+  const sugeridoEfe = Math.ceil((cost * 1.68) / 1000) * 1000;
+  const sugeridoTar = Math.ceil((sugeridoEfe * 1.27) / 1000) * 1000;
+  return { ventaEfectivo: sugeridoEfe, ventaTarjeta: sugeridoTar };
+};
+
 export const getItemSnapshot = (item: any) => {
   const costo = typeof item.costo === 'number' ? item.costo : Number(item.costoUnidad) || 0;
 

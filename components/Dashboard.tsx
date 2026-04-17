@@ -2,7 +2,7 @@ import React from 'react';
 import { InventoryItem, Sale, Expense, GiftCard, MonthlyClosure } from '../types';
 import MetricCard from './MetricCard';
 import { Edit2, Trash2, X, Search, TrendingUp, TrendingDown, DollarSign, Calendar, CreditCard, Banknote, ChevronLeft, ChevronRight } from 'lucide-react';
-import { computeSaleBreakdown, isMonth, calcTrend } from '../services/finance';
+import { computeSaleBreakdown, isMonth, calcTrend, calculatePricesFromCost } from '../services/finance';
 
 interface DashboardProps {
   inventory: InventoryItem[];
@@ -661,11 +661,36 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] uppercase tracking-widest text-gray-500">Costo</label>
-                  <input type="number" className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" value={editingItem.costo} onChange={e => setEditingItem({...editingItem, costo: Number(e.target.value)})} />
+                  <input 
+                    type="number" 
+                    className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" 
+                    value={editingItem.costo} 
+                    onChange={e => {
+                      const newCost = Number(e.target.value);
+                      const { ventaEfectivo, ventaTarjeta } = calculatePricesFromCost(newCost);
+                      setEditingItem({
+                        ...editingItem,
+                        costo: newCost,
+                        ventaEfectivo,
+                        ventaTarjeta
+                      });
+                    }} 
+                  />
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-widest text-gray-500">Stock</label>
                   <input type="number" className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" value={editingItem.cantidad} onChange={e => setEditingItem({...editingItem, cantidad: Number(e.target.value)})} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-gray-500">Precio Efectivo</label>
+                  <input type="number" className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" value={editingItem.ventaEfectivo} onChange={e => setEditingItem({...editingItem, ventaEfectivo: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-gray-500">Precio Tarjeta</label>
+                  <input type="number" className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" value={editingItem.ventaTarjeta} onChange={e => setEditingItem({...editingItem, ventaTarjeta: Number(e.target.value)})} />
                 </div>
               </div>
             </div>

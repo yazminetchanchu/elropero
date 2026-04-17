@@ -1,6 +1,7 @@
 import React from 'react';
 import { InventoryItem } from '../types';
 import { Tag, Sparkles, PackagePlus, CheckCircle2 } from 'lucide-react';
+import { calculatePricesFromCost } from '../services/finance';
 
 interface StockProps {
   onAddItem: (item: Omit<InventoryItem, 'id'>) => void;
@@ -56,10 +57,9 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
   // Manejar el cambio de costo para actualizar precios sugeridos editables
   const handleCostoChange = (val: number) => {
     setFormData({ ...formData, costo: val });
-    const sugeridoEfe = Math.ceil((val * 1.68) / 1000) * 1000;
-    const sugeridoTar = Math.ceil((sugeridoEfe * 1.27) / 1000) * 1000;
-    setVentaEfectivo(sugeridoEfe);
-    setVentaTarjeta(sugeridoTar);
+    const { ventaEfectivo, ventaTarjeta } = calculatePricesFromCost(val);
+    setVentaEfectivo(ventaEfectivo);
+    setVentaTarjeta(ventaTarjeta);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
