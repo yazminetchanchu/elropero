@@ -23,8 +23,10 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
   const [showSuccess, setShowSuccess] = React.useState(false);
 
   const handlePriceInput = (value: string, callback: (num: number) => void) => {
-    const numericValue = value.replace(/\D/g, ''); // 1. Elimina letras/puntos
-    const finalValue = numericValue === '' ? 0 : parseInt(numericValue, 10); // 2. Borra el 0 inicial
+    // Para campos de venta (efectivo/tarjeta) seguimos usando limpieza de caracteres no numéricos
+    // pero asegurando que el parseo sea limpio.
+    const numericValue = value.replace(/\D/g, ''); 
+    const finalValue = numericValue === '' ? 0 : parseInt(numericValue, 10);
     callback(finalValue);
   };
 
@@ -68,12 +70,15 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
     
     setIsSaving(true);
 
-    const newItem = {
-      fechaIngreso: new Date().toLocaleDateString('es-AR'),
+    const newItem: Omit<InventoryItem, 'id'> = {
+      descripcion: formData.descripcion.trim().toUpperCase(),
+      proveedor: formData.proveedor.trim().toUpperCase(),
+      cantidad: formData.cantidad,
+      costo: formData.costo,
+      ventaEfectivo: ventaEfectivo,
+      ventaTarjeta: ventaTarjeta,
       sku: generatedSku,
-      ventaEfectivo,
-      ventaTarjeta,
-      ...formData
+      fechaIngreso: new Date().toLocaleDateString('es-AR')
     };
 
     onAddItem(newItem);
@@ -104,20 +109,26 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
       </div>
 
       <div className="flex flex-col items-start">
-        <form onSubmit={handleSubmit} className="w-full bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-2xl p-6 md:p-8 space-y-6 shadow-xl text-left relative overflow-hidden">
+        <form 
+          onSubmit={handleSubmit} 
+          autoComplete="off"
+          className="w-full bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-2xl p-6 md:p-8 space-y-6 shadow-xl text-left relative overflow-hidden"
+        >
           <div className="absolute top-0 right-0 w-24 h-24 -mr-12 -mt-12 bg-[#F5F1EB] rounded-full opacity-50 border border-[#C9B8A8]/30"></div>
           
           <div className="space-y-6 relative z-10">
             <div className="space-y-3">
               <label className="text-[10px] tracking-[4px] uppercase font-medium text-[#1A1A1A] leading-none">Descripción de la Prenda</label>
-              <input 
-                type="text" 
-                required 
-                value={formData.descripcion} 
-                onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} 
-                className="w-full bg-transparent border-b-2 border-[#C9B8A8]/40 py-4 focus:outline-none focus:border-[#C9B8A8] text-sm font-medium uppercase tracking-wide text-[#1A1A1A] placeholder:text-gray-500 transition-colors" 
-                placeholder="BIKINI, VESTIDO, ETC." 
-              />
+                <input 
+                  type="text" 
+                  required 
+                  name="desc-ropero-new"
+                  autoComplete="off"
+                  value={formData.descripcion} 
+                  onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} 
+                  className="w-full bg-transparent border-b-2 border-[#C9B8A8]/40 py-4 focus:outline-none focus:border-[#C9B8A8] text-sm font-medium uppercase tracking-wide text-[#1A1A1A] placeholder:text-gray-500 transition-colors" 
+                  placeholder="BIKINI, VESTIDO, ETC." 
+                />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
@@ -126,6 +137,8 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
                 <input 
                   type="text" 
                   required 
+                  name="prov-ropero-new"
+                  autoComplete="off"
                   value={formData.proveedor} 
                   onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })} 
                   className="w-full bg-transparent border-b-2 border-[#C9B8A8]/40 py-4 focus:outline-none focus:border-[#C9B8A8] text-sm font-medium uppercase tracking-wide text-[#1A1A1A] placeholder:text-gray-500 transition-colors" 
@@ -163,11 +176,15 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
                 <div className="relative flex items-center border-b-2 border-[#C9B8A8]/40 focus-within:border-[#C9B8A8] transition-colors">
                   <span className="text-lg font-black pr-1 text-[#1A1A1A]">$</span>
                   <input 
-                    type="text"
+                    type="number"
+                    step="any"
                     required 
-                    value={formData.costo === 0 ? "0" : formData.costo} 
-                    onChange={(e) => handlePriceInput(e.target.value, handleCostoChange)} 
+                    name="cost-exact-input"
+                    autoComplete="off"
+                    value={formData.costo || ''} 
+                    onChange={(e) => handleCostoChange(parseFloat(e.target.value) || 0)} 
                     className="w-full bg-transparent py-4 focus:outline-none text-lg font-black text-[#1A1A1A]" 
+                    placeholder="0"
                   />
                 </div>
               </div>
@@ -233,8 +250,9 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
                     <p className="text-[9px] font-mono text-[#1A1A1A]/40">REF: {item.sku}</p>
                   </div>
                   <div className="text-right">
+                    <p className="text-[7px] uppercase text-[#1A1A1A]/40 mb-1">Costo: ${item.costo.toLocaleString()}</p>
                     <p className="font-serif italic text-lg text-[#1A1A1A]">${item.ventaEfectivo.toLocaleString()}</p>
-                    <p className="text-[8px] uppercase tracking-[2px] text-[#1A1A1A]/30">{item.cantidad} UNIDS</p>
+                    <p className="text-[8px] uppercase tracking-[2px] text-[#1A1A1A]/30">Venta — {item.cantidad} UNIDS</p>
                   </div>
                 </div>
               ))}

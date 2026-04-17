@@ -663,6 +663,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <label className="text-[10px] uppercase tracking-widest text-gray-500">Costo</label>
                   <input 
                     type="number" 
+                    step="any"
+                    autoComplete="off"
                     className="w-full border-b border-gray-300 py-2 focus:outline-none focus:border-black" 
                     value={editingItem.costo} 
                     onChange={e => {
