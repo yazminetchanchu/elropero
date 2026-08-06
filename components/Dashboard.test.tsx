@@ -4,20 +4,16 @@ import Dashboard from './Dashboard';
 import React from 'react';
 
 // Mock de iconos
-vi.mock('lucide-react', () => ({
-  Edit2: () => <span data-testid="edit-icon">Edit2</span>,
-  Trash2: () => <span data-testid="trash-icon">Trash2</span>,
-  X: () => <span>X</span>,
-  Search: () => <span>Search</span>,
-  TrendingUp: () => <span>TrendingUp</span>,
-  TrendingDown: () => <span>TrendingDown</span>,
-  DollarSign: () => <span>DollarSign</span>,
-  Calendar: () => <span>Calendar</span>,
-  CreditCard: () => <span>CreditCard</span>,
-  Banknote: () => <span>Banknote</span>,
-  ChevronLeft: () => <span>ChevronLeft</span>,
-  ChevronRight: () => <span>ChevronRight</span>
-}));
+vi.mock('lucide-react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('lucide-react')>();
+  return {
+    ...actual,
+    Edit2: () => <span data-testid="edit-icon">Edit2</span>,
+    Trash2: () => <span data-testid="trash-icon">Trash2</span>,
+    Minus: () => <span data-testid="minus-icon">Minus</span>,
+    Plus: () => <span data-testid="plus-icon">Plus</span>,
+  };
+});
 
 // Mock de servicios financieros con retornos consistentes
 vi.mock('../services/finance', () => ({
@@ -38,6 +34,7 @@ describe('Dashboard: Pruebas de Interfaz y Funcionalidad', () => {
     expenses: [],
     giftCards: [],
     closures: [],
+    webSettings: { categoriesOrder: ['Remeras', 'Jeans'] },
     onUpdateItem: vi.fn(),
     onDeleteItem: vi.fn()
   };
@@ -78,5 +75,25 @@ describe('Dashboard: Pruebas de Interfaz y Funcionalidad', () => {
     }
     
     expect(mockProps.onDeleteItem).toHaveBeenCalled();
+  });
+
+  it('Actualización Rápida de Stock: debe restar y sumar unidades al clicar en los botones Minus/Plus', () => {
+    render(<Dashboard {...mockProps} />);
+    
+    // El botón para restar stock (Minus) del primer ítem en tabla (Jeans Azul, id '2', cantidad original 3)
+    const minusIcons = screen.getAllByTestId('minus-icon');
+    const minusBtn = minusIcons[0].closest('button');
+    if (minusBtn) {
+      fireEvent.click(minusBtn);
+      expect(mockProps.onUpdateItem).toHaveBeenCalledWith(expect.objectContaining({ id: '2', cantidad: 2 }));
+    }
+
+    // El botón para sumar stock (Plus) del primer ítem en tabla (Jeans Azul, id '2', cantidad original 3)
+    const plusIcons = screen.getAllByTestId('plus-icon');
+    const plusBtn = plusIcons[0].closest('button');
+    if (plusBtn) {
+      fireEvent.click(plusBtn);
+      expect(mockProps.onUpdateItem).toHaveBeenCalledWith(expect.objectContaining({ id: '2', cantidad: 4 }));
+    }
   });
 });

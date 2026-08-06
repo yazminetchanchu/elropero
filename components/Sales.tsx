@@ -1,6 +1,8 @@
 import React from 'react';
 import { InventoryItem, Sale, GiftCard, SaleItem } from '../types';
 import { Trash2, CreditCard, Banknote } from 'lucide-react';
+import { useModal } from '../contexts/ModalContext';
+
 
 // =======================
 // REGLAS DE NEGOCIO
@@ -18,6 +20,11 @@ interface CartItem {
   precioTarjeta: number;
   precioEfectivo: number;
   descuento: number; // descuento manual %
+  talle?: string;            // variante seleccionada
+  color?: string;            // variante seleccionada
+  productTalles: string[];   // opciones disponibles del producto
+  productColores: string[];  // opciones disponibles del producto
+  stockPorVariante?: Record<string, number>; // snapshot para cálculos offline
 }
 
 interface SalesProps {
@@ -39,6 +46,7 @@ const Sales: React.FC<SalesProps> = ({
   onUpdateSalePago,
   isSyncing = false,
 }) => {
+  const { showAlert, showConfirm } = useModal();
   const [searchTerm, setSearchTerm] = React.useState('');
   const [quantity, setQuantity] = React.useState(1);
   const [showResults, setShowResults] = React.useState(false);
@@ -60,6 +68,9 @@ const Sales: React.FC<SalesProps> = ({
 
   // Destinatario para gift card generada automáticamente en cambio
   const [giftDestinatario, setGiftDestinatario] = React.useState('');
+  const [giftEmail, setGiftEmail] = React.useState('');
+  const [giftMensaje, setGiftMensaje] = React.useState('');
+  const [giftDeParteDe, setGiftDeParteDe] = React.useState('');
 
   // Modal de aviso 30 días
   const [mostrarModalAntiguo, setMostrarModalAntiguo] = React.useState(false);
@@ -83,12 +94,21 @@ const Sales: React.FC<SalesProps> = ({
   };
 
   const getStockDisponible = (prod: InventoryItem) => {
-    // Optimización: Ya tenemos el objeto, no hay que buscarlo en el array gigante
+    // Para el buscador: usa cantidad total del producto
     const inCart = cart
       .filter(ci => ci.id === prod.id)
       .reduce((sum, ci) => sum + ci.cantidad, 0);
-
     return prod.cantidad - inCart;
+  };
+
+  // Stock máximo para un item del carrito considerando su variante seleccionada
+  const getMaxQtyForCartItem = (item: CartItem): number => {
+    if (item.stockPorVariante && item.talle && item.color) {
+      const key = `${item.talle}-${item.color}`;
+      return item.stockPorVariante[key] ?? 0;
+    }
+    const prod = findProduct(item.id);
+    return prod?.cantidad || 0;
   };
 
   const filteredProducts = React.useMemo(() => {
@@ -113,34 +133,56 @@ const Sales: React.FC<SalesProps> = ({
   }, [inventory, searchTerm, cart]);
 
   const addToCart = (product: InventoryItem) => {
-    const disponible = getStockDisponible(product);
-    if (disponible <= 0) return;
+    const hasVariants = (product.talles?.length ?? 0) > 0 || (product.colores?.length ?? 0) > 0;
 
-    const cant = Math.min(quantity, disponible);
-    const index = cart.findIndex(i => i.id === product.id);
+    if (!hasVariants) {
+      // Sin variantes: comportamiento original (merge por producto)
+      const disponible = getStockDisponible(product);
+      if (disponible <= 0) return;
+      const cant = Math.min(quantity, disponible);
+      const precioTarjeta = product.ventaTarjeta;
+      const precioEfectivo = product.ventaEfectivo;
+      const index = cart.findIndex(i => i.id === product.id);
 
-    const precioTarjeta = product.ventaTarjeta;
-    const precioEfectivo = product.ventaEfectivo;
-
-    if (index !== -1) {
-      const copy = [...cart];
-      const stockActual = getStockDisponible(product);
-      const nuevaCantidad = Math.min(copy[index].cantidad + cant, stockActual + copy[index].cantidad);
-      copy[index].cantidad = nuevaCantidad;
-      setCart(copy);
-    } else {
-      setCart([
-        ...cart,
-        {
+      if (index !== -1) {
+        const copy = [...cart];
+        const stockActual = getStockDisponible(product);
+        const nuevaCantidad = Math.min(copy[index].cantidad + cant, stockActual + copy[index].cantidad);
+        copy[index].cantidad = nuevaCantidad;
+        setCart(copy);
+      } else {
+        setCart([...cart, {
           id: product.id,
           descripcion: product.descripcion,
           cantidad: cant,
           costo: product.costo,
           precioTarjeta,
           precioEfectivo,
-          descuento: 0
-        }
-      ]);
+          descuento: 0,
+          productTalles: [],
+          productColores: [],
+        }]);
+      }
+    } else {
+      // Con variantes: nueva fila independiente (talle/color se elige en el carrito)
+      if (product.cantidad <= 0) {
+        showAlert('Sin stock disponible', 'Agotado', 'warning');
+        return;
+      }
+      setCart(prev => [...prev, {
+        id: product.id,
+        descripcion: product.descripcion,
+        cantidad: 1,
+        costo: product.costo,
+        precioTarjeta: product.ventaTarjeta,
+        precioEfectivo: product.ventaEfectivo,
+        descuento: 0,
+        talle: undefined,
+        color: undefined,
+        productTalles: product.talles || [],
+        productColores: product.colores || [],
+        stockPorVariante: product.stockPorVariante,
+      }]);
     }
 
     setSearchTerm('');
@@ -163,15 +205,34 @@ const Sales: React.FC<SalesProps> = ({
     const item = cart[idx];
     if (!item) return;
 
-    const product = findProduct(item.id);
-    const stockTotal = product?.cantidad || 0;
+    const stockTotal = getMaxQtyForCartItem(item);
 
-    // Clamp entre 1 y el stock total
-    const cantidadFinal = Math.min(Math.max(1, Math.floor(cantidad)), stockTotal);
+    // Clamp entre 1 y el stock de la variante (o total si sin variantes)
+    const cantidadFinal = Math.min(Math.max(1, Math.floor(cantidad)), stockTotal || 1);
 
     setCart(prev =>
       prev.map((it, i) => (i === idx ? { ...it, cantidad: cantidadFinal } : it))
     );
+  };
+
+  const updateCartItemTalle = (idx: number, talle: string | undefined) => {
+    setCart(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
+      const newKey = talle && it.color ? `${talle}-${it.color}` : undefined;
+      const newVarStock = newKey && it.stockPorVariante ? (it.stockPorVariante[newKey] ?? 0) : null;
+      const newCantidad = newVarStock !== null ? Math.max(1, Math.min(it.cantidad, newVarStock)) : it.cantidad;
+      return { ...it, talle, cantidad: newCantidad };
+    }));
+  };
+
+  const updateCartItemColor = (idx: number, color: string | undefined) => {
+    setCart(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
+      const newKey = it.talle && color ? `${it.talle}-${color}` : undefined;
+      const newVarStock = newKey && it.stockPorVariante ? (it.stockPorVariante[newKey] ?? 0) : null;
+      const newCantidad = newVarStock !== null ? Math.max(1, Math.min(it.cantidad, newVarStock)) : it.cantidad;
+      return { ...it, color, cantidad: newCantidad };
+    }));
   };
 
   // Valor temporal del input de cantidad (string) para no clampear mientras el usuario tipea
@@ -283,34 +344,56 @@ const devolucionLabel = pagoOriginal
   // =======================
   // CONFIRMAR
   // =======================
-  const confirmSale = () => {
+  const confirmSale = async () => {
     // =======================
     // CAMBIO
     // =======================
     if (modoCambio) {
       if (!ventaOriginal) {
-        alert('No hay venta original asociada al cambio');
+        showAlert('No hay venta original asociada al cambio', 'Atención', 'warning');
+        return;
+      }
+
+      const diasTranscurridos = Math.floor(
+        (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      if (diasTranscurridos > 15) {
+        showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
         return;
       }
 
       if (itemsDevueltos.length === 0) {
-        alert('No hay prendas devueltas');
+        showAlert('No hay prendas devueltas', 'Atención', 'warning');
         return;
       }
 
       const esRetornoCompletoGift = cart.length === 0;
 
       if (esRetornoCompletoGift) {
-        const confirmarGift = window.confirm(
+        const confirmarGift = await showConfirm(
           `No agregaste prendas nuevas.\n` +
           `¿Querés generar una Gift Card por el 100% del valor devuelto ($ ${totalDevuelto.toLocaleString()})?\n` +
-          `Esto devolverá el stock de las prendas seleccionadas al local.`
+          `Esto devolverá el stock de las prendas seleccionadas al local.`,
+          'Generar Gift Card',
+          'info'
         );
         if (!confirmarGift) return;
       }
 
+      // Validar talle/color obligatorio en prendas nuevas del cambio
+      for (const item of cart) {
+        if (item.productTalles.length > 0 && !item.talle) {
+          showAlert(`Seleccioná el talle de: ${item.descripcion}`, 'Talle Requerido', 'warning');
+          return;
+        }
+        if (item.productColores.length > 0 && !item.color) {
+          showAlert(`Seleccioná el color de: ${item.descripcion}`, 'Color Requerido', 'warning');
+          return;
+        }
+      }
+
       if (diferenciaCambio > 0 && pagoEfectivo + pagoTarjeta !== 100) {
-        alert('El pago del cambio debe sumar 100%');
+        showAlert('El pago del cambio debe sumar 100%', 'Pago Incompleto', 'warning');
         return;
       }
 
@@ -331,7 +414,9 @@ const devolucionLabel = pagoOriginal
           costo: i.costo,
           precioEfectivo: i.precioEfectivo,
           precioTarjeta: i.precioTarjeta,
-          descuento: i.descuento
+          descuento: i.descuento,
+          talle: i.talle,
+          color: i.color,
         };
       });
 
@@ -351,7 +436,17 @@ const devolucionLabel = pagoOriginal
         items: [], // Los cambios no usan items, usan itemsDevueltos e itemsNuevos
         giftGeneradaId, // Pasar el ID para que App.tsx cree la gift card
         giftDestinatario: destinatarioGift,
+        giftEmail: giftEmail.trim(),
+        giftMensaje: giftMensaje.trim(),
+        giftDeParteDe: giftDeParteDe.trim()
       };
+
+      if (giftCardSeleccionada && montoGiftUsar > 0) {
+        saleData.giftCardUsada = {
+          codigo: giftCardSeleccionada.codigo,
+          montoUsado: montoGiftUsar
+        };
+      }
 
       onAddSale(saleData);
 
@@ -360,12 +455,15 @@ const devolucionLabel = pagoOriginal
       setItemsDevueltos([]);
       setCantDevueltasInput({});
       setVentaOriginal(null);
-      setModoCambio(false);
       setPagoEfectivo(100);
       setPagoTarjeta(0);
       setGiftCardSeleccionada(null);
       setGiftDestinatario('');
-
+      setGiftEmail('');
+      setGiftMensaje('');
+      setGiftDeParteDe('');
+      setModoCambio(false);
+      setStep('cart');
       return;
     }
 
@@ -374,8 +472,20 @@ const devolucionLabel = pagoOriginal
     // =======================
     if (cart.length === 0) return;
 
+    // Validar talle/color obligatorio en prendas con variantes
+    for (const item of cart) {
+      if (item.productTalles.length > 0 && !item.talle) {
+        showAlert(`Seleccioná el talle de: ${item.descripcion}`, 'Talle Requerido', 'warning');
+        return;
+      }
+      if (item.productColores.length > 0 && !item.color) {
+        showAlert(`Seleccioná el color de: ${item.descripcion}`, 'Color Requerido', 'warning');
+        return;
+      }
+    }
+
     if (pagoEfectivo + pagoTarjeta !== 100) {
-      alert('El pago debe sumar 100%');
+      showAlert('El pago debe sumar 100%', 'Pago Incompleto', 'warning');
       return;
     }
 
@@ -391,7 +501,9 @@ const devolucionLabel = pagoOriginal
         costo: i.costo,
         precioEfectivo: i.precioEfectivo,
         precioTarjeta: i.precioTarjeta,
-        descuento: i.descuento
+        descuento: i.descuento,
+        talle: i.talle,
+        color: i.color,
       };
     });
 
@@ -595,7 +707,7 @@ const devolucionLabel = pagoOriginal
 
           {cart.map((item, idx) => {
             const product = findProduct(item.id);
-            const stockTotal = product?.cantidad || 0;
+            const stockTotal = getMaxQtyForCartItem(item);
 
             return (
               <div
@@ -639,6 +751,70 @@ const devolucionLabel = pagoOriginal
                         </div>
                       );
                     })()}
+
+                    {/* VARIANTES: TALLE Y COLOR */}
+                    {(item.productTalles.length > 0 || item.productColores.length > 0) && (
+                      <div className="flex gap-2 mt-2 flex-wrap items-center">
+                        {item.productTalles.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <label className="text-[9px] uppercase font-bold text-[#1A1A1A]">Talle</label>
+                            <select
+                              value={item.talle || ''}
+                              onChange={e => updateCartItemTalle(idx, e.target.value || undefined)}
+                              className={`text-[10px] border rounded px-1.5 py-0.5 focus:outline-none bg-white cursor-pointer ${
+                                !item.talle
+                                  ? 'border-amber-400 text-amber-700 bg-amber-50'
+                                  : 'border-[#C9B8A8]/60 text-[#1A1A1A]'
+                              }`}
+                            >
+                              <option value="">— Talle —</option>
+                              {item.productTalles.map(t => {
+                                const key = item.color ? `${t}-${item.color}` : undefined;
+                                const vs = key && item.stockPorVariante ? (item.stockPorVariante[key] ?? 0) : null;
+                                return (
+                                  <option key={t} value={t} disabled={vs !== null && vs <= 0}>
+                                    {t}{vs !== null && vs <= 0 ? ' ✕' : ''}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+                        )}
+                        {item.productColores.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <label className="text-[9px] uppercase font-bold text-[#1A1A1A]">Color</label>
+                            <select
+                              value={item.color || ''}
+                              onChange={e => updateCartItemColor(idx, e.target.value || undefined)}
+                              className={`text-[10px] border rounded px-1.5 py-0.5 focus:outline-none bg-white cursor-pointer ${
+                                !item.color
+                                  ? 'border-amber-400 text-amber-700 bg-amber-50'
+                                  : 'border-[#C9B8A8]/60 text-[#1A1A1A]'
+                              }`}
+                            >
+                              <option value="">— Color —</option>
+                              {item.productColores.map(c => {
+                                const key = item.talle ? `${item.talle}-${c}` : undefined;
+                                const vs = key && item.stockPorVariante ? (item.stockPorVariante[key] ?? 0) : null;
+                                return (
+                                  <option key={c} value={c} disabled={vs !== null && vs <= 0}>
+                                    {c}{vs !== null && vs <= 0 ? ' ✕' : ''}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+                        )}
+                        {item.talle && item.color && item.stockPorVariante && (
+                          <span className="text-[9px] text-[#1A1A1A]/50">
+                            Stock: {item.stockPorVariante[`${item.talle}-${item.color}`] ?? 0} u.
+                          </span>
+                        )}
+                        {((item.productTalles.length > 0 && !item.talle) || (item.productColores.length > 0 && !item.color)) && (
+                          <span className="text-[9px] font-bold text-amber-600">⚠ Requerido</span>
+                        )}
+                      </div>
+                    )}
 
                     <div className="flex gap-4 mt-2 items-center">
                       <div className="flex items-center gap-2">
@@ -872,16 +1048,37 @@ const devolucionLabel = pagoOriginal
 
       {/* CAMPO DESTINATARIO GIFT AUTO (cuando diferencia negativa en cambio) */}
       {modoCambio && diferenciaCambio < 0 && (
-        <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-2">
+        <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-3">
           <p className="text-xs font-bold uppercase tracking-widest text-amber-700">
-            🎁 Se generará gift card — Ingresá el nombre del destinatario
+            🎁 Se generará gift card — Detalles del regalo
           </p>
-          <input
-            value={giftDestinatario}
-            onChange={e => setGiftDestinatario(e.target.value)}
-            placeholder="Nombre del destinatario de la gift card"
-            className="w-full border-b-2 border-amber-300 bg-transparent py-2 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              value={giftDestinatario}
+              onChange={e => setGiftDestinatario(e.target.value)}
+              placeholder="Nombre del destinatario (Ej: María)"
+              className="w-full border-b-2 border-amber-300 bg-transparent py-1.5 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
+            />
+            <input
+              value={giftDeParteDe}
+              onChange={e => setGiftDeParteDe(e.target.value)}
+              placeholder="De parte de (Opcional)"
+              className="w-full border-b-2 border-amber-300 bg-transparent py-1.5 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
+            />
+            <input
+              value={giftEmail}
+              onChange={e => setGiftEmail(e.target.value)}
+              type="email"
+              placeholder="Email del destinatario (Opcional)"
+              className="w-full border-b-2 border-amber-300 bg-transparent py-1.5 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
+            />
+            <input
+              value={giftMensaje}
+              onChange={e => setGiftMensaje(e.target.value)}
+              placeholder="Mensaje (Opcional)"
+              className="w-full border-b-2 border-amber-300 bg-transparent py-1.5 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
+            />
+          </div>
         </div>
       )}
 
@@ -957,10 +1154,10 @@ const devolucionLabel = pagoOriginal
   return (
             <div
               key={s.id}
-              className="grid grid-cols-3 items-center border border-[#C9B8A8]/50 rounded-lg
+              className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 items-center border border-[#C9B8A8]/50 rounded-lg
                          p-3.5 text-sm hover:bg-[#C9B8A8]/5 transition-colors bg-white/80 backdrop-blur-sm shadow-sm"
             >
-              <div className="font-mono text-xs text-[#1A1A1A]/70 truncate">
+              <div className="font-mono text-xs text-[#1A1A1A]/70 truncate text-left">
               {s.tipo === 'cambio'
                 ? [
                     ...(s.itemsDevueltos ?? []).map(i => `↩ ${i.sku}`),
@@ -970,7 +1167,7 @@ const devolucionLabel = pagoOriginal
               }
               </div>
 
-              <div className="text-xs text-[#1A1A1A]">
+              <div className="text-xs text-[#1A1A1A] text-left sm:text-center">
                 {new Date(s.fecha).toLocaleString('es-AR', {
                   day: '2-digit',
                   month: '2-digit',
@@ -979,7 +1176,7 @@ const devolucionLabel = pagoOriginal
                 })}
               </div>
 
-              <div className="flex justify-end items-center gap-3">
+              <div className="flex justify-start sm:justify-end items-center gap-3 flex-wrap">
                 <span className="font-medium text-[#1A1A1A]">
   $ {s.total.toLocaleString()}
   {pagoLabel && (
@@ -1006,24 +1203,22 @@ const devolucionLabel = pagoOriginal
 
                 <button
                   onClick={() => {
-                    // Verificar si la venta tiene más de 30 días
                     const diasTranscurridos = Math.floor(
                       (Date.now() - new Date(s.fecha).getTime()) / (1000 * 60 * 60 * 24)
                     );
-                    if (diasTranscurridos > 30) {
-                      setVentaSeleccionadaPendiente(s);
-                      setMostrarModalAntiguo(true);
-                    } else {
-                      setModoCambio(true);
-                      setVentaOriginal(s);
-                      setItemsDevueltos([]);
-                      setCantDevueltasInput({});
-                      setCart([]);
-                      setPagoEfectivo(100);
-                      setPagoTarjeta(0);
-                      setGiftCardSeleccionada(null);
-                      setGiftDestinatario('');
+                    if (diasTranscurridos > 15) {
+                      showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
+                      return;
                     }
+                    setModoCambio(true);
+                    setVentaOriginal(s);
+                    setItemsDevueltos([]);
+                    setCantDevueltasInput({});
+                    setCart([]);
+                    setPagoEfectivo(100);
+                    setPagoTarjeta(0);
+                    setGiftCardSeleccionada(null);
+                    setGiftDestinatario('');
                   }}
                   className="text-xs uppercase underline hover:text-[#C9B8A8] transition-colors text-[#1A1A1A]"
                 >
@@ -1042,16 +1237,16 @@ const devolucionLabel = pagoOriginal
           );
         })}
       </div>
-      {/* MODAL AVISO VENTA > 30 DÍAS */}
+      {/* MODAL AVISO VENTA > 15 DÍAS */}
       {mostrarModalAntiguo && ventaSeleccionadaPendiente && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl border border-amber-200 space-y-5">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl border border-red-200 space-y-5">
             <div className="text-center">
               <div className="text-3xl mb-3">⚠️</div>
-              <h3 className="font-serif text-2xl italic text-[#1A1A1A] mb-2">Venta con más de 30 días</h3>
+              <h3 className="font-serif text-2xl italic text-[#1A1A1A] mb-2">Ya han pasado 15 días</h3>
               <p className="text-sm text-[#1A1A1A]/70">
-                Esta venta fue realizada hace más de 30 días.<br />
-                <strong>La política de cambios estándar no aplica.</strong>
+                Esta venta fue realizada hace más de 15 días.<br />
+                <strong>No se permite realizar cambios.</strong>
               </p>
               <p className="text-xs text-[#1A1A1A]/50 mt-2">
                 Fecha de venta: {new Date(ventaSeleccionadaPendiente.fecha).toLocaleDateString('es-AR')}<br />
@@ -1064,28 +1259,9 @@ const devolucionLabel = pagoOriginal
                   setMostrarModalAntiguo(false);
                   setVentaSeleccionadaPendiente(null);
                 }}
-                className="flex-1 py-3 border border-[#C9B8A8]/50 rounded-xl text-sm text-[#1A1A1A] hover:bg-[#F5F1EB] transition-colors"
+                className="w-full py-3 bg-[#1A1A1A] text-white rounded-xl text-sm font-bold hover:bg-black/80 transition-colors"
               >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  const s = ventaSeleccionadaPendiente;
-                  setModoCambio(true);
-                  setVentaOriginal(s);
-                  setItemsDevueltos([]);
-                  setCantDevueltasInput({});
-                  setCart([]);
-                  setPagoEfectivo(100);
-                  setPagoTarjeta(0);
-                  setGiftCardSeleccionada(null);
-                  setGiftDestinatario('');
-                  setMostrarModalAntiguo(false);
-                  setVentaSeleccionadaPendiente(null);
-                }}
-                className="flex-1 py-3 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 transition-colors"
-              >
-                Permitir cambio igual
+                Cerrar
               </button>
             </div>
           </div>

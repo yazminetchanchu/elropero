@@ -1,0 +1,34 @@
+rules_version = '2';
+
+// Reglas de seguridad para Firebase Storage - El Ropero
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Función para verificar si es un administrador autenticado
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.admin == true || 
+        request.auth.token.email == 'yazminetchanchu@gmail.com'
+      );
+    }
+
+    // Función para validar que un archivo subido sea una imagen y menor a 10 MB
+    function isSafeImageUpload() {
+      return request.resource != null &&
+             request.resource.size < 10 * 1024 * 1024 &&
+             request.resource.contentType.matches('image/.*');
+    }
+
+    match /{allPaths=**} {
+      // Permitir lectura pública para que los clientes vean las imágenes del catálogo en la web
+      allow read: if true;
+      
+      // Permitir creación/actualización solo de imágenes (<10MB) o por parte de un administrador
+      // Esto evita que atacantes suban malware (.exe, .sh, scripts peligrosos) o saturen el almacenamiento
+      allow create, update: if isAdmin() || isSafeImageUpload();
+      
+      // Solo un administrador puede borrar imágenes (nadie externo puede borrar el catálogo)
+      allow delete: if isAdmin();
+    }
+  }
+}

@@ -107,7 +107,7 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
             <p className="text-[10px] tracking-[4px] uppercase font-medium text-[#1A1A1A]">Detalle cronológico de gastos registrados</p>
         </div>
         <div className="bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-xl shadow-lg overflow-hidden">
-          <div className="max-h-[calc(100vh-500px)] overflow-y-auto">
+          <div className="max-h-[calc(100vh-320px)] min-h-[250px] overflow-y-auto">
             {expenses.length > 0 ? (
                 <ul className="divide-y divide-[#C9B8A8]/20">
                     {expenses.slice().reverse().map((exp) => (

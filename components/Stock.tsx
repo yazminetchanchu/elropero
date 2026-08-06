@@ -1,19 +1,21 @@
 import React from 'react';
-import { InventoryItem } from '../types';
+import { InventoryItem, WebSettings } from '../types';
 import { Tag, Sparkles, PackagePlus, CheckCircle2 } from 'lucide-react';
 import { calculatePricesFromCost } from '../services/finance';
 
 interface StockProps {
   onAddItem: (item: Omit<InventoryItem, 'id'>) => void;
   inventory: InventoryItem[];
+  webSettings: WebSettings;
 }
 
-const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
+const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
   const [formData, setFormData] = React.useState({
     descripcion: '',
     proveedor: '',
     cantidad: 1,
-    costo: 0
+    costo: 0,
+    categoria: ''
   });
   const [ventaEfectivo, setVentaEfectivo] = React.useState(0);
   const [ventaTarjeta, setVentaTarjeta] = React.useState(0);
@@ -21,6 +23,7 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
   const [isSaving, setIsSaving] = React.useState(false);
   const [recentlyAdded, setRecentlyAdded] = React.useState<any[]>([]);
   const [showSuccess, setShowSuccess] = React.useState(false);
+  const categorias = webSettings.categoriesOrder || [];
 
   const handlePriceInput = (value: string, callback: (num: number) => void) => {
     // Para campos de venta (efectivo/tarjeta) seguimos usando limpieza de caracteres no numéricos
@@ -78,7 +81,12 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
       ventaEfectivo: ventaEfectivo,
       ventaTarjeta: ventaTarjeta,
       sku: generatedSku,
-      fechaIngreso: new Date().toLocaleDateString('es-AR')
+      categoria: formData.categoria || 'OTROS',
+      fechaIngreso: new Date().toLocaleDateString('es-AR'),
+      talles: [],
+      colores: [],
+      imagenes: [],
+      visible: false // Hidden by default when adding stock
     };
 
     onAddItem(newItem);
@@ -91,7 +99,7 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
     setTimeout(() => setShowSuccess(false), 3000);
 
     // Reset form
-    setFormData({ descripcion: '', proveedor: '', cantidad: 1, costo: 0 });
+    setFormData({ descripcion: '', proveedor: '', cantidad: 1, costo: 0, categoria: '' });
     setVentaEfectivo(0);
     setVentaTarjeta(0);
     setGeneratedSku('');
@@ -144,6 +152,18 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory }) => {
                   className="w-full bg-transparent border-b-2 border-[#C9B8A8]/40 py-4 focus:outline-none focus:border-[#C9B8A8] text-sm font-medium uppercase tracking-wide text-[#1A1A1A] placeholder:text-gray-500 transition-colors" 
                   placeholder="SKY, PALPITANTE, ETC." 
                 />
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-[10px] tracking-[4px] uppercase font-medium text-[#1A1A1A] leading-none">Categoría</label>
+                <select 
+                  required value={formData.categoria}
+                  onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+                  className="w-full bg-transparent border-b-2 border-[#C9B8A8]/40 py-4 focus:outline-none focus:border-[#C9B8A8] text-sm font-medium uppercase tracking-wide text-[#1A1A1A] transition-colors"
+                >
+                  <option value="">SELECCIONAR...</option>
+                  {categorias.map(c => <option key={c} value={c.toUpperCase()}>{c.toUpperCase()}</option>)}
+                </select>
               </div>
 
               <div className="bg-[#F5F1EB]/60 border-2 border-[#C9B8A8]/50 rounded-xl p-6 flex flex-col justify-center h-full shadow-sm">

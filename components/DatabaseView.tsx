@@ -2,6 +2,8 @@ import React from 'react';
 import { InventoryItem, Sale, Expense, GiftCard } from '../types';
 import { CloudUpload, CloudDownload, Key, CheckCircle2, Wifi, WifiOff, Loader2, Database, Download } from 'lucide-react';
 import { database } from '../services/storage';
+import { useModal } from '../contexts/ModalContext';
+
 
 interface DatabaseViewProps {
   inventory: InventoryItem[];
@@ -12,6 +14,7 @@ interface DatabaseViewProps {
 }
 
 const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses, giftCards, onRefreshAllData }) => {
+  const { showAlert, showConfirm } = useModal();
   const [isSyncing, setIsSyncing] = React.useState(false);
   const [syncKey, setSyncKey] = React.useState(database.getShowroomID());
   const [lastSync, setLastSync] = React.useState(database.getLocalBackup().lastSync || "");
@@ -31,18 +34,19 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses,
 
   const handleCloudPush = async () => {
     if (!isOnline) { 
-      alert("Sin conexión a internet."); 
+      showAlert("Sin conexión a internet.", "Sin Conexión", "warning"); 
       return; 
     }
     setIsSyncing(true);
 
     try {
-      await database.persist({ inventory, sales, expenses, giftCards });
+      await database.persistSafe({ inventory, sales, expenses, giftCards }, database.getLocalBackup().lastSync || 0);
       const now = new Date().toLocaleString();
+
       setLastSync(now);
-      alert("Sincronización exitosa. Los datos están seguros en la nube.");
+      showAlert("Sincronización exitosa. Los datos están seguros en la nube.", "Sincronización Completa", "success");
     } catch (e) {
-      alert("Error al sincronizar. Intente nuevamente.");
+      showAlert("Error al sincronizar. Intente nuevamente.", "Error de Sincronización", "error");
     }
 
     setIsSyncing(false);
@@ -50,10 +54,10 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses,
 
   const handleCloudPull = async () => {
     if (!isOnline) { 
-      alert("Sin conexión a internet."); 
+      showAlert("Sin conexión a internet.", "Sin Conexión", "warning"); 
       return; 
     }
-    if (!confirm("Esto reemplazará todos tus datos locales con los del ID: " + syncKey)) return;
+    if (!(await showConfirm("Esto reemplazará todos tus datos locales con los del ID: " + syncKey, "Reemplazar Datos Locales", "warning"))) return;
     setIsSyncing(true);
 
     const remoteData = await database.fetchRemote(syncKey);
@@ -63,9 +67,9 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses,
       setIsKeyDifferent(false);
       onRefreshAllData();
       setLastSync(new Date().toLocaleString());
-      alert("Datos recuperados correctamente.");
+      showAlert("Datos recuperados correctamente.", "Sincronización Exitosa", "success");
     } else {
-      alert("No se encontró una base de datos con ese ID.");
+      showAlert("No se encontró una base de datos con ese ID.", "Base de Datos No Encontrada", "error");
     }
 
     setIsSyncing(false);

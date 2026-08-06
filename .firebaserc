@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "el-ropero-8989a"
+  },
+  "targets": {},
+  "etags": {
+    "el-ropero-8989a": {
+      "extensionInstances": {
+        "enviar-mails": "c0434336b9d497e9d940b12c2d0983d0eed2471118d9f96237815d670a026acd"
+      }
+    }
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSaleBreakdown, isMonth, calcTrend } from './finance';
+import { computeSaleBreakdown, isMonth, calcTrend, calculatePricesFromCost, getItemSnapshot } from './finance';
 import { Sale, InventoryItem, SaleItem } from '../types';
 
 describe('Lógica Financiera Avanzada (finance.ts)', () => {
@@ -98,5 +98,106 @@ describe('Lógica Financiera Avanzada (finance.ts)', () => {
     expect(efectivo).toBe(1500);
     expect(tarjeta).toBe(1500);
     expect(totalCobrado).toBe(3000);
+  });
+
+  it('calcTrend: calcula tendencia correctamente', () => {
+    // de 100 a 150 -> +50%
+    const t1 = calcTrend(150, 100);
+    expect(t1.value).toBe(50);
+    expect(t1.isPositive).toBe(true);
+
+    // de 200 a 100 -> -50%
+    const t2 = calcTrend(100, 200);
+    expect(t2.value).toBe(50);
+    expect(t2.isPositive).toBe(false);
+
+    // de 0 a 100 -> +100%
+    const t3 = calcTrend(100, 0);
+    expect(t3.value).toBe(100);
+    expect(t3.isPositive).toBe(true);
+  });
+
+  it('calculatePricesFromCost: calcula los precios con markup correctamente', () => {
+    const cost = 1000;
+    const { ventaEfectivo, ventaTarjeta } = calculatePricesFromCost(cost);
+    // efectivo: ceil((1000 * 1.68) / 1000) * 1000 = 2000
+    // tarjeta: ceil((2000 * 1.27) / 1000) * 1000 = 3000
+    expect(ventaEfectivo).toBe(2000);
+    expect(ventaTarjeta).toBe(3000);
+  });
+
+  it('getItemSnapshot: maneja correctamente números con comas, puntos y decimales', () => {
+    const itemStrings = {
+      costo: '1.200,50',
+      precioEfectivo: '2.500,75',
+      precioTarjeta: '3.000',
+      descuento: '15,5'
+    };
+    
+    const snapStr = getItemSnapshot(itemStrings);
+    expect(snapStr.costo).toBe(1200.50);
+    expect(snapStr.precioEfectivo).toBe(2500.75);
+    expect(snapStr.precioTarjeta).toBe(3000);
+    expect(snapStr.descuento).toBe(15.5);
+
+    const itemNumbers = {
+      costo: 1200.5,
+      precioEfectivo: 2500.75,
+      precioTarjeta: 3000,
+      descuento: 15.5
+    };
+    const snapNum = getItemSnapshot(itemNumbers);
+    expect(snapNum.costo).toBe(1200.5);
+    expect(snapNum.precioEfectivo).toBe(2500.75);
+    expect(snapNum.precioTarjeta).toBe(3000);
+    expect(snapNum.descuento).toBe(15.5);
+  });
+
+  it('computeSaleBreakdown: aplica correctamente porcentajes de descuento en los totales', () => {
+    const discountedItem: SaleItem = {
+      id: 'p-disc', sku: 'D1', descripcion: 'D', cantidad: 2, costo: 500,
+      precioEfectivo: 1000, precioTarjeta: 1200, descuento: 25 // 25% descuento
+    };
+    
+    const sale: Sale = {
+      id: 's_disc',
+      fecha: '2026-04-12T10:00:00',
+      tipo: 'venta',
+      items: [discountedItem],
+      total: 1900,
+      pago: { efectivo: 100, tarjeta: 0 }
+    };
+    
+    // precioEfectivo con 25% descuento: el sistema perdona hasta 20%, o sea que el descuento efectivo es (25 - 20) = 5%
+    // 1000 * (1 - 0.05) = 950
+    // x2 cantidad = 1900
+    const { efectivo, totalCobrado, ganancia, costoTotal } = computeSaleBreakdown(sale, []);
+    
+    expect(efectivo).toBe(1900);
+    expect(totalCobrado).toBe(1900);
+    expect(costoTotal).toBe(1000); // 500 * 2
+    expect(ganancia).toBe(900); // 1900 - 1000
+  });
+
+  it('computeSaleBreakdown: calcula ganancias correctamente con pagos porcentuales mixtos', () => {
+    const sale: Sale = {
+      id: 's_mix_pct',
+      fecha: '2026-04-12T10:00:00',
+      tipo: 'venta',
+      items: [mockItem1],
+      total: 2100, // No se usa directamente para el breakdown, se recalculan items
+      pago: { efectivo: 50, tarjeta: 50 } // 50% efvo, 50% tjta
+    };
+
+    // pE = 2000, pT = 2200, cant = 1, costo = 1000
+    // efectivo += 2000 * 1 * 0.5 = 1000
+    // tarjeta += 2200 * 1 * 0.5 = 1100
+    // total = 2100, ganancia = 2100 - 1000 = 1100
+    const { efectivo, tarjeta, totalCobrado, ganancia } = computeSaleBreakdown(sale, []);
+    
+    expect(efectivo).toBe(1000);
+    expect(tarjeta).toBe(1100);
+    expect(totalCobrado).toBe(2100);
+    expect(ganancia).toBe(1100);
   });
 });

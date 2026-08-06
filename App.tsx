@@ -1,23 +1,38 @@
 import React from 'react';
+import { sendNotificationEmail, sendSaleConfirmationEmail, sendGiftCardEmail } from './services/emailService';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Sales from './components/Sales';
 import Stock from './components/Stock';
 import Expenses from './components/Expenses';
-import { InventoryItem, Sale, Expense, Section, GiftCard, MonthlyClosure } from './types';
+import { InventoryItem, Sale, Expense, Section, GiftCard, MonthlyClosure, WebSettings } from './types';
 import { database, DatabaseState } from './services/storage';
-import { Store, Lock, Loader2, Monitor, ArrowRightLeft, Smartphone } from 'lucide-react';
+import { DESCUENTO_BASE_TRANSFERENCIA } from './services/exchangePricing';
+import { Store, Lock, Loader2, Monitor, ArrowRightLeft, Smartphone, Globe } from 'lucide-react';
 import GiftCards from './components/GiftCard';
+import WebManager from './components/WebManager';
+import StorefrontPage from './components/StorefrontPage';
+import ResetPasswordPage from './components/auth/ResetPasswordPage';
+import WebOrdersManager from './components/WebOrdersManager';
+import InnovativeLoader from './components/InnovativeLoader';
 import { computeSaleBreakdown, isMonth } from './services/finance';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import NetworkStatus from './components/NetworkStatus';
+import { ModalProvider } from './contexts/ModalContext';
+import { auth } from './services/firebase';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
-const SYSTEM_PASSWORD = "Danisa0302";
 
+// Sistema seguro de autenticación activado
 const App: React.FC = () => {
   const [isEntered, setIsEntered] = React.useState(false);
+  const [adminEmail, setAdminEmail] = React.useState("yazminetchanchu@gmail.com");
   const [password, setPassword] = React.useState("");
-  const [showroomID, setShowroomID] = React.useState(() => database.getShowroomID());
+  const [showroomID, setShowroomID] = React.useState(() => database.getShowroomID() || 'EL-ROPERO-DEFAULT');
   const [authError, setAuthError] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [isInitialLoading, setIsInitialLoading] = React.useState(true);
   const [section, setSection] = React.useState<Section>('admin');
 
   const [inventory, setInventory] = React.useState<InventoryItem[]>([]);
@@ -25,10 +40,31 @@ const App: React.FC = () => {
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [giftCards, setGiftCards] = React.useState<GiftCard[]>([]);
   const [closures, setClosures] = React.useState<MonthlyClosure[]>([]);
+  const [webSettings, setWebSettings] = React.useState<WebSettings>({
+    heroImageUrl: '/assets/hero.png',
+    heroTitle: '',
+    heroSubtitle: 'NUEVO INGRESO',
+    storeName: 'EL ROPERO',
+    contactWhatsapp: '5492346685836',
+    categoriesOrder: [],
+    announcementText: '20% de descuento pagando por transferencia ★',
+    aboutUsText: 'El Ropero es el resultado de un compromiso profundo con la indumentaria y cada detalle. Lo que comenzó como un proyecto personal impulsado por esfuerzo y dedicación, se consolidó hoy como un espacio donde pensamos en cada mujer. Cada paso de nuestro camino está marcado por la gratitud hacia quienes nos eligen.',
+    locationShowroomAddress: 'San Martín 382, Chivilcoy',
+    locationShowroomMapUrl: 'https://www.google.com/maps/search/?api=1&query=San+Martin+382+Chivilcoy+Buenos+Aires',
+    locationPickupAddress: 'Recoleta, CABA',
+    locationPickupMapUrl: 'https://www.google.com/maps/search/?api=1&query=Recoleta+CABA'
+  });
 
   const [isSyncing, setIsSyncing] = React.useState(false);
   const [lastUpdate, setLastUpdate] = React.useState<number>(0);
   const [hasMigrated, setHasMigrated] = React.useState(false);
+  const [selectedCategory, setSelectedCategory] = React.useState<string>('');
+  const [webManagerEditItemId, setWebManagerEditItemId] = React.useState<string | null>(null);
+
+  const handleNavigateToWebManager = React.useCallback((itemId: string) => {
+    setWebManagerEditItemId(itemId);
+    setSection('sitio');
+  }, []);
 
   // =======================
   // APLICAR DATA REMOTA
@@ -46,6 +82,19 @@ const App: React.FC = () => {
     setExpenses(data.expenses || []);
     setGiftCards(data.giftCards || []);
     setClosures(data.closures || []);
+    if (data.webSettings) {
+      setWebSettings({
+        announcementText: '20% de descuento pagando por transferencia ★',
+        aboutUsText: 'El Ropero es el resultado de un compromiso profundo con la indumentaria y cada detalle. Lo que comenzó como un proyecto personal impulsado por esfuerzo y dedicación, se consolidó hoy como un espacio donde pensamos en cada mujer. Cada paso de nuestro camino está marcado por la gratitud hacia quienes nos eligen.',
+        locationShowroomAddress: 'San Martín 382, Chivilcoy',
+        locationShowroomMapUrl: 'https://www.google.com/maps/search/?api=1&query=San+Martin+382+Chivilcoy+Buenos+Aires',
+        locationPickupAddress: 'Recoleta, CABA',
+        locationPickupMapUrl: 'https://www.google.com/maps/search/?api=1&query=Recoleta+CABA',
+        ...data.webSettings,
+        contactWhatsapp: data.webSettings.contactWhatsapp || '5492346685836',
+        categoriesOrder: data.webSettings.categoriesOrder || []
+      });
+    }
     setLastUpdate(data.lastSync || Date.now());
     database.updateLocalOnly(data);
   // Los setters de useState son estables, no necesitan ser dependencias
@@ -60,30 +109,33 @@ const App: React.FC = () => {
     newSales: Sale[],
     newExp: Expense[],
     newGift: GiftCard[] = giftCards,
-    newClosures: MonthlyClosure[] = closures
+    newClosures: MonthlyClosure[] = closures,
+    newWebSettings: WebSettings = webSettings
   ) => {
-    // 1. ACTUALIZACIÓN OPTIMISTA (React State primero)
-    setInventory(newInv);
-    setSales(newSales);
-    setExpenses(newExp);
-    setGiftCards(newGift);
-    setClosures(newClosures);
+    if (!navigator.onLine) {
+      alert('❌ Error: No hay conexión a internet. No se pueden guardar los cambios.');
+      throw new Error('Offline');
+    }
 
     setIsSyncing(true);
     try {
       const confirmed = await database.persistSafe(
-        { inventory: newInv, sales: newSales, expenses: newExp, giftCards: newGift, closures: newClosures },
-        lastUpdate  // timestamp del estado que el cliente cree tener
+        { inventory: newInv, sales: newSales, expenses: newExp, giftCards: newGift, closures: newClosures, webSettings: newWebSettings },
+        lastUpdate
       );
 
-      // 2. SINCRONIZACIÓN DE TIMESTAMPS (Post-confirmación)
+      // 1. ACTUALIZACIÓN (React State post-confirmación)
+      setInventory(newInv);
+      setSales(newSales);
+      setExpenses(newExp);
+      setGiftCards(newGift);
+      setClosures(newClosures);
+      setWebSettings(newWebSettings);
+
       setLastUpdate(confirmed.lastSync ?? Date.now());
-      
-      // Actualizar backup local inmediatamente
       database.updateLocalOnly(confirmed);
 
     } catch (error: any) {
-
       if (error?.type === 'CONFLICT') {
         console.warn('⚠️ Conflicto detectado: el servidor tiene datos más nuevos. Sincronizando...');
         const serverState = error.serverState;
@@ -92,23 +144,11 @@ const App: React.FC = () => {
           '⚠️ Datos actualizados desde otro dispositivo.\n' +
           'Se sincronizó tu dispositivo. Por favor, verificá los últimos cambios y reintentá tu última acción si no aparece.'
         );
-      } else if (!navigator.onLine) {
-        // Offline: ya actualizamos la UI, solo asegurar el backup
-        const payload = { 
-          inventory: newInv, 
-          sales: newSales, 
-          expenses: newExp, 
-          giftCards: newGift, 
-          closures: newClosures,
-          lastSync: Date.now() 
-        };
-        database.updateLocalOnly(payload);
-        setLastUpdate(payload.lastSync);
       } else {
         console.error('❌ Error al guardar cambios:', error);
-        alert('❌ Error al guardar en la nube. Los cambios se mantienen localmente pero verificá tu conexión.');
+        alert('❌ Error general: No se pudo guardar en la base de datos. La operación fue cancelada.');
       }
-
+      throw error; // Lanza el error para evitar continuar
     } finally {
       setIsSyncing(false);
     }
@@ -361,15 +401,48 @@ const App: React.FC = () => {
   }, [applyRemoteData]);
 
   // =======================
-  // LOGIN
+  // LOGIN CON FIREBASE AUTH
   // =======================
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user && !isEntered && window.location.pathname.includes('/admin')) {
+        console.log('✅ Sesión activa detectada en Firebase Auth para:', user.email);
+        const currentID = database.getShowroomID() || 'EL-ROPERO-DEFAULT';
+        try {
+          const remote = await database.fetchRemote(currentID);
+          if (remote) {
+            applyRemoteData(remote);
+            setLastUpdate(remote.lastSync || Date.now());
+          }
+        } catch (error) {
+          console.error('Error al obtener datos remotos con sesión activa:', error);
+        }
+        setIsEntered(true);
+      }
+    });
+    return () => unsubscribe();
+  }, [applyRemoteData, isEntered]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showroomID.trim()) return;
 
     setIsLoading(true);
+    setAuthError(false);
 
-    if (password === SYSTEM_PASSWORD) {
+    try {
+      if (!adminEmail.trim() || !password) {
+        throw new Error('Debe proveer email y contraseña.');
+      }
+      
+      try {
+        await signInWithEmailAndPassword(auth, adminEmail.trim(), password);
+        console.log('✅ Autenticado exitosamente con Firebase Auth:', adminEmail);
+      } catch (fbAuthErr: any) {
+        console.warn('⚠️ Error al autenticar con Firebase Auth:', fbAuthErr?.message);
+        throw fbAuthErr;
+      }
+
       const cleanID = database.setShowroomID(showroomID);
       setShowroomID(cleanID);
 
@@ -380,44 +453,53 @@ const App: React.FC = () => {
         if (remote) {
           console.log('✅ Datos remotos encontrados, aplicando...');
           applyRemoteData(remote);
-        } else {
-          console.log('⚠️ No se encontraron datos remotos, cargando locales...');
-          const local = database.getLocalBackup();
-          console.log('📦 Datos locales:', {
-            inventory: local.inventory?.length || 0,
-            sales: local.sales?.length || 0,
-            expenses: local.expenses?.length || 0,
-            giftCards: local.giftCards?.length || 0,
-            lastSync: local.lastSync
-          });
-          setInventory(local.inventory || []);
-          setSales(local.sales || []);
-          setExpenses(local.expenses || []);
-          setGiftCards(local.giftCards || []);
-          setClosures(local.closures || []);
-          setLastUpdate(local.lastSync || Date.now()); // Evita que el polling sobreescriba inmediatamente
+          setLastUpdate(remote.lastSync || Date.now());
         }
       } catch (error) {
         console.error('❌ Error al obtener datos remotos:', error);
-        // En caso de error, cargar datos locales como fallback
         const local = database.getLocalBackup();
         setInventory(local.inventory || []);
         setSales(local.sales || []);
         setExpenses(local.expenses || []);
         setGiftCards(local.giftCards || []);
         setClosures(local.closures || []);
-        setLastUpdate(local.lastSync || Date.now()); // Evita que el polling sobreescriba inmediatamente
+        setLastUpdate(local.lastSync || Date.now());
         alert('Error al conectar con Firebase. Se cargaron datos locales. Verifica tu conexión.');
       }
 
       setIsEntered(true);
-      setAuthError(false);
-    } else {
+    } catch (error) {
+      console.error('❌ Error al iniciar sesión en el panel de administración:', error);
       setAuthError(true);
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
+
+  // =======================
+  // INITIAL FETCH (PUBLIC)
+  // =======================
+  React.useEffect(() => {
+    const initFetch = async () => {
+      setIsInitialLoading(true);
+      try {
+        const id = database.getShowroomID() || 'EL-ROPERO-DEFAULT';
+        const remote = await database.fetchRemote(id);
+        if (remote) {
+          applyRemoteData(remote);
+        } else {
+          const local = database.getLocalBackup();
+          if (local.inventory?.length > 0) applyRemoteData(local);
+        }
+      } catch (e) {
+        console.error("Initial fetch error:", e);
+      } finally {
+        setIsInitialLoading(false);
+        setIsLoading(false);
+      }
+    };
+    initFetch();
+  }, [applyRemoteData]);
 
   // =======================
   // INVENTORY
@@ -425,36 +507,33 @@ const App: React.FC = () => {
   const handleAddItem = (item: Omit<InventoryItem, 'id'>) => {
     const newItem: InventoryItem = {
       ...item,
-      id: `inv_${Date.now()}`
+      id: `inv_${Date.now()}`,
+      visible: false, // Oculto por defecto hasta ser gestionado en WebManager
+      imagenes: (item as any).imagenes || [],
+      talles: (item as any).talles || [],
+      colores: (item as any).colores || [],
+      medidas: (item as any).medidas || '',
+      categoria: (item as any).categoria || ''
     };
   
-    setInventory(prev => {
-      const next = [...prev, newItem];
-      handleDataChange(next, sales, expenses, giftCards);
-      return next;
-    });
+    const next = [...inventory, newItem];
+    handleDataChange(next, sales, expenses, giftCards).catch(console.error);
   };
 
   const handleUpdateItem = (updatedItem: InventoryItem) => {
-    setInventory(prev => {
-      const next = prev.map(item => item.id === updatedItem.id ? updatedItem : item);
-      handleDataChange(next, sales, expenses, giftCards);
-      return next;
-    });
+    const next = inventory.map(item => item.id === updatedItem.id ? updatedItem : item);
+    handleDataChange(next, sales, expenses, giftCards).catch(console.error);
   };
 
   const handleDeleteItem = (id: string) => {
-    setInventory(prev => {
-      const next = prev.filter(item => item.id !== id);
-      handleDataChange(next, sales, expenses, giftCards);
-      return next;
-    });
+    const next = inventory.filter(item => item.id !== id);
+    handleDataChange(next, sales, expenses, giftCards).catch(console.error);
   };
 
   // =======================
   // SALES + GIFTCARD
   // =======================
-  const handleAddSale = (saleData: Omit<Sale, 'id'>) => {
+  const handleAddSale = async (saleData: Omit<Sale, 'id'>) => {
     let nextGiftCards = [...giftCards];
   
     if (saleData.giftCardUsada) {
@@ -511,6 +590,14 @@ const App: React.FC = () => {
         return;
       }
 
+      const diasTranscurridos = Math.floor(
+        (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      if (diasTranscurridos > 15) {
+        alert('Ya han pasado 15 días desde la compra.');
+        return;
+      }
+
       // Validar que cada prenda devuelta pertenezca a la venta original
       const itemsOriginales = ventaOriginal.items ?? [];
       for (const devuelto of saleData.itemsDevueltos!) {
@@ -554,31 +641,7 @@ const App: React.FC = () => {
     // =======================
     let giftGenerada: GiftCard | undefined;
 
-    if (saleData.tipo === 'cambio' && diferencia < 0) {
-      const montoGift = Math.abs(diferencia);
-      const giftId = saleData.giftGeneradaId || `gift_${Date.now()}`;
-      const destinatario = saleData.giftDestinatario?.trim() || 'Cambio automático';
-
-      giftGenerada = {
-        id: giftId,
-        codigo: `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-        destinatario,
-        montoInicial: montoGift,
-        saldo: montoGift,
-        estado: 'ACTIVA',
-        fechaCreacion: new Date().toISOString()
-      };
-    }
-
-    // =======================
-    // CONSTRUIR VENTA — usar valores de Sales.tsx tal cual
-    // =======================
-    const newSale: Sale = {
-      ...saleData,
-      id: `sale_${Date.now()}`,
-      // Guardar el ID de la gift card generada si existe
-      giftGeneradaId: giftGenerada?.id
-    };
+    // Los emails se enviarán después de persistir correctamente
   
     const nextInv = inventory.map(item => {
 
@@ -590,13 +653,27 @@ const App: React.FC = () => {
         const nuevo = saleData.itemsNuevos?.find(i => i.id === item.id);
     
         let cantidad = item.cantidad;
+        let updatedVariants = item.stockPorVariante ? { ...item.stockPorVariante } : undefined;
     
-        if (devuelto) cantidad += devuelto.cantidad;
-        if (nuevo) cantidad -= nuevo.cantidad;
+        if (devuelto) {
+          cantidad += devuelto.cantidad;
+          if (updatedVariants && devuelto.talle && devuelto.color) {
+            const key = `${devuelto.talle}-${devuelto.color}`;
+            updatedVariants[key] = (updatedVariants[key] || 0) + devuelto.cantidad;
+          }
+        }
+        if (nuevo) {
+          cantidad -= nuevo.cantidad;
+          if (updatedVariants && nuevo.talle && nuevo.color) {
+            const key = `${nuevo.talle}-${nuevo.color}`;
+            updatedVariants[key] = Math.max(0, (updatedVariants[key] || 0) - nuevo.cantidad);
+          }
+        }
     
         return {
           ...item,
-          cantidad: Math.max(0, cantidad)
+          cantidad: Math.max(0, cantidad),
+          ...(updatedVariants !== undefined ? { stockPorVariante: updatedVariants } : {}),
         };
       }
     
@@ -606,27 +683,57 @@ const App: React.FC = () => {
       const sold = saleData.items?.find(si => si.id === item.id);
       
       if (!sold) return item;
+
+      let updatedVariants = item.stockPorVariante ? { ...item.stockPorVariante } : undefined;
+      if (updatedVariants && sold.talle && sold.color) {
+        const key = `${sold.talle}-${sold.color}`;
+        updatedVariants[key] = Math.max(0, (updatedVariants[key] || 0) - sold.cantidad);
+      }
+
       return {
         ...item,
-        cantidad: Math.max(0, item.cantidad - sold.cantidad)
-      };      
+        cantidad: Math.max(0, item.cantidad - sold.cantidad),
+        ...(updatedVariants !== undefined ? { stockPorVariante: updatedVariants } : {}),
+      };
     });
     
-    const nextSales = [...sales, newSale];
+    const nextSales = [...sales, saleData];
     const finalGiftCards = giftGenerada ? [...nextGiftCards, giftGenerada] : nextGiftCards;
 
-    handleDataChange(nextInv, nextSales, expenses, finalGiftCards);
+    try {
+      await handleDataChange(nextInv, nextSales, expenses, finalGiftCards);
+      
+      // Enviar emails SOLO si se guardó exitosamente
+      if (giftGenerada && saleData.giftEmail && saleData.giftEmail.trim() !== '') {
+        sendGiftCardEmail(
+          saleData.giftEmail.trim(),
+          giftGenerada.destinatario,
+          saleData.giftDeParteDe || 'Administración',
+          giftGenerada.montoInicial,
+          giftGenerada.codigo,
+          saleData.giftMensaje || ''
+        ).catch(err => console.error("Error sending auto-generated gift card email:", err));
+      }
+
+      if (saleData.tipo === 'venta') {
+        sendSaleConfirmationEmail(saleData, 'Showroom / Local', undefined, 'local');
+      } else if (saleData.tipo !== 'gift') {
+        sendNotificationEmail(
+          saleData.tipo === 'cambio' ? 'Nuevo Cambio en Local' : 'Nueva Venta en Local',
+          `Se ha registrado un(a) ${saleData.tipo} en el local.\nID: ${saleData.id}\nTotal: $${saleData.total}\n${saleData.tipo === 'cambio' ? `Diferencia: $${saleData.diferencia || 0}` : ''}`
+        );
+      }
+    } catch (err) {
+      console.error("Venta cancelada o fallida, no se enviaron correos.");
+    }
   };
 
   // =======================
   // ✏️ UPDATE SALE PAGO/MEDIO
   // =======================
   const handleUpdateSalePago = (saleId: string, pago: { efectivo: number; tarjeta: number }) => {
-    setSales(prev => {
-      const next = prev.map(s => s.id === saleId ? { ...s, pago } : s);
-      handleDataChange(inventory, next, expenses, giftCards);
-      return next;
-    });
+    const next = sales.map(s => s.id === saleId ? { ...s, pago } : s);
+    handleDataChange(inventory, next, expenses, giftCards).catch(console.error);
   };
 
   // =======================
@@ -646,9 +753,15 @@ const handleDeleteSale = (saleId: string) => {
         sale.itemsNuevos.forEach(itemNuevo => {
           const idx = nextInv.findIndex(i => i.id === itemNuevo.id);
           if (idx !== -1) {
+            let uv = nextInv[idx].stockPorVariante ? { ...nextInv[idx].stockPorVariante } : undefined;
+            if (uv && itemNuevo.talle && itemNuevo.color) {
+              const key = `${itemNuevo.talle}-${itemNuevo.color}`;
+              uv[key] = (uv[key] || 0) + itemNuevo.cantidad;
+            }
             nextInv[idx] = {
               ...nextInv[idx],
-              cantidad: nextInv[idx].cantidad + itemNuevo.cantidad
+              cantidad: nextInv[idx].cantidad + itemNuevo.cantidad,
+              ...(uv !== undefined ? { stockPorVariante: uv } : {}),
             };
           }
         });
@@ -657,9 +770,15 @@ const handleDeleteSale = (saleId: string) => {
         sale.itemsDevueltos.forEach(itemDevuelto => {
           const idx = nextInv.findIndex(i => i.id === itemDevuelto.id);
           if (idx !== -1) {
+            let uv = nextInv[idx].stockPorVariante ? { ...nextInv[idx].stockPorVariante } : undefined;
+            if (uv && itemDevuelto.talle && itemDevuelto.color) {
+              const key = `${itemDevuelto.talle}-${itemDevuelto.color}`;
+              uv[key] = Math.max(0, (uv[key] || 0) - itemDevuelto.cantidad);
+            }
             nextInv[idx] = {
               ...nextInv[idx],
-              cantidad: Math.max(0, nextInv[idx].cantidad - itemDevuelto.cantidad)
+              cantidad: Math.max(0, nextInv[idx].cantidad - itemDevuelto.cantidad),
+              ...(uv !== undefined ? { stockPorVariante: uv } : {}),
             };
           }
         });
@@ -670,9 +789,15 @@ const handleDeleteSale = (saleId: string) => {
         sale.items.forEach(si => {
           const idx = nextInv.findIndex(i => i.id === si.id);
           if (idx !== -1) {
+            let uv = nextInv[idx].stockPorVariante ? { ...nextInv[idx].stockPorVariante } : undefined;
+            if (uv && si.talle && si.color) {
+              const key = `${si.talle}-${si.color}`;
+              uv[key] = (uv[key] || 0) + si.cantidad;
+            }
             nextInv[idx] = {
               ...nextInv[idx],
-              cantidad: nextInv[idx].cantidad + si.cantidad
+              cantidad: nextInv[idx].cantidad + si.cantidad,
+              ...(uv !== undefined ? { stockPorVariante: uv } : {}),
             };
           }
         });
@@ -703,15 +828,11 @@ const handleDeleteSale = (saleId: string) => {
     }
 
     // 4. Si se generó una gift card en este cambio, eliminarla
-    if (sale.giftGeneradaId) {
-      nextGiftCards = nextGiftCards.filter(gc => gc.id !== sale.giftGeneradaId);
-    }
-
     // 4. Eliminar la venta
     const nextSales = prevSales.filter(s => s.id !== saleId);
 
     // 5. Guardar todo
-    handleDataChange(nextInv, nextSales, expenses, nextGiftCards);
+    handleDataChange(nextInv, nextSales, expenses, nextGiftCards).catch(console.error);
     return nextSales;
   });
 };
@@ -721,25 +842,43 @@ const handleDeleteSale = (saleId: string) => {
   // =======================
   const handleAddExpense = (expenseData: Omit<Expense, 'id'>) => {
     const newExp = { ...expenseData, id: `exp_${Date.now()}` };
-    handleDataChange(inventory, sales, [...expenses, newExp], giftCards);
+    handleDataChange(inventory, sales, [...expenses, newExp], giftCards).catch(console.error);
   };
 
-  const handleUpdateExpense = (updated: Expense) => {
-    const nextExp = expenses.map(e => e.id === updated.id ? updated : e);
-    handleDataChange(inventory, sales, nextExp, giftCards);
+  const handleUpdateExpense = (updatedExpense: Expense) => {
+    const nextExp = expenses.map(e => e.id === updatedExpense.id ? updatedExpense : e);
+    handleDataChange(inventory, sales, nextExp, giftCards).catch(console.error);
   };
 
   const handleDeleteExpense = (id: string) => {
     const nextExp = expenses.filter(e => e.id !== id);
-    handleDataChange(inventory, sales, nextExp, giftCards);
+    handleDataChange(inventory, sales, nextExp, giftCards).catch(console.error);
   };
 
  // =======================
 // GIFT CARDS
 // =======================
-const handleAddGiftCard = (data: { destinatario: string; montoInicial: number; codigo?: string; pago?: { efectivo: number; tarjeta: number } }) => {
+const generateUniqueGiftCardCode = (existing: GiftCard[]): string => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const existingCodes = new Set(existing.map(gc => gc.codigo.toUpperCase()));
+  let attempts = 0;
+  while (attempts < 1000) {
+    let randomPart = '';
+    for (let i = 0; i < 5; i++) {
+      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const fullCode = `GIFT-${randomPart}`;
+    if (!existingCodes.has(fullCode)) {
+      return fullCode;
+    }
+    attempts++;
+  }
+  return `GIFT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+};
+
+const handleAddGiftCard = async (data: { destinatario: string; montoInicial: number; codigo?: string; pago?: { efectivo: number; tarjeta: number }; email?: string; mensaje?: string; deParteDe?: string; emailComprador?: string }) => {
   // 1. Crear el objeto de la Gift Card
-  const nuevoCodigo = data.codigo || `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  const nuevoCodigo = data.codigo || generateUniqueGiftCardCode(giftCards);
   const newGift: GiftCard = {
     id: `gift_${Date.now()}`,
     codigo: nuevoCodigo,
@@ -750,14 +889,23 @@ const handleAddGiftCard = (data: { destinatario: string; montoInicial: number; c
     fechaCreacion: new Date().toISOString(),
   };
 
+  // Los emails se enviarán luego de persistir
+
+  const pagoData = data.pago || { efectivo: 100, tarjeta: 0 };
+  const portionEfectivo = pagoData.efectivo / 100;
+  const portionTarjeta = pagoData.tarjeta / 100;
+  const rawTarjeta = (data.montoInicial * portionTarjeta) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100);
+  const rawEfectivo = data.montoInicial * portionEfectivo;
+  const finalTotal = Math.round(rawEfectivo + rawTarjeta);
+
   // 2. Crear la Venta para que aparezca en CAJA y GANANCIAS
   const newSale: Sale = {
     id: `sale_gift_${Date.now()}`,
     tipo: 'gift',
     fecha: new Date().toISOString(),
-    total: data.montoInicial,
+    total: finalTotal,
     // Se usa el mix de pago especificado o efectivo por defecto
-    pago: data.pago || { efectivo: 100, tarjeta: 0 },
+    pago: pagoData,
     items: [{
       id: nuevoCodigo,
       sku: nuevoCodigo,
@@ -765,18 +913,44 @@ const handleAddGiftCard = (data: { destinatario: string; montoInicial: number; c
       cantidad: 1,
       costo: 0,
       precioEfectivo: data.montoInicial,
-      precioTarjeta: data.montoInicial,
+      precioTarjeta: Math.round(data.montoInicial / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)),
       descuento: 0
     }],
   };
 
   // 3. GUARDAR TODO JUNTO (Si no se hace así, una lista pisa a la otra)
-  handleDataChange(
-    inventory,
-    [...sales, newSale], // Añadimos la venta a la caja
-    expenses,
-    [...giftCards, newGift] // Añadimos la gift al listado
-  );
+  try {
+    await handleDataChange(
+      inventory,
+      [...sales, newSale], // Añadimos la venta a la caja
+      expenses,
+      [...giftCards, newGift] // Añadimos la gift al listado
+    );
+
+    // 4. Enviar email al destinatario
+    if (data.email && data.email.trim() !== '') {
+      sendGiftCardEmail(
+        data.email.trim(),
+        data.destinatario,
+        data.deParteDe || 'Administración',
+        data.montoInicial,
+        nuevoCodigo,
+        data.mensaje || ''
+      ).catch(err => console.error("Error sending gift card email:", err));
+    }
+
+    // 5. Enviar email al comprador si lo dejó asentado
+    if (data.emailComprador && data.emailComprador.trim() !== '') {
+      sendSaleConfirmationEmail(
+        newSale as any,
+        data.deParteDe || 'Cliente',
+        data.emailComprador.trim(),
+        'local'
+      ).catch(err => console.error("Error sending gift card purchase receipt:", err));
+    }
+  } catch (err) {
+    console.error("Compra de Gift Card fallida, no se enviaron correos.");
+  }
 };
 
 const handleUpdateGiftCard = (updated: GiftCard) => {
@@ -787,13 +961,20 @@ const handleUpdateGiftCard = (updated: GiftCard) => {
   const nextSales = sales.map(s => {
     const esVentaDeEstaGift = s.items?.some(item => item.sku === updated.codigo);
     if (esVentaDeEstaGift) {
+      const pagoData = (s.pago && (s.pago.efectivo + s.pago.tarjeta === 100)) ? s.pago : { efectivo: 100, tarjeta: 0 };
+      const portionEfectivo = pagoData.efectivo / 100;
+      const portionTarjeta = pagoData.tarjeta / 100;
+      const rawTarjeta = (updated.montoInicial * portionTarjeta) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100);
+      const rawEfectivo = updated.montoInicial * portionEfectivo;
+      const finalTotal = Math.round(rawEfectivo + rawTarjeta);
+
       return {
         ...s,
-        total: updated.montoInicial,
-        pago: { efectivo: updated.montoInicial, tarjeta: 0 }, // Actualiza el ingreso en caja
+        total: finalTotal,
+        pago: pagoData, // Conservar el método de pago original o resetear si está corrupto
         items: (s.items ?? []).map(item =>
           item.sku === updated.codigo
-            ? { ...item, precioEfectivo: updated.montoInicial, precioTarjeta: updated.montoInicial, descripcion: `Gift Card: ${updated.destinatario}` }
+            ? { ...item, precioEfectivo: updated.montoInicial, precioTarjeta: Math.round(updated.montoInicial / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)), descripcion: `Gift Card: ${updated.destinatario}` }
             : item
         )
       };
@@ -801,7 +982,7 @@ const handleUpdateGiftCard = (updated: GiftCard) => {
     return s;
   });
 
-  handleDataChange(inventory, nextSales, expenses, nextGift);
+  handleDataChange(inventory, nextSales, expenses, nextGift).catch(console.error);
 };
 
 const handleCancelGiftCard = (id: string) => {
@@ -818,120 +999,180 @@ const handleCancelGiftCard = (id: string) => {
   const nextGift = giftCards.filter(gc => gc.id !== id);
 
   // Al guardar, la venta desaparece de Caja, Ventas y Ganancias
-  handleDataChange(inventory, nextSales, expenses, nextGift);
+  handleDataChange(inventory, nextSales, expenses, nextGift).catch(console.error);
 };
-
-  // =======================
-  // LOGIN UI
-  // =======================
-  if (!isEntered) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F5F1EB] p-6">
-        <div className="max-w-md w-full space-y-12 animate-in fade-in zoom-in duration-500">
-
-          <h1 className="font-serif text-5xl md:text-6xl tracking-[18px] uppercase text-[#1A1A1A] italic text-center">
-            EL ROPERO
-          </h1>
-
-          <form onSubmit={handleLogin} className="bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-2xl p-10 space-y-8 shadow-xl">
-            <div className="space-y-6 text-left">
-
-              <div>
-                <label className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[2px] text-[#1A1A1A]">
-                  <Store size={12} /> ID
-                </label>
-                <input
-                  type="text"
-                  value={showroomID}
-                  onChange={(e) => setShowroomID(e.target.value.toUpperCase())}
-                  className="w-full bg-transparent border-b-2 border-[#C9B8A8]/40 py-3 text-sm focus:outline-none focus:border-[#C9B8A8] tracking-[2px] font-medium uppercase text-[#1A1A1A] placeholder:text-gray-500 transition-colors"
-                  placeholder="SHOWROOM-ID"
-                />
-              </div>
-
-              <div>
-                <label className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[2px] text-[#1A1A1A]">
-                  <Lock size={12} /> Contraseña
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setAuthError(false); }}
-                  className={`w-full bg-transparent border-b-2 py-3 text-sm focus:outline-none tracking-[4px] transition-colors ${
-                    authError 
-                      ? 'border-red-400 text-red-600 focus:border-red-500' 
-                      : 'border-[#C9B8A8]/40 text-[#1A1A1A] focus:border-[#C9B8A8]'
-                  }`}
-                />
-              </div>
-
-            </div>
-
-            <button
-              type="submit"
-              className="w-full bg-[#C9B8A8] text-[#1A1A1A] py-6 text-[11px] tracking-[4px] uppercase font-medium hover:bg-[#B8A696] transition-all flex items-center justify-center gap-4 rounded-lg shadow-md hover:shadow-lg disabled:opacity-60"
-              disabled={isLoading}
-            >
-              {isLoading ? <Loader2 className="animate-spin" size={16} /> : "INGRESAR"}
-            </button>
-
-            {authError && (
-              <p className="text-[10px] text-red-600 text-center uppercase tracking-widest font-semibold">
-                Contraseña incorrecta
-              </p>
-            )}
-          </form>
-
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div className="flex items-center gap-8">
-              <Monitor size={28} className="text-black/40" />
-              <ArrowRightLeft size={18} className="animate-pulse text-black/40" />
-              <Smartphone size={28} className="text-black/40" />
-            </div>
-            <p className="text-[9px] uppercase tracking-[4px] font-medium text-black/60 max-w-[320px]">
-              Usa el mismo ID en tu celular y computadora para que la información se sincronice.
-            </p>
-          </div>
-
-        </div>
-      </div>
-    );
-  }
 
   // =======================
   // APP
   // =======================
+  if (isInitialLoading) {
+    return <InnovativeLoader storeName={webSettings.storeName || 'EL ROPERO'} />;
+  }
+
   return (
-    <Layout 
-      currentSection={section} 
-      setSection={setSection} 
-      onLogout={() => setIsEntered(false)} 
-      isSyncing={isSyncing}
-      onForceSync={forceSync}
-    >
-      {section === 'admin' && (
-        <Dashboard 
-          inventory={inventory} 
-          sales={sales} 
-          expenses={expenses} 
-          giftCards={giftCards}
-          closures={closures}
-          onUpdateItem={handleUpdateItem} 
-          onDeleteItem={handleDeleteItem} 
-        />
-      )}
-      {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} onUpdateSalePago={handleUpdateSalePago} giftCards={giftCards} isSyncing={isSyncing} />}
-      {section === 'stock' && <Stock onAddItem={handleAddItem} inventory={inventory} />}
-      {section === 'gastos' && <Expenses expenses={expenses} onAddExpense={handleAddExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />}
-      {section === 'giftcards' && (
-        <GiftCards
-          giftCards={giftCards}
-          onAddGiftCard={handleAddGiftCard}
-          onUpdateGiftCard={handleUpdateGiftCard}
-          onCancelGiftCard={handleCancelGiftCard}
-        />
-      )}
-</Layout> 
+    <AuthProvider>
+      <ModalProvider>
+        <Router>
+          <NetworkStatus />
+          <Routes>
+            <Route path="/" element={<StorefrontPage inventoryProp={inventory} settingsProp={webSettings} />} />
+            <Route path="/reset-password" element={<ResetPasswordPage webSettings={webSettings} />} />
+
+          
+          <Route path="/admin" element={
+            !isEntered ? (
+              <div className="min-h-screen w-full flex items-center justify-center bg-white p-6 selection:bg-black selection:text-white font-['Inter'] overflow-y-auto py-12">
+                <div className="max-w-[400px] w-full my-auto space-y-12 sm:space-y-16 animate-in fade-in duration-700">
+                  <div className="text-center space-y-2 w-full px-2">
+                    <p className="text-[10px] tracking-[6px] uppercase opacity-40 font-light">Acceso Reservado</p>
+                    <h1 className="text-[clamp(15px,4.5vw,24px)] tracking-[clamp(4px,2.5vw,18px)] uppercase font-medium leading-none text-black whitespace-nowrap overflow-hidden text-ellipsis">
+                      {webSettings.storeName || 'EL ROPERO'}
+                    </h1>
+                  </div>
+
+                  <form onSubmit={handleLogin} className="space-y-10">
+                    <div className="space-y-10">
+                      <div className="relative group">
+                        <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                          Identificador
+                        </label>
+                        <input
+                          type="text"
+                          value={showroomID}
+                          onChange={(e) => setShowroomID(e.target.value.toUpperCase())}
+                          className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[3px] font-light uppercase text-black placeholder:text-black/10 transition-all"
+                          placeholder="SHOWROOM-ID"
+                        />
+                      </div>
+
+                      <div className="relative group">
+                        <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                          Correo de Administrador
+                        </label>
+                        <input
+                          type="email"
+                          value={adminEmail}
+                          onChange={(e) => { setAdminEmail(e.target.value); setAuthError(false); }}
+                          className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[1px] font-light text-black placeholder:text-black/10 transition-all"
+                          placeholder="admin@elropero.com"
+                        />
+                      </div>
+
+                      <div className="relative group">
+                        <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                          Contraseña
+                        </label>
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(e) => { setPassword(e.target.value); setAuthError(false); }}
+                          className={`w-full bg-transparent border-b py-3 text-[13px] focus:outline-none tracking-[6px] transition-all ${
+                            authError 
+                              ? 'border-red-400 text-red-600 focus:border-red-500' 
+                              : 'border-black/10 text-black focus:border-black'
+                          }`}
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 pt-4">
+                      <button
+                        type="submit"
+                        className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-4 disabled:opacity-30"
+                        disabled={isLoading}
+                      >
+                        {isLoading ? <Loader2 className="animate-spin" size={14} strokeWidth={1.5} /> : "Ingresar"}
+                      </button>
+
+                      {authError && (
+                        <p className="text-[9px] text-red-600 text-center uppercase tracking-[3px] font-medium animate-pulse">
+                          Credenciales incorrectas
+                        </p>
+                      )}
+                    </div>
+                  </form>
+
+                  <div className="pt-10 border-t border-black/5 flex flex-col items-center gap-6">
+                    <div className="flex items-center gap-10 opacity-20">
+                      <Monitor size={20} strokeWidth={1} />
+                      <div className="w-10 h-[1px] bg-black/20" />
+                      <Smartphone size={20} strokeWidth={1} />
+                    </div>
+                    <p className="text-[9px] uppercase tracking-[3px] font-light text-black/40 leading-relaxed text-center max-w-[280px]">
+                      Sincronización en tiempo real activa entre dispositivos mediante ID.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <Layout 
+                currentSection={section} 
+                setSection={setSection} 
+                onLogout={async () => {
+                  try {
+                    await signOut(auth);
+                  } catch (err) {
+                    console.error('Error al cerrar sesión de Firebase Auth:', err);
+                  }
+                  setIsEntered(false);
+                }} 
+                isSyncing={isSyncing}
+                onForceSync={forceSync}
+                webSettings={webSettings}
+                selectedCategory={selectedCategory}
+                setSelectedCategory={setSelectedCategory}
+              >
+                {section === 'admin' && (
+                  <Dashboard 
+                    inventory={inventory} 
+                    sales={sales} 
+                    expenses={expenses} 
+                    giftCards={giftCards}
+                    closures={closures}
+                    webSettings={webSettings}
+                    selectedCategory={selectedCategory}
+                    onSelectCategory={(cat) => setSelectedCategory(cat)}
+                    onUpdateItem={handleUpdateItem} 
+                    onDeleteItem={handleDeleteItem} 
+                    onNavigateToWebManager={handleNavigateToWebManager}
+                  />
+                )}
+                {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} onUpdateSalePago={handleUpdateSalePago} giftCards={giftCards} isSyncing={isSyncing} />}
+                {section === 'stock' && <Stock onAddItem={handleAddItem} inventory={inventory} webSettings={webSettings} />}
+                {section === 'gastos' && <Expenses expenses={expenses} onAddExpense={handleAddExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />}
+                {section === 'giftcards' && (
+                  <GiftCards
+                    giftCards={giftCards}
+                    onAddGiftCard={handleAddGiftCard}
+                    onUpdateGiftCard={handleUpdateGiftCard}
+                    onCancelGiftCard={handleCancelGiftCard}
+                  />
+                )}
+                {section === 'sitio' && (
+                  <WebManager 
+                    inventory={inventory} 
+                    webSettings={webSettings}
+                    selectedCategory={selectedCategory}
+                    onSelectCategory={(cat) => setSelectedCategory(cat)}
+                    onUpdateInventory={(next) => handleDataChange(next, sales, expenses, giftCards)}
+                    onUpdateSettings={(next) => handleDataChange(inventory, sales, expenses, giftCards, closures, next)}
+                    initialEditingItemId={webManagerEditItemId}
+                    onClearEditItem={() => setWebManagerEditItemId(null)}
+                  />
+                )}
+                {section === 'pedidos' && (
+                  <WebOrdersManager onOrderFulfilled={forceSync} />
+                )}
+              </Layout>
+            )
+          } />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
+      </ModalProvider>
+    </AuthProvider>
   );
 };
 

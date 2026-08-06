@@ -8,6 +8,7 @@ export interface DatabaseState {
   expenses: Expense[];
   giftCards: GiftCard[];
   closures?: MonthlyClosure[];
+  webSettings?: import('../types').WebSettings;
   lastSync?: number
 }
 
@@ -19,9 +20,13 @@ const SHOWROOM_KEY = "ropero_showroom_id_v3_2026";
 // SHOWROOM ID
 // =======================
 const getShowroomID = () => {
+  if (import.meta.env.DEV) {
+    return 'EL-ROPERO-TEST';
+  }
+
   let id = localStorage.getItem(SHOWROOM_KEY);
   if (!id) {
-    id = crypto.randomUUID();
+    id = 'ROPERO';
     localStorage.setItem(SHOWROOM_KEY, id);
   }
   return id;
@@ -88,6 +93,20 @@ const subscribe = (onData: (data: DatabaseState) => void) => {
       expenses: [],
       giftCards: [],
       closures: [],
+      webSettings: {
+        heroImageUrl: '/assets/hero.png',
+        heroTitle: '',
+        heroSubtitle: 'NUEVO INGRESO',
+        storeName: 'EL ROPERO',
+        contactWhatsapp: '5492346685836',
+        categoriesOrder: [],
+        announcementText: '20% de descuento pagando por transferencia ★',
+        aboutUsText: 'El Ropero es el resultado de un compromiso profundo con la indumentaria y cada detalle. Lo que comenzó como un proyecto personal impulsado por esfuerzo y dedicación, se consolidó hoy como un espacio donde pensamos en cada mujer. Cada paso de nuestro camino está marcado por la gratitud hacia quienes nos eligen.',
+        locationShowroomAddress: 'San Martín 382, Chivilcoy',
+        locationShowroomMapUrl: 'https://www.google.com/maps/search/?api=1&query=San+Martin+382+Chivilcoy+Buenos+Aires',
+        locationPickupAddress: 'Recoleta, CABA',
+        locationPickupMapUrl: 'https://www.google.com/maps/search/?api=1&query=Recoleta+CABA'
+      },
       lastSync: Date.now()
     };
 

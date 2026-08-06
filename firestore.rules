@@ -1,0 +1,97 @@
+rules_version = '2';
+
+// Reglas de seguridad para Cloud Firestore - El Ropero
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Identificación estricta del Admin único
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true || 
+        request.auth.token.email == 'yazminetchanchu@gmail.com'
+      );
+    }
+
+    // Reglas para el documento principal del showroom e inventario
+    match /showrooms/{showroomId} {
+      // Lectura pública necesaria para el catálogo web y sincronización del dashboard
+      allow read: if true;
+      
+      // Prohibir creación y borrado desde clientes no autorizados
+      allow create, delete: if isAdmin();
+      
+      // Admins pueden actualizar cualquier campo.
+      // Usuarios no-admin (clientes en checkout) SOLO pueden modificar inventory y lastSync
+      // para la reserva temporal de stock. sales, expenses y giftCards son exclusivos del admin.
+      allow update: if isAdmin() || (
+        // El cliente nunca debe decrementar directamente el saldo de una Gift Card o escribir una venta
+        request.resource.data.sales     == resource.data.sales &&
+        request.resource.data.expenses  == resource.data.expenses &&
+        (resource.data.giftCards == null || request.resource.data.giftCards == resource.data.giftCards) &&
+        // Solo se permiten actualizaciones de inventory con un lastSync válido
+        request.resource.data.lastSync is number &&
+        request.resource.data.inventory is list
+      );
+
+      // Subcolección de pedidos web directos (/webOrders)
+      match /webOrders/{orderId} {
+        allow read: if true;
+        // Solo Admin o a través de Cloud Functions para forzar validación y recálculo
+        allow write: if isAdmin();
+      }
+
+      // Subcolección de clientes y sus pedidos (/customers/{uid}/orders/{orderId})
+      match /customers/{uid} {
+        // Los clientes pueden leerse a sí mismos, pero no modificar órdenes libremente
+        allow read: if true;
+        allow write: if isAdmin();
+
+        match /orders/{orderId} {
+          allow read: if true;
+          // Solo Admin (Cloud Functions) puede escribir la orden final validada
+          allow write: if isAdmin();
+        }
+      }
+    }
+
+    // Colecciones independientes explícitas para Gift Cards y Ventas
+    match /gift_cards/{cardId} {
+      allow read: if true;
+      // Solo Admin (Cloud Functions) puede escribir para forzar validación
+      allow write: if isAdmin();
+    }
+
+    match /sales/{saleId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Productos: Lectura pública para la tienda online, escritura solo Admin
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // AUDIT LOGS: Nadie (ni siquiera el Admin) puede modificar o borrar logs creados
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false; // Inmutabilidad absoluta
+    }
+
+    // Bloquear acceso por defecto a cualquier otra colección o ruta no explícita
+    // Acceso general para el Admin
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

@@ -1,45 +1,69 @@
 import { Sale, InventoryItem, SaleItem } from '../types';
 
 export const calculatePricesFromCost = (cost: number) => {
-  const sugeridoEfe = Math.ceil((cost * 1.68) / 1000) * 1000;
-  const sugeridoTar = Math.ceil((sugeridoEfe * 1.27) / 1000) * 1000;
-  return { ventaEfectivo: sugeridoEfe, ventaTarjeta: sugeridoTar };
+  // Calculate price based on cost with realistic markup percentages.
+  // The values are rounded up to the nearest thousand.
+  const ventaEfectivo = Math.ceil((cost * 1.68) / 1000) * 1000;
+  const ventaTarjeta = Math.ceil((ventaEfectivo * 1.27) / 1000) * 1000;
+  return { ventaEfectivo, ventaTarjeta };
 };
 
 export const getItemSnapshot = (item: any) => {
-  const costo = typeof item.costo === 'number' ? item.costo : Number(item.costoUnidad) || 0;
+  // Helper to parse numbers that may contain thousand separators (.) or decimal commas (,)
+  const parseNumber = (value: any): number => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      // Remove spaces and non‑numeric characters except comma and dot
+      const cleaned = value.replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
+      const num = Number(cleaned);
+      return isNaN(num) ? 0 : num;
+    }
+    return 0;
+  };
 
-  const precioTarjeta =
+  // Cost can be in "costo" or "costoUnidad"
+  const costoRaw = item.costo ?? item.costoUnidad;
+  const costo = parseNumber(costoRaw);
+
+  // Resolve price for tarjeta (card) with multiple possible field names.
+  const precioTarjeta = parseNumber(
     typeof item.precioTarjeta === 'number'
       ? item.precioTarjeta
       : typeof item.ventaTarjeta === 'number'
-        ? item.ventaTarjeta
-        : typeof item.precio === 'number'
-          ? item.precio
-          : Number(item.precioTarjeta) || Number(item.ventaTarjeta) || Number(item.precio) || 0;
+      ? item.ventaTarjeta
+      : typeof item.precio === 'number'
+      ? item.precio
+      : item.precioTarjeta ?? item.ventaTarjeta ?? item.precio
+  );
 
-  const precioEfectivo =
+  // Resolve price for efectivo (cash) similarly.
+  const precioEfectivo = parseNumber(
     typeof item.precioEfectivo === 'number'
       ? item.precioEfectivo
       : typeof item.ventaEfectivo === 'number'
-        ? item.ventaEfectivo
-        : Number(item.precioEfectivo) || Number(item.ventaEfectivo) || precioTarjeta;
+      ? item.ventaEfectivo
+      : item.precioEfectivo ?? item.ventaEfectivo
+  );
 
-  const descuento = typeof item.descuento === 'number' ? item.descuento : Number(item.descuento) || 0;
+  const descuento = parseNumber(item.descuento);
 
   return { costo, precioEfectivo, precioTarjeta, descuento };
 };
 
 export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
   if (sale.tipo === 'gift') {
-    const ef = sale.pago?.efectivo ? sale.total * (sale.pago.efectivo / 100) : 0;
-    const ta = sale.pago?.tarjeta ? sale.total * (sale.pago.tarjeta / 100) : 0;
+    // Al vender una Gift Card se cobra dinero real (efectivo o tarjeta).
+    // La caja debe reflejar ese ingreso, igual que cualquier otra venta.
+    // La ganancia es el total cobrado porque no hay costo de mercadería.
+    const total = sale.total ?? 0;
+    const pctE = sale.pago?.efectivo ?? 100;
+    const pctT = sale.pago?.tarjeta ?? 0;
     return {
-      efectivo: ef,
-      tarjeta: ta,
-      totalCobrado: sale.total,
+      efectivo: total * (pctE / 100),
+      tarjeta:  total * (pctT / 100),
+      totalCobrado: total,
       costoTotal: 0,
-      ganancia: sale.total
+      ganancia: total
     };
   }
 

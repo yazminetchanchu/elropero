@@ -1,10 +1,11 @@
 import React from 'react';
 import { GiftCard } from '../types';
-import { Plus, Trash2, Edit2, X, Gift, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Gift, CheckCircle, XCircle, AlertCircle, Copy, Check } from 'lucide-react';
+import { DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
 
 interface GiftCardsProps {
   giftCards: GiftCard[];
-  onAddGiftCard: (data: { destinatario: string; montoInicial: number; pago?: { efectivo: number; tarjeta: number } }) => void;
+  onAddGiftCard: (data: { destinatario: string; montoInicial: number; pago?: { efectivo: number; tarjeta: number }; email?: string; mensaje?: string; deParteDe?: string; emailComprador?: string }) => void;
   onUpdateGiftCard: (gc: GiftCard) => void;
   onCancelGiftCard: (id: string) => void;
 }
@@ -25,11 +26,24 @@ const GiftCards: React.FC<GiftCardsProps> = ({
   const [monto, setMonto] = React.useState<number>(0);
   const [pagoEfectivo, setPagoEfectivo] = React.useState(100);
   const [pagoTarjeta, setPagoTarjeta] = React.useState(0);
+  const [email, setEmail] = React.useState('');
+  const [mensaje, setMensaje] = React.useState('');
+  const [deParteDe, setDeParteDe] = React.useState('');
+  const [emailComprador, setEmailComprador] = React.useState('');
   const [editing, setEditing] = React.useState<GiftCard | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
   
   // Búsqueda
   const [searchTerm, setSearchTerm] = React.useState('');
+
+  const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
+
+  const handleCopy = (code: string) => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode(null), 2000);
+    });
+  };
 
   // Limpia el valor a número entero
   const toInt = (value: string) => {
@@ -44,12 +58,20 @@ const GiftCards: React.FC<GiftCardsProps> = ({
     onAddGiftCard({ 
       destinatario: destinatario.trim(), 
       montoInicial: monto,
-      pago: { efectivo: pagoEfectivo, tarjeta: pagoTarjeta }
+      pago: { efectivo: pagoEfectivo, tarjeta: pagoTarjeta },
+      email: email.trim(),
+      mensaje: mensaje.trim(),
+      deParteDe: deParteDe.trim(),
+      emailComprador: emailComprador.trim()
     });
     setDestinatario('');
     setMonto(0);
     setPagoEfectivo(100);
     setPagoTarjeta(0);
+    setEmail('');
+    setMensaje('');
+    setDeParteDe('');
+    setEmailComprador('');
   };
 
   // ─── EDITAR — calcula saldo al modificar montoInicial ────────────────
@@ -126,7 +148,24 @@ const GiftCards: React.FC<GiftCardsProps> = ({
               {cfg.label}
             </span>
           </div>
-          <div className="text-[10px] text-[#1A1A1A]/50 uppercase tracking-[2px] mt-0.5">{gc.codigo}</div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[11px] text-[#1A1A1A]/70 font-mono font-bold bg-[#C9B8A8]/10 px-2 py-0.5 rounded border border-[#C9B8A8]/30 tracking-wider select-all">
+              {gc.codigo}
+            </span>
+            <button
+              onClick={() => handleCopy(gc.codigo)}
+              className="p-1 text-[#1A1A1A]/50 hover:text-[#1A1A1A] hover:bg-[#C9B8A8]/20 rounded transition-all flex items-center justify-center"
+              title="Copiar código"
+            >
+              {copiedCode === gc.codigo ? (
+                <span className="text-[9px] uppercase tracking-wider text-emerald-600 font-bold flex items-center gap-1">
+                  <Check size={12} /> ¡Copiado!
+                </span>
+              ) : (
+                <Copy size={12} />
+              )}
+            </button>
+          </div>
 
           {/* Barra de saldo */}
           <div className="mt-2 space-y-1">
@@ -213,6 +252,45 @@ const GiftCards: React.FC<GiftCardsProps> = ({
             </div>
           </div>
 
+          <div className="col-span-2 md:col-span-1">
+            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">De parte de (Opcional)</label>
+            <input
+              value={deParteDe}
+              onChange={(e) => setDeParteDe(e.target.value)}
+              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400"
+              placeholder="Tu nombre"
+            />
+          </div>
+          <div className="col-span-2 md:col-span-1">
+            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">Email comprador (Opcional)</label>
+            <input
+              type="email"
+              value={emailComprador}
+              onChange={(e) => setEmailComprador(e.target.value)}
+              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400"
+              placeholder="Para enviar comprobante"
+            />
+          </div>
+          <div className="col-span-2 md:col-span-1">
+            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">Email destinatario (Opcional)</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400"
+              placeholder="Para enviar por email"
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">Mensaje (Opcional)</label>
+            <textarea
+              value={mensaje}
+              onChange={(e) => setMensaje(e.target.value)}
+              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400 resize-none h-10"
+              placeholder="Escribí un mensaje lindo"
+            />
+          </div>
+
           {/* Selector de Medios de Pago */}
           <div className="col-span-2 border-t border-[#C9B8A8]/20 pt-3 space-y-3">
             <p className="text-[9px] uppercase font-bold tracking-[2px] text-[#1A1A1A]">Medio de Pago</p>
@@ -259,6 +337,16 @@ const GiftCards: React.FC<GiftCardsProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Total a Cobrar Display */}
+          {monto > 0 && (
+            <div className="col-span-2 bg-[#F5F1EB] rounded-xl p-4 flex items-center justify-between border border-[#C9B8A8]/30 mt-2">
+              <span className="text-[10px] uppercase font-bold tracking-[2px] text-[#1A1A1A]/70">Total a cobrar al cliente:</span>
+              <span className="text-xl font-bold text-[#1A1A1A]">
+                ${Math.round(monto * (pagoEfectivo / 100) + (monto * (pagoTarjeta / 100)) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)).toLocaleString('es-AR')}
+              </span>
+            </div>
+          )}
         </div>
 
         <button
