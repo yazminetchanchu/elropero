@@ -27,7 +27,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebas
 // Sistema seguro de autenticación activado
 const App: React.FC = () => {
   const [isEntered, setIsEntered] = React.useState(false);
-  const [adminEmail, setAdminEmail] = React.useState("yazminetchanchu@gmail.com");
+  const adminEmail = "elropero.informacion@gmail.com";
   const [password, setPassword] = React.useState("");
   const [showroomID, setShowroomID] = React.useState(() => database.getShowroomID() || 'EL-ROPERO-DEFAULT');
   const [authError, setAuthError] = React.useState(false);
@@ -1042,19 +1042,6 @@ const handleCancelGiftCard = (id: string) => {
                           onChange={(e) => setShowroomID(e.target.value.toUpperCase())}
                           className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[3px] font-light uppercase text-black placeholder:text-black/10 transition-all"
                           placeholder="SHOWROOM-ID"
-                        />
-                      </div>
-
-                      <div className="relative group">
-                        <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
-                          Correo de Administrador
-                        </label>
-                        <input
-                          type="email"
-                          value={adminEmail}
-                          onChange={(e) => { setAdminEmail(e.target.value); setAuthError(false); }}
-                          className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[1px] font-light text-black placeholder:text-black/10 transition-all"
-                          placeholder="admin@elropero.com"
                         />
                       </div>
 
