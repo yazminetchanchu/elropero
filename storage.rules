@@ -8,6 +8,7 @@ service firebase.storage {
     function isAdmin() {
       return request.auth != null && (
         request.auth.token.admin == true || 
+        request.auth.token.email == 'elropero.informacion@gmail.com' ||
         request.auth.token.email == 'yazminetchanchu@gmail.com'
       );
     }

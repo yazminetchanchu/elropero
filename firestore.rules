@@ -8,10 +8,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Identificación estricta del Admin único
+    // Identificación estricta del Admin
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.admin == true || 
+        request.auth.token.email == 'elropero.informacion@gmail.com' ||
         request.auth.token.email == 'yazminetchanchu@gmail.com'
       );
     }
@@ -46,14 +47,14 @@ service cloud.firestore {
 
       // Subcolección de clientes y sus pedidos (/customers/{uid}/orders/{orderId})
       match /customers/{uid} {
-        // Los clientes pueden leerse a sí mismos, pero no modificar órdenes libremente
+        // Los clientes pueden leerse a sí mismos y modificar su propia información de perfil/carrito
         allow read: if true;
-        allow write: if isAdmin();
+        allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
 
         match /orders/{orderId} {
           allow read: if true;
-          // Solo Admin (Cloud Functions) puede escribir la orden final validada
-          allow write: if isAdmin();
+          // Admin o el propio cliente autenticado puede registrar su orden
+          allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
         }
       }
     }
