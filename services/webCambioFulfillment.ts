@@ -76,12 +76,16 @@ function applyCambioInventory(
   let next = [...inventory];
 
   for (const dev of itemsDevueltos) {
-    const { color, talle } = parseVariantFromDescripcion(dev.descripcion);
+    const parsed = parseVariantFromDescripcion(dev.descripcion);
+    const color = dev.color || parsed.color;
+    const talle = dev.talle || parsed.talle;
     next = next.map((inv) => adjustStockLine(inv, dev.id, dev.cantidad, color, talle, 'add'));
   }
 
   for (const neu of itemsNuevos) {
-    const { color, talle } = parseVariantFromDescripcion(neu.descripcion);
+    const parsed = parseVariantFromDescripcion(neu.descripcion);
+    const color = neu.color || parsed.color;
+    const talle = neu.talle || parsed.talle;
     next = next.map((inv) => adjustStockLine(inv, neu.id, neu.cantidad, color, talle, 'subtract'));
   }
 

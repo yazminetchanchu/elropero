@@ -51,6 +51,53 @@ describe('buildOrderWhatsAppMessage', () => {
     expect(result).toContain('*TOTAL A PAGAR: $65.500*');
   });
 
+  it('incluye detalles de Sucursal de Correo Argentino cuando tipoEnvio es envio_sucursal', () => {
+    const branchOrder = {
+      orderId: 'order_888123',
+      customerNombre: 'Mariana Gomez',
+      tipoEnvio: 'envio_sucursal',
+      sucursalCorreoArgentino: {
+        name: 'Sucursal Chivilcoy Centro',
+        code: 'CHV01',
+        location: {
+          address: {
+            streetName: 'Moreno',
+            streetNumber: '45',
+            locality: 'Chivilcoy',
+            province: 'Buenos Aires',
+          },
+        },
+      },
+      items: [{ descripcion: 'Vestido Seda', cantidad: 1, precioUnitario: 25000 }],
+      costoEnvio: 2800,
+      total: 27800,
+    };
+
+    const result = buildOrderWhatsAppMessage(branchOrder, 'El Ropero');
+
+    expect(result).toContain('*Entrega:* Envío a Sucursal');
+    expect(result).toContain('*Sucursal Elegida:* Sucursal Chivilcoy Centro (CHV01)');
+    expect(result).toContain('*Dirección:* Moreno 45, Chivilcoy, Buenos Aires');
+  });
+
+  it('incluye el descuento de Gift Card aplicada en el resumen', () => {
+    const gcOrder = {
+      orderId: 'order_555',
+      customerNombre: 'Camila',
+      items: [{ descripcion: 'Campera Jean', cantidad: 1, precioUnitario: 40000 }],
+      giftCardUsada: {
+        codigo: 'GIFT-SUMMER-5000',
+        montoUsado: 5000,
+      },
+      total: 35000,
+    };
+
+    const result = buildOrderWhatsAppMessage(gcOrder, 'El Ropero');
+
+    expect(result).toContain('*Gift Card Aplicada:* GIFT-SUMMER-5000 (-$5.000)');
+    expect(result).toContain('*TOTAL A PAGAR: $35.000*');
+  });
+
   it('incluye una nota personalizada si se provee', () => {
     const sampleOrder = {
       orderId: 'order_999',

@@ -148,6 +148,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [showDashboard, setShowDashboard] = React.useState(false);
   const [showCheckout, setShowCheckout] = React.useState(false);
   const [pendingCheckout, setPendingCheckout] = React.useState(false);
+  const [pendingBuyGiftCard, setPendingBuyGiftCard] = React.useState(false);
   const [exchangeSession, setExchangeSession] = React.useState<ExchangeSession | null>(null);
   const [isConfirmingExchange, setIsConfirmingExchange] = React.useState(false);
   const [exchangeSuccessMsg, setExchangeSuccessMsg] = React.useState<string | null>(null);
@@ -156,6 +157,16 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [showLocation, setShowLocation] = React.useState(false);
   const [showBuyGiftCard, setShowBuyGiftCard] = React.useState(false);
   const [pendingPaymentOrder, setPendingPaymentOrder] = React.useState<any | null>(null);
+
+  const handleOpenBuyGiftCard = () => {
+    if (user) {
+      setShowBuyGiftCard(true);
+    } else {
+      showAlert('Debés estar registrado e iniciar sesión para comprar una Gift Card.', 'Registro Requerido', 'info');
+      setPendingBuyGiftCard(true);
+      setShowAuthModal(true);
+    }
+  };
 
   // Abrir modal de login si se proviene de una restauración de contraseña exitosa
   React.useEffect(() => {
@@ -988,7 +999,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
             {/* Gift Card Icon */}
             <button 
-              onClick={() => setShowBuyGiftCard(true)}
+              onClick={handleOpenBuyGiftCard}
               className="hover:opacity-60 transition-opacity flex items-center gap-1.5"
               title="Regalar Gift Card"
             >
@@ -1074,7 +1085,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 </button>
               ))}
 
-              <button onClick={() => { setShowBuyGiftCard(true); setShowNav(false); }}
+              <button onClick={() => { handleOpenBuyGiftCard(); setShowNav(false); }}
                 className={`block w-full text-left text-[11px] tracking-[0.22em] uppercase transition-all duration-200 font-light text-neutral-500 hover:text-black mt-6 border-t border-black/10 pt-6 flex items-center gap-2`}>
                 Gift Card <Gift size={16} strokeWidth={1.2} />
               </button>
@@ -1134,7 +1145,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             Sorprendé a quien quieras con una Gift Card digital. Elegí el monto, escribí una dedicatoria y se la enviamos por mail al instante.
           </p>
           <button 
-            onClick={() => setShowBuyGiftCard(true)}
+            onClick={handleOpenBuyGiftCard}
             className="border border-white text-white px-8 py-2.5 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-white hover:text-black transition-all rounded-none"
           >
             Regalar Gift Card
@@ -2001,13 +2012,19 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           if (pendingCheckout && user) {
             setShowCheckout(true);
           }
+          if (pendingBuyGiftCard && user) {
+            setShowBuyGiftCard(true);
+          }
           setPendingCheckout(false);
+          setPendingBuyGiftCard(false);
         }}
-        onContinueAsGuest={() => {
-          setShowAuthModal(false);
-          setPendingCheckout(false);
-          setShowCheckout(true);
-        }}
+        onContinueAsGuest={
+          pendingBuyGiftCard ? undefined : () => {
+            setShowAuthModal(false);
+            setPendingCheckout(false);
+            setShowCheckout(true);
+          }
+        }
       />
       <UserDashboard 
         isOpen={showDashboard} 
@@ -2043,6 +2060,11 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         isOpen={showBuyGiftCard}
         onClose={() => setShowBuyGiftCard(false)}
         onSuccess={() => setShowBuyGiftCard(false)}
+        onRequireAuth={() => {
+          setShowBuyGiftCard(false);
+          setPendingBuyGiftCard(true);
+          setShowAuthModal(true);
+        }}
       />
 
       {/* ══════ MODAL PAGO PENDIENTE / RETORNO DE UALÁ BIS ══════ */}
