@@ -3,37 +3,163 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>EL ROPERO | Showroom</title>
+    <title>EL ROPERO | Showroom de Indumentaria Femenina en Chivilcoy y Recoleta</title>
+    <meta name="description" content="Showroom de indumentaria femenina de diseño y últimas tendencias. Encontrá vestidos, camisas, pantalones y accesorios con envío a todo el país y 20% de descuento por transferencia. Visitanos en Chivilcoy y Recoleta." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖤</text></svg>" />
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Datos estructurados JSON-LD Schema.org -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ClothingStore",
+      "name": "EL ROPERO",
+      "image": "https://elropero.ar/assets/hero.png",
+      "@id": "https://elropero.ar/#store",
+      "url": "https://elropero.ar",
+      "telephone": "+5492346685836",
+      "priceRange": "$$",
+      "address": [
+        {
+          "@type": "PostalAddress",
+          "streetAddress": "San Martín 382",
+          "addressLocality": "Chivilcoy",
+          "addressRegion": "Buenos Aires",
+          "addressCountry": "AR"
+        },
+        {
+          "@type": "PostalAddress",
+          "streetAddress": "Recoleta",
+          "addressLocality": "CABA",
+          "addressRegion": "Buenos Aires",
+          "addressCountry": "AR"
+        }
+      ],
+      "openingHoursSpecification": {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday",
+          "Saturday"
+        ],
+        "opens": "10:00",
+        "closes": "20:00"
+      },
+      "sameAs": [
+        "https://www.instagram.com/elropero.ar"
+      ]
+    }
+    </script>
 
-    <style>
-      body {
-        font-family: 'Inter', sans-serif;
-        background-color: #FAF8F5;
-        color: #000000;
-        margin: 0;
-        padding: 0;
-      }
-      .font-serif {
-        font-family: 'Playfair Display', serif;
-      }
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   </head>
 
-  <body>
-    <div id="root"></div>
+  <body style="margin: 0; background-color: #FAF8F5;">
+    <div id="root">
+      <!-- Loader estático elegante que se muestra al cargar antes de que React se monte -->
+      <style>
+        .initial-loader-container {
+          min-height: 100vh;
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          background-color: #FAF8F5;
+          margin: 0;
+          padding: 24px;
+          box-sizing: border-box;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .initial-loader-brand {
+          font-family: 'Inter', sans-serif;
+          font-size: 22px;
+          letter-spacing: 12px;
+          font-weight: 500;
+          color: #000000;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+          padding-left: 12px;
+          text-align: center;
+        }
+        .initial-loader-sub {
+          font-family: 'Playfair Display', serif;
+          font-size: 15px;
+          letter-spacing: 4px;
+          font-style: italic;
+          color: rgba(0, 0, 0, 0.6);
+          margin-bottom: 32px;
+          text-align: center;
+        }
+        .initial-loader-bar {
+          width: 120px;
+          height: 2px;
+          background-color: rgba(0, 0, 0, 0.08);
+          border-radius: 9999px;
+          overflow: hidden;
+          position: relative;
+        }
+        .initial-loader-progress {
+          position: absolute;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          width: 40%;
+          background-color: #000000;
+          border-radius: 9999px;
+          animation: initial-loader-slide 1.2s ease-in-out infinite alternate;
+        }
+        @keyframes initial-loader-slide {
+          0% { left: 0%; width: 30%; }
+          100% { left: 70%; width: 30%; }
+        }
+      </style>
+      <div class="initial-loader-container">
+        <div class="initial-loader-brand">EL ROPERO</div>
+        <div class="initial-loader-sub">Showroom</div>
+        <div class="initial-loader-bar">
+          <div class="initial-loader-progress"></div>
+        </div>
+      </div>
+    </div>
 
-    <!-- ESTE ES EL PUNTO CLAVE -->
+    <!-- Contenido estático para indexación SEO y lectores sin JavaScript -->
+    <noscript>
+      <div style="padding: 20px; max-width: 800px; margin: 0 auto; font-family: sans-serif; color: #333;">
+        <header style="text-align: center; margin-bottom: 40px;">
+          <h1>EL ROPERO SHOWROOM</h1>
+          <p>Showroom de Indumentaria Femenina en Chivilcoy y Recoleta</p>
+        </header>
+        
+        <section style="margin-bottom: 30px;">
+          <h2>Sobre EL ROPERO</h2>
+          <p>EL ROPERO es un showroom exclusivo de indumentaria femenina de diseño y tendencias de moda. Fundado como un compromiso profundo con la calidad en cada prenda y cada detalle, ofrecemos una selección curada de vestidos, camisas, abrigos, pantalones, remeras, calzado y accesorios pensados para vestir a la mujer de hoy con estilo, sofisticación y comodidad.</p>
+          <p>Nos dedicamos a brindar una atención personalizada a través de nuestros showrooms físicos y nuestra tienda online con envíos a todo el país. Creemos en la gratitud hacia quienes nos eligen, y nos esforzamos por brindar una experiencia de compra premium y segura.</p>
+        </section>
+
+        <section style="margin-bottom: 30px;">
+          <h2>Nuestras Ubicaciones</h2>
+          <ul>
+            <li><strong>Showroom Central Chivilcoy:</strong> San Martín 382, Chivilcoy, Provincia de Buenos Aires, Argentina.</li>
+            <li><strong>Pick Up Point Recoleta:</strong> Recoleta, Ciudad Autónoma de Buenos Aires (CABA), Argentina.</li>
+          </ul>
+        </section>
+
+        <section style="margin-bottom: 30px;">
+          <h2>Beneficios y Métodos de Pago</h2>
+          <p>Ofrecemos un <strong>20% de descuento</strong> en todas las compras realizadas por transferencia bancaria. También aceptamos pagos con tarjetas de débito y crédito a través de plataformas seguras, posibilitando compras en 3 y 6 cuotas.</p>
+          <p>Realizás tu pedido online de manera simple, seleccionando talles, colores y método de entrega, ya sea retiro en punto de entrega (pick up) o envío a domicilio por correo.</p>
+        </section>
+
+        <section style="margin-bottom: 30px;">
+          <h2>Contacto</h2>
+          <p>Comunicate con nosotros a través de nuestro canal de WhatsApp al <a href="https://wa.me/5492346685836">+54 9 234 668-5836</a> o seguinos en Instagram en <a href="https://www.instagram.com/elropero.ar">@elropero.ar</a> para enterarte de los últimos ingresos, liquidaciones de temporada y novedades del showroom.</p>
+        </section>
+      </div>
+    </noscript>
+
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

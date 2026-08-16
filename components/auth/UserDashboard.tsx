@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ShoppingBag, MapPin, Heart, User, Trash2, Edit3, Plus, ArrowRight, Loader2, LogOut, CheckCircle, Package, RefreshCw, Gift } from 'lucide-react';
+import { X, ShoppingBag, MapPin, Heart, User, Trash2, Edit3, Plus, ArrowRight, Loader2, LogOut, CheckCircle, Package, RefreshCw, Gift, ExternalLink } from 'lucide-react';
 import { useAuth, ShippingAddress, CustomerOrder } from '../../contexts/AuthContext';
 import { InventoryItem, GiftCard } from '../../types';
 import { isOrderEligibleForExchange } from '../../services/webOrderToSale';
@@ -17,7 +17,9 @@ interface UserDashboardProps {
   onRefreshOrders?: () => void;
 }
 
-const PUBLIC_SHOWROOM_ID = localStorage.getItem('ropero_showroom_id_v3_2026') || 'EL-ROPERO-DEFAULT';
+import { getShowroomID } from '../../services/storage';
+
+const PUBLIC_SHOWROOM_ID = getShowroomID();
 
 type ActiveTab = 'compras' | 'direcciones' | 'favoritos' | 'datos';
 
@@ -370,12 +372,27 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                       )}
                       <div className="flex justify-between items-baseline pt-1.5 border-t border-dashed border-black/5">
                         <div className="text-[9px] tracking-[2px] uppercase text-black/40 font-medium">
-                          {order.tipoEnvio === 'envio' ? 'Envío a domicilio' : 'Retiro por local'} · {order.metodoPago}
+                          {order.tipoEnvio === 'envio' ? 'Envío a domicilio' : order.tipoEnvio === 'envio_sucursal' ? 'Envío a sucursal' : 'Retiro por local'} · {order.metodoPago}
                         </div>
                         <div className="text-[16px] font-bold text-black">
                           Total: ${order.total.toLocaleString('es-AR')}
                         </div>
                       </div>
+                      {order.trackingNumber && (
+                        <div className="mt-2 p-2.5 bg-blue-50/60 border border-blue-100 rounded-lg flex items-center justify-between gap-2">
+                          <span className="text-[9px] font-bold uppercase tracking-[1px] text-blue-900 font-mono">
+                            Seguimiento: {order.trackingNumber}
+                          </span>
+                          <a
+                            href="https://micorreo.correoargentino.com.ar/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[8px] font-bold tracking-[1.5px] uppercase bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded transition-colors flex items-center gap-1"
+                          >
+                            <ExternalLink size={10} /> Ir a Mi Correo
+                          </a>
+                        </div>
+                      )}
                       {(!!order.saleId || order.estado === 'Confirmado' || order.estado === 'Entregado') && (
                         <button
                           type="button"

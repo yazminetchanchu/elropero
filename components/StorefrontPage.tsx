@@ -4,7 +4,7 @@ import { InventoryItem, WebSettings, GiftCard, SaleItem } from '../types';
 import { db, functions } from '../services/firebase';
 import { doc, onSnapshot, getDoc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check } from 'lucide-react';
+import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle } from 'lucide-react';
 import { useAuth, SavedCartItem } from '../contexts/AuthContext';
 import AuthModal from './auth/AuthModal';
 import UserDashboard from './auth/UserDashboard';
@@ -22,9 +22,12 @@ import { calculateCartWeightGrams, calculateCartDimensions } from '../utils/ship
 import { setUalaEnvironment } from '../services/ualaApi';
 import { useModal } from '../contexts/ModalContext';
 import InnovativeLoader from './InnovativeLoader';
+import { buildOrderWhatsAppMessage } from '../utils/whatsappHelpers';
 
 
-const PUBLIC_SHOWROOM_ID = localStorage.getItem('ropero_showroom_id_v3_2026') || 'EL-ROPERO-DEFAULT';
+import { getShowroomID } from '../services/storage';
+
+const PUBLIC_SHOWROOM_ID = getShowroomID();
 
 const getColorHex = (colorName: string): string => {
   const c = colorName.trim().toUpperCase();
@@ -126,15 +129,25 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [selectedProduct, setSelectedProduct] = React.useState<InventoryItem | null>(null);
   const [addedFeedback, setAddedFeedback] = React.useState<string | null>(null);
   
+  // Toast notice for item added to cart
+  const [cartToastNotification, setCartToastNotification] = React.useState<{
+    item: InventoryItem;
+    talle?: string;
+    color?: string;
+  } | null>(null);
+  const cartToastTimerRef = React.useRef<any>(null);
+  
   // Modal state for selection
   const [modalTalle, setModalTalle] = React.useState('');
   const [modalColor, setModalColor] = React.useState('');
   const [modalImgIdx, setModalImgIdx] = React.useState(0);
+  const [showSizeGuideModal, setShowSizeGuideModal] = React.useState(false);
 
   // Auth & UX Modal States
   const [showAuthModal, setShowAuthModal] = React.useState(false);
   const [showDashboard, setShowDashboard] = React.useState(false);
   const [showCheckout, setShowCheckout] = React.useState(false);
+  const [pendingCheckout, setPendingCheckout] = React.useState(false);
   const [exchangeSession, setExchangeSession] = React.useState<ExchangeSession | null>(null);
   const [isConfirmingExchange, setIsConfirmingExchange] = React.useState(false);
   const [exchangeSuccessMsg, setExchangeSuccessMsg] = React.useState<string | null>(null);
@@ -142,6 +155,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [showTerms, setShowTerms] = React.useState(false);
   const [showLocation, setShowLocation] = React.useState(false);
   const [showBuyGiftCard, setShowBuyGiftCard] = React.useState(false);
+  const [pendingPaymentOrder, setPendingPaymentOrder] = React.useState<any | null>(null);
 
   // Abrir modal de login si se proviene de una restauración de contraseña exitosa
   React.useEffect(() => {
@@ -157,6 +171,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
     // Retorno interceptado de Ualá
     if (pagoStatus === 'ok' && orderId) {
+      localStorage.removeItem('ropero_last_pending_order');
       const confirmOrder = async () => {
         try {
           const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', orderId);
@@ -221,15 +236,71 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       };
       confirmOrder();
     } else if (pagoStatus === 'error' && orderId) {
-       showAlert('Hubo un problema con tu pago en Ualá. Tu pedido sigue guardado como pendiente.', 'Pago Pendiente', 'warning');
-       const cleanUrl = window.location.origin + window.location.pathname;
-       window.history.replaceState({}, document.title, cleanUrl);
+      const handlePaymentErrorReturn = async () => {
+        try {
+          const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', orderId);
+          const snap = await getDoc(orderRef);
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data.estado === 'Confirmada') {
+              localStorage.removeItem('ropero_last_pending_order');
+              showAlert('¡Tu pago fue acreditado exitosamente! El pedido ya está confirmado.', '¡Pago Exitoso!', 'success');
+            } else {
+              const fullOrder = { orderId, ...data };
+              setPendingPaymentOrder(fullOrder);
+              try {
+                localStorage.setItem('ropero_last_pending_order', JSON.stringify(fullOrder));
+              } catch (err) {
+                console.error('Error guardando en localStorage:', err);
+              }
+            }
+          } else {
+            setPendingPaymentOrder({ orderId });
+          }
+        } catch (e) {
+          console.error("Error al obtener datos de la orden pendiente:", e);
+          setPendingPaymentOrder({ orderId });
+        } finally {
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+      };
+      handlePaymentErrorReturn();
+    } else {
+      // Recuperar última orden pendiente si el usuario regresa sin parámetros en la URL
+      try {
+        const rawSaved = localStorage.getItem('ropero_last_pending_order');
+        if (rawSaved) {
+          const parsed = JSON.parse(rawSaved);
+          const targetId = parsed.orderId || parsed.id;
+          if (targetId) {
+            const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', targetId);
+            getDoc(orderRef).then(snap => {
+              if (snap.exists()) {
+                const data = snap.data();
+                if (data.estado === 'PENDING_PAYMENT' || data.estado === 'Pendiente') {
+                  setPendingPaymentOrder({ orderId: targetId, ...data });
+                } else {
+                  localStorage.removeItem('ropero_last_pending_order');
+                }
+              } else {
+                setPendingPaymentOrder(parsed);
+              }
+            }).catch(err => {
+              console.error('Error al verificar estado de orden guardada:', err);
+              setPendingPaymentOrder(parsed);
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Error al restaurar orden pendiente local:', e);
+      }
     }
   }, []);
 
   // Unified body scroll-lock hook for high-end mobile experience
   React.useEffect(() => {
-    const isAnyOverlayActive = showNav || showCart || !!selectedProduct || showAuthModal || showDashboard || showCheckout || showTerms || showLocation;
+    const isAnyOverlayActive = showNav || showCart || !!selectedProduct || showAuthModal || showDashboard || showCheckout || showTerms || showLocation || showSizeGuideModal || !!pendingPaymentOrder;
     if (isAnyOverlayActive) {
       document.body.style.overflow = 'hidden';
     } else {
@@ -238,7 +309,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     return () => {
       document.body.style.overflow = '';
     };
-  }, [showNav, showCart, selectedProduct, showAuthModal, showDashboard, showCheckout, showTerms, showLocation]);
+  }, [showNav, showCart, selectedProduct, showAuthModal, showDashboard, showCheckout, showTerms, showLocation, showSizeGuideModal, pendingPaymentOrder]);
 
   // Blur active input (like search) on scroll to hide mobile keyboard and allow smooth scrolling
   React.useEffect(() => {
@@ -602,6 +673,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     if (exchangeSession) setShowCart(true);
     setAddedFeedback(product.id);
     setTimeout(() => setAddedFeedback(null), 1200);
+
+    // Activar aviso de prenda agregada al carrito
+    if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
+    setCartToastNotification({ item: product, talle, color });
+    cartToastTimerRef.current = setTimeout(() => {
+      setCartToastNotification(null);
+    }, 4000);
   };
 
   const updateQty = (id: string, delta: number, talle?: string, color?: string) => {
@@ -733,11 +811,12 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     let msg = `🛍️ *Pedido — ${store} Showroom*\n\n`;
     cart.forEach((c, i) => {
       const disc = getDiscount(c.product);
-      const price = getDiscountedPrice(c.product.ventaEfectivo, disc);
+      const price = getDiscountedPrice(c.product.ventaEfectivo, disc, true);
       msg += `${i + 1}. ${c.product.descripcion}\n`;
       if (c.selectedTalle) msg += `   Talle: ${c.selectedTalle}\n`;
       if (c.selectedColor) msg += `   Color: ${c.selectedColor}\n`;
-      if (disc > 0) msg += `   Descuento: ${disc}%\n`;
+      const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
+      if (extraDesc > 0) msg += `   Descuento: ${disc}%\n`;
       msg += `   Cant: ${c.quantity} × $${price.toLocaleString('es-AR')} (Transferencia)\n`;
       msg += `   Subtotal: $${(price * c.quantity).toLocaleString('es-AR')}\n\n`;
     });
@@ -809,6 +888,26 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Barra desplazante personalizada para el panel lateral (sidebar) */
+        .sidebar-scrollbar::-webkit-scrollbar {
+          width: 5px;
+        }
+        .sidebar-scrollbar::-webkit-scrollbar-track {
+          background: rgba(0, 0, 0, 0.04);
+          border-radius: 4px;
+        }
+        .sidebar-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(0, 0, 0, 0.25);
+          border-radius: 4px;
+        }
+        .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(0, 0, 0, 0.45);
+        }
+        .sidebar-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(0, 0, 0, 0.25) rgba(0, 0, 0, 0.04);
+        }
 
         .fade-in { animation: fadeIn 0.6s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -955,7 +1054,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[70] transition-opacity duration-300" onClick={() => setShowNav(false)} />
           <div className="fixed top-0 left-0 h-full w-[80vw] max-w-[320px] sm:w-[350px] sm:max-w-none bg-white z-[80] p-10 flex flex-col drawer-slide-in-left shadow-2xl">
             <button onClick={() => setShowNav(false)} className="self-end mb-16 opacity-40 hover:opacity-100 p-1.5 hover:bg-neutral-50 rounded-full transition-all"><X size={20} strokeWidth={1.5} /></button>
-            <nav className="space-y-6 overflow-y-auto no-scrollbar pb-10">
+            <nav className="space-y-6 overflow-y-auto sidebar-scrollbar pb-10 pr-2">
               <p className="text-[10px] tracking-[6px] uppercase text-black/40 font-semibold mb-8 border-b border-black/10 pb-4">Secciones</p>
               
               <button onClick={() => { setCategory(''); setShowNav(false); }}
@@ -980,9 +1079,6 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 Regalar Gift Card <Gift size={18} />
               </button>
             </nav>
-            <div className="mt-auto pt-10 border-t border-black/5">
-              <Link to="/admin" onClick={() => setShowNav(false)} className="text-[11px] tracking-[4px] uppercase opacity-40 hover:opacity-100 flex items-center gap-2">Administración <ChevronRight size={12} /></Link>
-            </div>
           </div>
         </>
       )}
@@ -1222,11 +1318,26 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 );
               })()}
 
-              {/* Talles */}
+              {/* Talles (Zara Style) */}
               {selectedProduct.talles && selectedProduct.talles.length > 0 && (
-                <div className="mb-8">
-                  <p className="text-[12px] tracking-[3px] uppercase text-black/60 font-semibold mb-4 text-center sm:text-left">Talles</p>
-                  <div className="flex flex-wrap gap-3 justify-center sm:justify-start">
+                <div className="mb-7">
+                  <div className="flex items-center justify-between mb-3 border-b border-black/5 pb-2">
+                    <p className="text-[11px] tracking-[2.5px] uppercase text-black font-semibold">
+                      Talle <span className="font-light text-black/50 ml-1">— {modalTalle || 'Seleccionar'}</span>
+                    </p>
+                    {selectedProduct.medidas && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSizeGuideModal(true)}
+                        className="text-[10px] tracking-[1.5px] uppercase text-black/60 hover:text-black underline underline-offset-4 flex items-center gap-1 font-medium transition-colors"
+                      >
+                        <Ruler size={13} strokeWidth={1.5} />
+                        Guía de talles
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2.5 justify-start">
                     {Array.isArray(selectedProduct.talles) && Array.from(new Set(selectedProduct.talles as string[])).map((t, idx) => {
                       let isOutOfStock = false;
                       if (selectedProduct.stockPorVariante && modalColor) {
@@ -1234,6 +1345,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                       } else if (selectedProduct.stockPorVariante) {
                         isOutOfStock = !selectedProduct.colores?.some(c => getVariantStock(selectedProduct, t, c) > 0);
                       }
+                      
+                      const isSelected = modalTalle === t;
                       
                       return (
                         <button 
@@ -1246,12 +1359,12 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                               if (nextColor) setModalColor(nextColor);
                             }
                           }} 
-                          className={`w-12 h-12 text-[11px] tracking-[1px] flex items-center justify-center border transition-all ${
-                            modalTalle === t 
-                              ? 'border-black border-[2px] font-bold text-black' 
+                          className={`min-w-[50px] h-11 px-3.5 text-[11px] tracking-[2px] uppercase font-semibold transition-all duration-200 flex items-center justify-center relative ${
+                            isSelected 
+                              ? 'bg-black text-white border border-black shadow-sm scale-[1.02]' 
                               : isOutOfStock
-                                ? 'border-black/5 opacity-20 cursor-not-allowed line-through'
-                                : 'border-black/20 text-black/60 hover:border-black/50'
+                                ? 'bg-neutral-50 border border-neutral-200/60 text-neutral-300 opacity-40 cursor-not-allowed line-through'
+                                : 'bg-white border border-neutral-300 text-black hover:border-black hover:bg-neutral-50'
                           }`}
                         >
                           {t}
@@ -1262,11 +1375,27 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 </div>
               )}
 
-              {/* Colores */}
+              {/* Colores (Zara Style Swatches) */}
               {selectedProduct.colores && selectedProduct.colores.length > 0 && (
-                <div className="mb-8">
-                  <p className="text-[12px] tracking-[3px] uppercase text-black/60 font-semibold mb-4 text-center sm:text-left">Color</p>
-                  <div className="flex flex-wrap gap-2.5 justify-center sm:justify-start">
+                <div className="mb-7">
+                  <div className="flex items-center justify-between mb-3 border-b border-black/5 pb-2">
+                    <p className="text-[11px] tracking-[2.5px] uppercase text-black font-semibold">
+                      Color <span className="font-light text-black/50 ml-1">— {modalColor || 'Seleccionar'}</span>
+                    </p>
+                    {(() => {
+                      const currentStock = modalColor ? (modalTalle ? getVariantStock(selectedProduct, modalTalle, modalColor) : getVariantStock(selectedProduct, undefined, modalColor)) : 0;
+                      if (currentStock > 0 && currentStock <= 2) {
+                        return (
+                          <span className="text-[9px] tracking-[1.5px] uppercase font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-sm">
+                            Pocas unidades
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2.5 justify-start">
                     {Array.isArray(selectedProduct.colores) && Array.from(new Set(selectedProduct.colores as string[])).map((c, idx) => {
                       const colorStock = modalTalle ? getVariantStock(selectedProduct, modalTalle, c) : getVariantStock(selectedProduct, undefined, c);
                       const hasStockTracking = selectedProduct.stockPorVariante !== undefined || selectedProduct.coloresStock !== undefined;
@@ -1285,24 +1414,19 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                               if (nextTalle) setModalTalle(nextTalle);
                             }
                           }} 
-                          className={`px-3 py-2 text-[10px] tracking-[2px] uppercase border transition-all flex items-center gap-2 rounded-lg font-medium ${
+                          className={`px-4 py-2.5 text-[10px] tracking-[2px] uppercase transition-all duration-200 flex items-center gap-2.5 font-semibold ${
                             isSel 
-                              ? 'border-black border-[2px] text-black shadow-sm font-bold' 
+                              ? 'bg-black text-white border border-black shadow-sm ring-1 ring-black scale-[1.02]' 
                               : isOutOfStock
-                                ? 'border-black/5 opacity-20 cursor-not-allowed line-through'
-                                : 'border-black/20 text-black/60 hover:border-black/50'
+                                ? 'bg-neutral-50 border border-neutral-200/60 text-neutral-300 opacity-40 cursor-not-allowed line-through'
+                                : 'bg-white border border-neutral-300 text-black hover:border-black hover:bg-neutral-50'
                           }`}
                         >
                           <span 
-                            className="w-3.5 h-3.5 rounded-full border border-black/10 flex-shrink-0"
+                            className={`w-4 h-4 rounded-full flex-shrink-0 transition-transform ${isSel ? 'ring-2 ring-white/90 shadow-sm' : 'border border-black/15'}`}
                             style={{ background: hex }}
                           />
                           <span>{c}</span>
-                          {hasStockTracking && (
-                            <span className="text-[8px] font-bold opacity-60 ml-1">
-                              {isOutOfStock ? '(SIN STOCK)' : colorStock <= 2 ? `(Últimas ${colorStock} u.)` : `(${colorStock} u.)`}
-                            </span>
-                          )}
                         </button>
                       );
                     })}
@@ -1310,12 +1434,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 </div>
               )}
 
-
-              {/* Medidas */}
-              {selectedProduct.medidas && (
-                <div className="mb-8 p-4 bg-neutral-50/50 border border-black/5">
-                  <p className="text-[12px] tracking-[3px] uppercase text-black/60 font-semibold mb-2 flex items-center gap-2"><Ruler size={12}/> Medidas y Calce</p>
-                  <p className="text-[13px] tracking-[1px] leading-relaxed text-black/70 uppercase">{selectedProduct.medidas}</p>
+              {/* Medidas y Calce (Si no hay botón de Guía de talles arriba) */}
+              {selectedProduct.medidas && !selectedProduct.talles?.length && (
+                <div className="mb-7 p-4 bg-neutral-50 border border-black/5 rounded-lg">
+                  <p className="text-[11px] tracking-[2px] uppercase text-black font-semibold mb-1 flex items-center gap-2">
+                    <Ruler size={13}/> Medidas y Calce
+                  </p>
+                  <p className="text-[12px] tracking-[1px] leading-relaxed text-black/70 uppercase whitespace-pre-line">{selectedProduct.medidas}</p>
                 </div>
               )}
 
@@ -1367,6 +1492,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                   const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
                   const disc = getDiscount(c.product);
                   const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+                  const hasDiscount = price < basePrice;
                   return (
                     <div key={i} className="py-8 flex gap-6">
                       <div className="w-20 h-28 bg-neutral-50 flex-shrink-0 flex items-center justify-center">
@@ -1378,7 +1504,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                           <button onClick={() => removeFromCart(c.product.id, c.selectedTalle, c.selectedColor)} className="opacity-30 hover:opacity-100"><Trash2 size={16} /></button>
                         </div>
                         <p className="text-[11px] tracking-[2px] uppercase text-black/50 font-medium mb-4">{c.selectedTalle && `Talle ${c.selectedTalle}`} {c.selectedColor && `— ${c.selectedColor}`}</p>
-                        {disc > 0 && <span className="text-[10px] tracking-[2px] uppercase text-red-600 font-bold mb-3">-{disc}% OFF</span>}
+                        {hasDiscount && <span className="text-[10px] tracking-[2px] uppercase text-red-600 font-bold mb-3">-{disc}% OFF</span>}
                         <div className="mt-auto flex justify-between items-center">
                           <div className="flex items-center border border-black/15">
                             <button onClick={() => updateQty(c.product.id, -1, c.selectedTalle, c.selectedColor)} className="w-9 h-9 flex items-center justify-center hover:bg-black/5"><Minus size={14} /></button>
@@ -1386,8 +1512,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                             <button onClick={() => updateQty(c.product.id, 1, c.selectedTalle, c.selectedColor)} className="w-9 h-9 flex items-center justify-center hover:bg-black/5"><Plus size={14} /></button>
                           </div>
                           <div className="text-right">
-                            {disc > 0 && <span className="text-[12px] font-light line-through text-black/30 block">${(basePrice * c.quantity).toLocaleString()}</span>}
-                            <span className={`text-[18px] font-bold ${disc > 0 ? 'text-red-600' : 'text-black'}`}>${(price * c.quantity).toLocaleString()}</span>
+                            {hasDiscount && <span className="text-[12px] font-light line-through text-black/30 block">${(basePrice * c.quantity).toLocaleString()}</span>}
+                            <span className={`text-[18px] font-bold ${hasDiscount ? 'text-red-600' : 'text-black'}`}>${(price * c.quantity).toLocaleString()}</span>
                           </div>
                         </div>
                       </div>
@@ -1525,6 +1651,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                     if (user) {
                       setShowCheckout(true);
                     } else {
+                      setPendingCheckout(true);
                       setShowAuthModal(true);
                     }
                   }} 
@@ -1694,8 +1821,18 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             </a>
           )}
         </div>
-        <div className="w-full max-w-4xl flex flex-col sm:flex-row justify-center items-center gap-8">
+        <div className="w-full max-w-4xl flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-8">
           <p className="text-[11px] tracking-[3px] uppercase text-black/50 font-medium">© 2026 {webSettings.storeName || 'EL ROPERO'} SHOWROOM</p>
+          <span className="hidden sm:inline text-black/20">•</span>
+          <a 
+            href="https://www.instagram.com/siao.tech" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="inline-flex items-center text-[11px] tracking-[2.5px] uppercase text-black/60 hover:text-black transition-all duration-200 group font-medium"
+            title="Ir al Instagram de SIAO Tech (@siao.tech)"
+          >
+            Desarrollado por <span className="font-bold underline underline-offset-4 group-hover:text-black ml-1">SIAO Tech</span>
+          </a>
         </div>
       </footer>
 
@@ -1725,6 +1862,16 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               </section>
             </div>
             <button onClick={() => setShowTerms(false)} className="w-full bg-black text-white py-4 text-[10px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-colors">Entendido</button>
+            <div className="pt-2 border-t border-black/5 text-center">
+              <a 
+                href="https://www.instagram.com/siao.tech" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="inline-flex items-center gap-1 text-[9px] tracking-[2px] uppercase text-black/40 hover:text-black transition-colors font-medium"
+              >
+                Desarrollado por <span className="font-semibold underline underline-offset-2">SIAO Tech</span> (@siao.tech)
+              </a>
+            </div>
           </div>
         </div>
       )}
@@ -1785,6 +1932,103 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               )}
             </div>
             <button onClick={() => setShowLocation(false)} className="w-full bg-black text-white py-4 text-[10px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-colors">Cerrar</button>
+            <div className="pt-2 border-t border-black/5 text-center">
+              <a 
+                href="https://www.instagram.com/siao.tech" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="inline-flex items-center gap-1 text-[9px] tracking-[2px] uppercase text-black/40 hover:text-black transition-colors font-medium"
+              >
+                Desarrollado por <span className="font-semibold underline underline-offset-2">SIAO Tech</span> (@siao.tech)
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════ GUÍA DE TALLES MODAL ══════ */}
+      {showSizeGuideModal && selectedProduct && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowSizeGuideModal(false)} />
+          <div className="relative bg-white w-full max-w-md p-8 sm:p-10 space-y-6 animate-in zoom-in-95 duration-200 shadow-2xl rounded-xl">
+            <button onClick={() => setShowSizeGuideModal(false)} className="absolute top-6 right-6 opacity-40 hover:opacity-100 transition-opacity">
+              <X size={20} strokeWidth={1.5} />
+            </button>
+            <div className="flex items-center gap-2 border-b border-black/10 pb-4">
+              <Ruler size={18} strokeWidth={1.5} className="text-black/70" />
+              <h3 className="text-[13px] tracking-[4px] uppercase font-semibold text-black">Guía de Talles y Medidas</h3>
+            </div>
+            
+            <div className="space-y-4 text-[12px] tracking-[1px] leading-relaxed uppercase text-black/80">
+              <p className="font-semibold text-black/50 text-[10px] tracking-[2px]">{selectedProduct.descripcion}</p>
+              {selectedProduct.medidas ? (
+                <div className="bg-neutral-50 border border-black/5 p-4 rounded-lg text-black/90 font-medium whitespace-pre-line">
+                  {selectedProduct.medidas}
+                </div>
+              ) : (
+                <p className="text-black/50 italic">No hay información detallada de medidas cargada para esta prenda.</p>
+              )}
+            </div>
+            
+            <button onClick={() => setShowSizeGuideModal(false)} className="w-full bg-black text-white py-3.5 text-[10px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-colors">
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══════ NOTIFICACIÓN DE PRENDA AGREGADA AL CARRITO ══════ */}
+      {cartToastNotification && (
+        <div 
+          className="fixed bottom-24 right-4 sm:bottom-8 sm:right-8 z-[200] max-w-sm w-[calc(100vw-2rem)] sm:w-[380px] bg-black text-white p-4 shadow-2xl rounded-lg border border-white/10 flex items-center gap-3.5 animate-in fade-in slide-in-from-bottom-5 duration-300"
+          role="status"
+          aria-live="polite"
+        >
+          {cartToastNotification.item.imagenes?.[0] ? (
+            <img
+              src={cartToastNotification.item.imagenes[0]}
+              alt=""
+              className="w-12 h-14 object-cover rounded bg-white/10 flex-shrink-0"
+            />
+          ) : (
+            <div className="w-12 h-14 bg-white/10 rounded flex items-center justify-center text-white/50 flex-shrink-0">
+              <ShoppingBag size={20} />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] uppercase tracking-[2px] font-bold mb-0.5">
+              <CheckCircle size={13} className="flex-shrink-0" />
+              <span>Prenda agregada al carrito</span>
+            </div>
+            <p className="text-[11px] font-semibold tracking-[1px] uppercase truncate text-white">
+              {cartToastNotification.item.descripcion}
+            </p>
+            {(cartToastNotification.talle || cartToastNotification.color) && (
+              <p className="text-[9px] tracking-[1px] uppercase text-white/60 mt-0.5">
+                {[
+                  cartToastNotification.talle && `Talle: ${cartToastNotification.talle}`,
+                  cartToastNotification.color && `Color: ${cartToastNotification.color}`
+                ].filter(Boolean).join(' | ')}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => {
+                setShowCart(true);
+                setCartToastNotification(null);
+              }}
+              className="bg-white text-black text-[9px] uppercase tracking-[2px] font-bold px-3 py-2 rounded hover:bg-neutral-200 transition-colors shadow-sm cursor-pointer"
+            >
+              Ver Carrito
+            </button>
+            <button
+              onClick={() => setCartToastNotification(null)}
+              className="text-white/40 hover:text-white p-1 transition-colors cursor-pointer"
+              aria-label="Cerrar aviso"
+            >
+              <X size={15} />
+            </button>
           </div>
         </div>
       )}
@@ -1805,9 +2049,16 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       {/* ══════ AUTHENTICATION MODALS & FLOWS ══════ */}
       <AuthModal 
         isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)}
+        onClose={() => {
+          setShowAuthModal(false);
+          if (pendingCheckout && user) {
+            setShowCheckout(true);
+          }
+          setPendingCheckout(false);
+        }}
         onContinueAsGuest={() => {
           setShowAuthModal(false);
+          setPendingCheckout(false);
           setShowCheckout(true);
         }}
       />
@@ -1846,6 +2097,74 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         onClose={() => setShowBuyGiftCard(false)}
         onSuccess={() => setShowBuyGiftCard(false)}
       />
+
+      {/* ══════ MODAL PAGO PENDIENTE / RETORNO DE UALÁ BIS ══════ */}
+      {pendingPaymentOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden p-6 md:p-8 relative border border-black/5 text-center space-y-6">
+            <button
+              onClick={() => setPendingPaymentOrder(null)}
+              className="absolute top-4 right-4 p-2 text-black/40 hover:text-black transition-colors rounded-full hover:bg-neutral-100"
+              aria-label="Cerrar"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="w-14 h-14 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+              <AlertCircle size={26} strokeWidth={1.5} />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-[16px] md:text-[18px] tracking-[3px] uppercase font-bold text-black">
+                Pago no completado
+              </h3>
+              <p className="text-[11px] tracking-[1px] uppercase leading-relaxed text-black/60 max-w-[360px] mx-auto">
+                Tu pedido {pendingPaymentOrder.orderId ? `#${pendingPaymentOrder.orderId.slice(-6).toUpperCase()}` : ''} sigue guardado como pendiente. Podés reintentar el pago con Ualá Bis o escribirnos si tuviste algún inconveniente.
+              </p>
+            </div>
+
+            {pendingPaymentOrder.ualaPaymentUrl && (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => window.open(pendingPaymentOrder.ualaPaymentUrl, '_blank', 'noopener,noreferrer')}
+                  className="w-full bg-black text-white py-4 rounded-xl text-[11px] font-bold tracking-[3px] uppercase hover:bg-neutral-900 transition-all shadow-md flex items-center justify-center gap-2"
+                >
+                  Pagar con Ualá Bis
+                </button>
+              </div>
+            )}
+
+            <div className="pt-6 border-t border-black/5 space-y-3">
+              <p className="text-[11px] tracking-[1px] uppercase font-semibold text-black/70">
+                ¿Tuviste problemas para realizar el pago?
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const phone = (webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '');
+                  const msg = buildOrderWhatsAppMessage(
+                    pendingPaymentOrder,
+                    webSettings.storeName || 'El Ropero',
+                    'Tuve un problema al realizar el pago con Ualá Bis. ¿Me podrían ayudar a completarlo?'
+                  );
+                  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+                }}
+                className="w-full inline-flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white py-3.5 rounded-xl text-[10px] font-bold tracking-[2.5px] uppercase transition-all shadow-sm"
+              >
+                <Send size={13} /> Contactar por WhatsApp
+              </button>
+            </div>
+
+            <button
+              onClick={() => setPendingPaymentOrder(null)}
+              className="w-full text-[10px] tracking-[3px] uppercase font-bold text-black/40 hover:text-black transition-colors pt-2"
+            >
+              Volver a la Tienda
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

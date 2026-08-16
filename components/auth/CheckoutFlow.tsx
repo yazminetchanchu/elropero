@@ -12,6 +12,7 @@ import { createUalaPayment, setUalaEnvironment, getUalaEnvironment } from '../..
 import { calculateCartWeightKg, calculateCartWeightGrams, calculateCartDimensions } from '../../utils/shippingHelpers';
 import { useModal } from '../../contexts/ModalContext';
 import { sanitizeInput } from '../../utils/sanitize';
+import { buildOrderWhatsAppMessage } from '../../utils/whatsappHelpers';
 
 
 const CORREO_PROVINCES: Record<string, string> = {
@@ -22,7 +23,9 @@ const CORREO_PROVINCES: Record<string, string> = {
   'V': 'Tierra del Fuego', 'W': 'Corrientes', 'X': 'Córdoba', 'Y': 'Jujuy', 'Z': 'Santa Cruz'
 };
 
-const PUBLIC_SHOWROOM_ID = localStorage.getItem('ropero_showroom_id_v3_2026') || 'EL-ROPERO-DEFAULT';
+import { getShowroomID } from '../../services/storage';
+
+const PUBLIC_SHOWROOM_ID = getShowroomID();
 
 const SHIPPING_RATES: Record<string, number> = {
   'CABA': 2500,
@@ -299,11 +302,16 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
     setGiftCardError(null);
   };
 
+  const prevIsOpenRef = React.useRef(false);
+
   React.useEffect(() => {
-    if (isOpen) {
-      setStep('identification');
+    const justOpened = isOpen && !prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
+    if (justOpened) {
       setErrorMsg(null);
       setPlacedOrderId(null);
+      setPlacedOrderData(null);
       setGuestPassword('');
       setConversionSuccess(false);
       setAddNewAddress(false);
@@ -333,16 +341,17 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
           setSelectedAddressId('');
           setAddNewAddress(true);
         }
+        setStep('delivery');
       } else {
         setNombre('');
         setEmail('');
         setTelefono('');
         setSelectedAddressId('');
         setAddNewAddress(true);
+        setStep('identification');
       }
-      
     }
-  }, [isOpen, user, customerProfile, cart]);
+  }, [isOpen, user, customerProfile, initialAppliedGiftCard, initialPaymentMethod]);
 
   // Direcciones activas
   const activeAddress = React.useMemo((): Omit<ShippingAddress, 'id'> | null => {
@@ -372,6 +381,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
     if (!isDomicilio && !isSucursal) {
       setCostoEnvio(0);
+      setIsCalculatingShipping(false);
       return;
     }
 
@@ -486,7 +496,13 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
   const handleBackStep = () => {
     setErrorMsg(null);
-    if (step === 'delivery') setStep('identification');
+    if (step === 'delivery') {
+      if (user) {
+        onClose();
+      } else {
+        setStep('identification');
+      }
+    }
     if (step === 'review') setStep('delivery');
   };
 
@@ -611,9 +627,16 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       setPlacedOrderId(orderId);
       const updatedOrderDataWithUala = {
         ...orderData,
+        orderId: orderId,
         ualaPaymentUrl: redirectUrl
       };
       setPlacedOrderData(updatedOrderDataWithUala);
+      try {
+        localStorage.setItem('ropero_last_pending_order', JSON.stringify(updatedOrderDataWithUala));
+      } catch (storageErr) {
+        console.error('Error al guardar la última orden pendiente en localStorage:', storageErr);
+      }
+
       setPaymentRedirectUrl(redirectUrl);
       setStep('success');
 
@@ -636,52 +659,35 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
   const triggerWhatsAppMessage = () => {
     const store = (webSettings?.storeName || 'El Ropero').trim();
-    let msg = `🛍️ *Nuevo Pedido Web — ${store} Showroom*\n\n`;
-    msg += `*Cliente:* ${nombre.trim().toUpperCase()}\n`;
-    msg += `*Teléfono:* ${telefono.trim()}\n`;
-    msg += `*Email:* ${email.trim()}\n`;
-    msg += `*Entrega:* ${tipoEnvio === 'envio' ? 'Envío a domicilio' : tipoEnvio === 'envio_sucursal' ? 'Envío a Sucursal' : 'Retiro por local'}\n`;
-    
-    if (tipoEnvio === 'envio' && activeAddress) {
-      msg += `*Dirección:* ${activeAddress.calle} ${activeAddress.numero}`;
-      if (activeAddress.pisoDepto) msg += ` - ${activeAddress.pisoDepto}`;
-      msg += ` (${activeAddress.localidad}, ${activeAddress.provincia})\n`;
-      if (activeAddress.indicaciones) msg += `*Indicaciones:* ${activeAddress.indicaciones}\n`;
-      msg += `*Costo de Envío:* ${calculatedCostoEnvio.toLocaleString('es-AR')}\n`;
-    } else if (tipoEnvio === 'envio_sucursal' && selectedSucursal) {
-      msg += `*Sucursal Elegida:* ${selectedSucursal.name} (${selectedSucursal.code})\n`;
-      msg += `*Dirección:* ${selectedSucursal.location?.address?.streetName} ${selectedSucursal.location?.address?.streetNumber}\n`;
-      msg += `*Localidad:* ${selectedSucursal.location?.address?.locality}, ${selectedSucursal.location?.address?.province}\n`;
-      msg += `*Costo de Envío:* ${calculatedCostoEnvio.toLocaleString('es-AR')}\n`;
-    }
-    
-    const metodoLabel = paymentMethod === 'transferencia' ? `Ualá Bis (Transferencia) — ${DESCUENTO_BASE_TRANSFERENCIA}% OFF` : 'Ualá Bis (Tarjeta — Lista)';
-    msg += `*Método de Pago:* ${metodoLabel}\n`;
+    const phone = (webSettings?.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '');
 
-    msg += '\n*Detalle de prendas:*\n';
-    cart.forEach((c, i) => {
-      const disc = getDiscount(c.product);
-      const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-      const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
-      msg += `${i + 1}. ${c.product.descripcion.toUpperCase()}`;
-      if (c.selectedTalle) msg += ` (T: ${c.selectedTalle})`;
-      if (c.selectedColor) msg += ` (C: ${c.selectedColor})`;
-      const label = paymentMethod === 'transferencia' ? 'TRANSFERENCIA' : 'TARJETA';
-      msg += ` × ${c.quantity} · $${price.toLocaleString('es-AR')} [${label}]\n`;
-    });
+    const orderToUse = placedOrderData || {
+      orderId: placedOrderId || '',
+      customerNombre: nombre.trim().toUpperCase(),
+      customerTelefono: telefono.trim(),
+      customerEmail: email.trim(),
+      tipoEnvio: tipoEnvio,
+      direccionEnvio: activeAddress,
+      sucursalCorreoArgentino: selectedSucursal,
+      costoEnvio: calculatedCostoEnvio,
+      metodoPago: paymentMethod === 'transferencia' ? `Ualá Bis (Transferencia) — ${DESCUENTO_BASE_TRANSFERENCIA}% OFF` : 'Ualá Bis (Tarjeta — Lista)',
+      items: cart.map(c => {
+        const disc = getDiscount(c.product);
+        const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
+        const finalPrice = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+        return {
+          descripcion: c.product.descripcion,
+          talle: c.selectedTalle || '',
+          color: c.selectedColor || '',
+          cantidad: c.quantity,
+          precioUnitario: finalPrice
+        };
+      }),
+      total: Math.round(finalTotal),
+      giftCardUsada: appliedGiftCard ? { codigo: appliedGiftCard.codigo, montoUsado: giftCardDiscountAmount } : undefined
+    };
 
-    if (tipoEnvio === 'envio' || tipoEnvio === 'envio_sucursal') {
-      msg += `\n*Subtotal Prendas:* ${calculatedCartSubtotal.toLocaleString('es-AR')}`;
-      msg += `\n*Costo Envío:* ${calculatedCostoEnvio.toLocaleString('es-AR')}`;
-    }
-
-    if (appliedGiftCard) {
-      msg += `\n*Gift Card Aplicada:* ${appliedGiftCard.codigo} (-$${giftCardDiscountAmount.toLocaleString('es-AR')})`;
-    }
-
-    msg += `\n━━━━━━━━━━━━━━━\n*TOTAL A PAGAR: $${Math.round(finalTotal).toLocaleString('es-AR')}*`;
-    
-    const phone = (webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '');
+    const msg = buildOrderWhatsAppMessage(orderToUse, store);
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -1070,7 +1076,12 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                         </label>
                       )}
 
-                      {/* (Cotización de envío eliminada) */}
+                      {isCalculatingShipping && (
+                        <div className="flex items-center gap-2 text-[10px] tracking-[1.5px] uppercase font-semibold text-black/60 pt-2 animate-in fade-in">
+                          <Loader2 size={12} className="animate-spin text-black" />
+                          <span>Calculando costo de envío...</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1109,118 +1120,46 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                 })}
               </div>
 
-              {/* Medio de Pago Selector in Checkout Review */}
-              <div className="space-y-3">
-                <p className="text-[9px] tracking-[2px] font-bold text-black/40 uppercase">Medio de Pago</p>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  {[
-                    { id: 'transferencia', label: 'Transferencia (-20% OFF)' },
-                    { id: 'tarjeta', label: 'Tarjeta (Lista)' }
-                  ].map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setPaymentMethod(m.id as 'transferencia' | 'tarjeta')}
-                      className={`flex-1 py-3.5 border rounded-xl text-[10px] tracking-[1.5px] uppercase font-bold transition-all ${
-                        paymentMethod === m.id
-                          ? 'border-black bg-neutral-50 shadow-sm'
-                          : 'border-black/10 opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {paymentMethod === 'transferencia' ? (
-                <div className="p-5 border border-sky-200 bg-sky-50/50 rounded-xl space-y-1">
-                  <p className="text-[9px] tracking-[2px] font-bold text-sky-900 uppercase">Pago por transferencia</p>
-                  <p className="text-[10px] tracking-[0.5px] text-black/60 uppercase">
-                    Precios con {DESCUENTO_BASE_TRANSFERENCIA}% de descuento. Al confirmar se abrirá la pasarela segura de Ualá Bis para abonar por transferencia.
-                  </p>
-                </div>
-              ) : (
-                <div className="p-5 border border-[#C9B8A8] bg-[#F5F1EB]/30 rounded-xl space-y-1">
-                  <p className="text-[9px] tracking-[2px] font-bold text-[#A38A70] uppercase">Pago con Tarjeta</p>
-                  <p className="text-[10px] tracking-[0.5px] text-black/60 uppercase">
-                    Pagás a precio de lista. Al confirmar, se abrirá la pasarela segura de Ualá Bis para abonar con tarjeta de crédito o débito.
-                  </p>
-                </div>
-              )}
-
-              {/* Gift Card Coupon Accordion */}
-              <div className="border border-black/10 rounded-xl overflow-hidden bg-neutral-50/50">
-                <button
-                  type="button"
-                  onClick={() => setShowGiftInput(!showGiftInput)}
-                  className="w-full px-5 py-4 flex items-center justify-between text-[11px] tracking-[2px] uppercase font-bold text-black/80 hover:bg-black/5 transition-all"
-                >
-                  <span className="flex items-center gap-2">
-                    <Gift size={14} /> ¿Tenés una Gift Card?
-                  </span>
-                  <span className="text-[10px] text-black/40 font-normal">
-                    {showGiftInput ? 'Cerrar' : 'Agregar'}
-                  </span>
-                </button>
-
-                {showGiftInput && (
-                  <div className="p-5 border-t border-black/5 space-y-4 bg-white animate-in fade-in duration-300">
-                    {appliedGiftCard ? (
-                      <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 p-4 rounded-lg">
-                        <div className="space-y-0.5 text-left">
-                          <p className="text-[9px] font-bold text-emerald-800 tracking-[1.5px] uppercase">
-                            Gift Card Aplicada
-                          </p>
-                          <p className="text-[11px] font-mono font-bold text-emerald-950">
-                            {appliedGiftCard.codigo} (Destinatario: {appliedGiftCard.destinatario})
-                          </p>
-                          <p className="text-[10px] text-emerald-700/80 font-medium">
-                            Saldo original: ${appliedGiftCard.saldo.toLocaleString('es-AR')} — Descuento aplicado: ${giftCardDiscountAmount.toLocaleString('es-AR')}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleRemoveGiftCard}
-                          className="text-[9px] tracking-[1.5px] uppercase font-bold text-red-600 hover:text-red-800 underline transition-all"
-                        >
-                          Quitar
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={giftCardCode}
-                            onChange={(e) => setGiftCardCode(e.target.value.toUpperCase())}
-                            placeholder="CÓDIGO DE GIFT CARD (EJ: GIFT-XXXXX)"
-                            disabled={isValidatingGift}
-                            className="flex-1 bg-transparent border border-black/15 px-4 py-3 text-[11px] tracking-[1.5px] font-mono focus:outline-none focus:border-black uppercase placeholder:text-black/20"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleApplyGiftCard}
-                            disabled={isValidatingGift || !giftCardCode.trim()}
-                            className="bg-black hover:bg-neutral-800 disabled:opacity-30 text-white px-6 text-[10px] tracking-[2px] uppercase font-bold transition-all flex items-center justify-center min-w-[100px]"
-                          >
-                            {isValidatingGift ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                              'Aplicar'
-                            )}
-                          </button>
-                        </div>
-                        {giftCardError && (
-                          <p className="text-[9px] uppercase tracking-[1px] text-red-600 font-semibold animate-pulse text-left">
-                            ⚠️ {giftCardError}
-                          </p>
-                        )}
-                      </div>
-                    )}
+              {/* Resumen del Medio de Pago (elegido únicamente en el Carrito) */}
+              <div className="space-y-2">
+                <p className="text-[9px] tracking-[2px] font-bold text-black/40 uppercase">Medio de Pago Seleccionado</p>
+                {paymentMethod === 'transferencia' ? (
+                  <div className="p-4 border border-sky-200 bg-sky-50/50 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] tracking-[2px] font-bold text-sky-900 uppercase">Transferencia Bancaria</p>
+                      <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100/70 px-2 py-0.5 rounded uppercase">-{DESCUENTO_BASE_TRANSFERENCIA}% OFF Aplicado</span>
+                    </div>
+                    <p className="text-[9.5px] tracking-[0.5px] text-black/60 uppercase">
+                      Al confirmar se abrirá la pasarela segura de Ualá Bis para abonar por transferencia.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-4 border border-[#C9B8A8] bg-[#F5F1EB]/30 rounded-xl space-y-1">
+                    <p className="text-[10px] tracking-[2px] font-bold text-[#A38A70] uppercase">Tarjeta de Crédito / Débito</p>
+                    <p className="text-[9.5px] tracking-[0.5px] text-black/60 uppercase">
+                      Precio de lista. Al confirmar se abrirá la pasarela segura de Ualá Bis para abonar con tarjeta.
+                    </p>
                   </div>
                 )}
               </div>
+
+              {/* Gift Card Aplicada (Read-only si fue aplicada en el Carrito) */}
+              {appliedGiftCard && (
+                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-center justify-between">
+                  <div className="space-y-0.5 text-left">
+                    <div className="flex items-center gap-1.5 text-emerald-800">
+                      <Gift size={13} />
+                      <span className="text-[9px] font-bold tracking-[1.5px] uppercase">Gift Card Aplicada</span>
+                    </div>
+                    <p className="text-[11px] font-mono font-bold text-emerald-950">
+                      {appliedGiftCard.codigo} {appliedGiftCard.destinatario && `(Para: ${appliedGiftCard.destinatario})`}
+                    </p>
+                    <p className="text-[9.5px] text-emerald-700 font-medium">
+                      Descuento aplicado: -${giftCardDiscountAmount.toLocaleString('es-AR')}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Resumen de Datos */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 text-[11px] tracking-[1.5px] uppercase pt-4 border-t border-black/5">
@@ -1286,30 +1225,26 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
               </div>
 
               {paymentRedirectUrl && (
-                <div className="bg-[#F5F1EB]/30 border border-[#C9B8A8]/30 p-6 max-w-md mx-auto rounded-2xl shadow-sm">
-                  <p className="text-[10px] tracking-[1.5px] uppercase text-[#A38A70] font-bold mb-3">
-                    Pasarela de Pago de Ualá Bis
-                  </p>
+                <div className="max-w-md mx-auto">
                   <button
                     type="button"
                     onClick={() => window.open(paymentRedirectUrl, '_blank', 'noopener,noreferrer')}
-                    className="w-full bg-black hover:bg-neutral-900 text-white py-3.5 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-all shadow-sm"
+                    className="w-full bg-black hover:bg-neutral-900 text-white py-4 text-[11px] tracking-[3px] uppercase font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
                   >
                     Pagar con Ualá Bis
                   </button>
                 </div>
               )}
 
-              <div className="bg-neutral-50 p-6 max-w-md mx-auto space-y-4 rounded border border-black/5">
-                <Smartphone size={24} className="mx-auto opacity-50" strokeWidth={1.5} />
-                <p className="text-[10px] tracking-[1px] uppercase text-black/50 leading-relaxed font-semibold">
-                  Si la pestaña de WhatsApp no se abrió de forma automática o tuviste problemas, podés reenviar el mensaje utilizando el botón inferior:
+              <div className="pt-6 border-t border-black/5 max-w-md mx-auto space-y-3">
+                <p className="text-[11px] tracking-[1px] uppercase font-semibold text-black/70">
+                  ¿Tuviste problemas para realizar el pago?
                 </p>
                 <button
                   onClick={triggerWhatsAppMessage}
-                  className="inline-flex items-center gap-2 text-[10px] tracking-[3.5px] uppercase font-bold border-b border-black pb-0.5 hover:opacity-60 transition-opacity"
+                  className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white py-3.5 rounded-xl text-[10px] font-bold tracking-[2.5px] uppercase transition-all shadow-sm flex items-center justify-center gap-2"
                 >
-                  <Send size={11} /> Reenviar por WhatsApp
+                  <Send size={12} /> Contactar por WhatsApp
                 </button>
               </div>
 
@@ -1398,9 +1333,19 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
             ) : (
               <button
                 onClick={handleNextStep}
-                className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-3"
+                disabled={isCalculatingShipping || (step === 'delivery' && tipoEnvio === 'envio_sucursal' && sucursalLoading)}
+                className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-3 disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                Continuar <ArrowRight size={13} />
+                {isCalculatingShipping ? (
+                  <>
+                    <Loader2 className="animate-spin" size={14} strokeWidth={1.5} />
+                    Cargando costo de envío...
+                  </>
+                ) : (
+                  <>
+                    Continuar <ArrowRight size={13} />
+                  </>
+                )}
               </button>
             )}
           </div>

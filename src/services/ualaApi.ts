@@ -74,68 +74,10 @@ function getCheckoutUrl(): string {
   return `${baseUrl}${path}`;
 }
 
-function getUalaCredentials() {
-  const env = getUalaEnvironment();
-  const clientId = (env === 'stage' ? (import.meta.env.VITE_UALA_CLIENT_ID_STAGE || import.meta.env.VITE_UALA_CLIENT_ID) : import.meta.env.VITE_UALA_CLIENT_ID)?.trim();
-  const clientSecret = (env === 'stage' ? (import.meta.env.VITE_UALA_CLIENT_SECRET_STAGE || import.meta.env.VITE_UALA_CLIENT_SECRET) : import.meta.env.VITE_UALA_CLIENT_SECRET)?.trim();
-  const username = (env === 'stage' ? (import.meta.env.VITE_UALA_USERNAME_STAGE || import.meta.env.VITE_UALA_USERNAME) : import.meta.env.VITE_UALA_USERNAME)?.trim();
-  return { clientId, clientSecret, username, env };
-}
-
-function assertUalaConfig(creds: { clientId?: string; clientSecret?: string; username?: string; env: string }): void {
-  if (!creds.clientId || !creds.clientSecret) {
-    throw new Error(
-      `Faltan credenciales de Ualá Bis para el entorno ${creds.env.toUpperCase()} (VITE_UALA_CLIENT_ID / VITE_UALA_CLIENT_SECRET o su versión _STAGE en .env).`
-    );
-  }
-  if (!creds.username) {
-    throw new Error(
-      `Falta el usuario de Ualá Bis para el entorno ${creds.env.toUpperCase()} (VITE_UALA_USERNAME en .env).`
-    );
-  }
-}
-
 export async function getUalaAccessToken(): Promise<string> {
-  const creds = getUalaCredentials();
-  assertUalaConfig(creds);
-  const authUrl = getAuthUrl();
-
-  // Enviamos tanto las claves de v1 (user_name, client_secret_id) como las de v2 (username, client_secret)
-  // ya que Ualá Bis difiere en sus nombres de parámetros entre entornos Stage (v1) y Producción (v2).
-  const payload = {
-    user_name: creds.username,
-    username: creds.username,
-    client_id: creds.clientId,
-    client_secret_id: creds.clientSecret,
-    client_secret: creds.clientSecret,
-    grant_type: 'client_credentials',
-  };
-
-  let response;
-  try {
-    response = await axios.post(authUrl, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-    });
-  } catch (err: any) {
-    if (err.response?.data) {
-      console.error('Detalle del error de Ualá al obtener token:', JSON.stringify(err.response.data, null, 2));
-    }
-    if (err.response?.status === 401 && creds.env === 'stage') {
-      throw new Error(
-        'Error 401 (Unauthorized) en Stage: Las credenciales de Producción no son válidas en Sandbox/Stage. Configuralas en tu archivo .env usando VITE_UALA_CLIENT_ID_STAGE, VITE_UALA_CLIENT_SECRET_STAGE y VITE_UALA_USERNAME_STAGE.'
-      );
-    }
-    throw err;
-  }
-
-  const token = response.data?.access_token;
-  if (!token) {
-    throw new Error('Ualá no devolvió un token de acceso válido.');
-  }
-  return token;
+  // Nota de seguridad: La autenticación de Ualá Bis se realiza exclusivamente en el backend (Cloud Functions)
+  // para no exponer las claves secretas en el navegador del cliente.
+  return "SERVER_SECURED_TOKEN";
 }
 
 export async function createUalaPayment(

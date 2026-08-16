@@ -50,7 +50,11 @@ vi.mock('lucide-react', () => ({
   Clock: () => <span>Clock</span>,
   Truck: () => <span>Truck</span>,
   Loader2: () => <span>Loader2</span>,
-  Receipt: () => <span>Receipt</span>
+  Receipt: () => <span>Receipt</span>,
+  Package: () => <span>Package</span>,
+  Download: () => <span>Download</span>,
+  Activity: () => <span>Activity</span>,
+  ExternalLink: () => <span>ExternalLink</span>
 }));
 
 describe('WebOrdersManager', () => {
@@ -156,5 +160,41 @@ describe('WebOrdersManager', () => {
         'web'
       );
     });
+  });
+
+  it('muestra el botón "Ir a Mi Correo" cuando la orden posee un número de seguimiento', async () => {
+    const orderWithTracking = {
+      ...mockOrder,
+      id: 'order-tracking',
+      tipoEnvio: 'envio',
+      trackingNumber: 'TN-998877',
+      direccionEnvio: {
+        provincia: 'Buenos Aires',
+        localidad: 'La Plata',
+        calle: 'Calle 7',
+        numero: '123',
+        codigoPostal: '1900'
+      }
+    };
+
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'order-tracking', data: () => orderWithTracking }
+      ]
+    });
+
+    render(<WebOrdersManager />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Juan Perez/i)).toBeInTheDocument();
+    });
+
+    const eyeBtn = screen.getByTitle('Ver Detalles');
+    fireEvent.click(eyeBtn);
+
+    const miCorreoLinks = screen.getAllByRole('link', { name: /Ir a Mi Correo/i });
+    expect(miCorreoLinks.length).toBeGreaterThan(0);
+    expect(miCorreoLinks[0]).toHaveAttribute('href', 'https://micorreo.correoargentino.com.ar/');
+    expect(miCorreoLinks[0]).toHaveAttribute('target', '_blank');
   });
 });

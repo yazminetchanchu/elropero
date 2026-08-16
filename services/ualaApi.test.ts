@@ -24,7 +24,6 @@ describe('ualaApi Service - Integracion de Pasarela de Pagos Ualá Bis', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    // Default currentUser null
     (auth as any).currentUser = null;
   });
 
@@ -54,27 +53,9 @@ describe('ualaApi Service - Integracion de Pasarela de Pagos Ualá Bis', () => {
   });
 
   describe('getUalaAccessToken', () => {
-    it('lanza error claro si faltan las credenciales requeridas en las variables de entorno', async () => {
-      // Sin VITE_UALA_CLIENT_ID
-      vi.stubEnv('VITE_UALA_CLIENT_ID', '');
-      vi.stubEnv('VITE_UALA_CLIENT_SECRET', 'secret');
-      vi.stubEnv('VITE_UALA_USERNAME', 'user');
-
-      await expect(getUalaAccessToken()).rejects.toThrow(/Faltan credenciales/);
-    });
-
-    it('obtiene el token exitosamente cuando las credenciales son validas', async () => {
-      vi.stubEnv('VITE_UALA_CLIENT_ID', 'test_id');
-      vi.stubEnv('VITE_UALA_CLIENT_SECRET', 'test_secret');
-      vi.stubEnv('VITE_UALA_USERNAME', 'test_user');
-
-      mockedAxios.post.mockResolvedValueOnce({
-        data: { access_token: 'bearer_token_12345' },
-      });
-
+    it('retorna token protegido por servidor sin exponer claves en el cliente', async () => {
       const token = await getUalaAccessToken();
-      expect(token).toBe('bearer_token_12345');
-      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      expect(token).toBe('SERVER_SECURED_TOKEN');
     });
   });
 
@@ -102,7 +83,6 @@ describe('ualaApi Service - Integracion de Pasarela de Pagos Ualá Bis', () => {
       expect(res.paymentId).toBe('pay_999');
       expect(res.paymentUrl).toBe('https://checkout.uala.com.ar/pay_999');
 
-      // Verifica que las URLs locales sean reemplazadas por dominio seguro HTTPS en produccion
       expect(mockedAxios.post).toHaveBeenCalledWith(
         expect.stringContaining('createUalaCheckout'),
         expect.objectContaining({

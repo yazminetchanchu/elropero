@@ -3,10 +3,11 @@ import { db, functions } from '../services/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { database } from '../services/storage';
 import { collection, getDocs, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { Search, ShoppingBag, Eye, X, MessageSquare, CheckCircle, Clock, Truck, Loader2, Receipt, Package, FileText, Activity, Download } from 'lucide-react';
+import { Search, ShoppingBag, Eye, X, MessageSquare, CheckCircle, Clock, Truck, Loader2, Receipt, Package, FileText, Activity, Download, ExternalLink } from 'lucide-react';
 import { fulfillWebOrder } from '../services/webOrderFulfillment';
 import { sendNotificationEmail, sendSaleConfirmationEmail, sendOrderCancelledEmail } from '../services/emailService';
 import { useModal } from '../contexts/ModalContext';
+import { generarEnvioManual, obtenerEtiquetaPdf } from '../services/correoArgentinoService';
 
 
 interface WebOrder {
@@ -69,22 +70,48 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
   const [selectedOrder, setSelectedOrder] = React.useState<WebOrder | null>(null);
   const [isDownloadingLabel, setIsDownloadingLabel] = React.useState(false);
   const [isGeneratingLabel, setIsGeneratingLabel] = React.useState(false);
+  const [isCheckingTracking, setIsCheckingTracking] = React.useState(false);
+  const [trackingInfo, setTrackingInfo] = React.useState<any | null>(null);
+
+  const handleConsultarTracking = async (trackingNumber: string) => {
+    setIsCheckingTracking(true);
+    setTrackingInfo(null);
+    try {
+      const obtenerTracking = httpsCallable(functions, 'obtenerTracking');
+      const response: any = await obtenerTracking({ trackingNumber });
+      if (response.data.success && response.data.tracking) {
+        setTrackingInfo(response.data.tracking);
+      } else {
+        showAlert('No se pudieron obtener eventos de seguimiento para la guía: ' + trackingNumber, 'Seguimiento', 'info');
+      }
+    } catch (error: any) {
+      console.error('Error al consultar tracking:', error);
+      showAlert(error.message || 'Error al consultar el seguimiento en Correo Argentino.', 'Error de Tracking', 'error');
+    } finally {
+      setIsCheckingTracking(false);
+    }
+  };
+
 
   const handleGenerarEnvio = async (order: WebOrder) => {
     setIsGeneratingLabel(true);
     try {
-      const generarEnvioManual = httpsCallable(functions, 'generarEnvioManual');
-      const response: any = await generarEnvioManual({
-        orderId: order.id,
-        orderData: order
-      });
+      const response = await generarEnvioManual(order.id, order);
 
-      if (response.data.success && response.data.trackingNumber) {
-        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, trackingNumber: response.data.trackingNumber } : o));
-        setSelectedOrder(prev => prev && prev.id === order.id ? { ...prev, trackingNumber: response.data.trackingNumber } : prev);
-        showAlert('Envío generado correctamente en Correo Argentino. Tracking: ' + response.data.trackingNumber, 'Éxito', 'success');
+      if (response.success && response.trackingNumber) {
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, trackingNumber: response.trackingNumber } : o));
+        setSelectedOrder(prev => prev && prev.id === order.id ? { ...prev, trackingNumber: response.trackingNumber } : prev);
+        
+        const openMiCorreo = await showConfirm(
+          `Envío generado y confirmado correctamente en Correo Argentino.\nTracking: ${response.trackingNumber}\n\n¿Deseás ingresar a Mi Correo para gestionar y preparar el envío?`,
+          'Envío Confirmado',
+          'success'
+        );
+        if (openMiCorreo) {
+          window.open('https://micorreo.correoargentino.com.ar/', '_blank', 'noopener,noreferrer');
+        }
       } else {
-        throw new Error(response.data.error || 'Error desconocido al comunicar con MiCorreo.');
+        throw new Error(response.error || 'Error desconocido al comunicar con MiCorreo.');
       }
     } catch (error: any) {
       console.error('Error al generar envío manual:', error);
@@ -97,24 +124,24 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
   const handleDownloadLabel = async (orderId: string) => {
     setIsDownloadingLabel(true);
     try {
-      const obtenerEtiquetaPdf = httpsCallable(functions, 'obtenerEtiquetaPdf');
-      const response: any = await obtenerEtiquetaPdf({ orderId });
-      
-      const base64Pdf = response.data.labelBase64;
+      const base64Pdf = await obtenerEtiquetaPdf(orderId);
       if (!base64Pdf) {
         throw new Error('No se recibió la etiqueta del correo.');
       }
 
-      const linkSource = `data:application/pdf;base64,${base64Pdf}`;
+      const linkSource = base64Pdf.startsWith('data:')
+        ? base64Pdf
+        : `data:application/pdf;base64,${base64Pdf}`;
+
       const downloadLink = document.createElement("a");
       const fileName = `etiqueta_${orderId}.pdf`;
       downloadLink.href = linkSource;
       downloadLink.download = fileName;
       downloadLink.click();
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al descargar la etiqueta:', error);
-      showAlert('No se pudo descargar la etiqueta. Verificá si el pedido fue confirmado en Mi Correo.', 'Error', 'error');
+      showAlert(error.message || 'No se pudo descargar la etiqueta. Verificá si el pedido fue confirmado en Mi Correo.', 'Error', 'error');
     } finally {
       setIsDownloadingLabel(false);
     }
@@ -332,38 +359,38 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
   };
 
   return (
-    <div className="space-y-6 text-left selection:bg-black selection:text-white font-['Inter']">
+    <div className="space-y-6 text-left selection:bg-stone-900 selection:text-white font-['Inter']">
       
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#D4C4B0] pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-stone-200/60 pb-4">
         <div>
-          <h2 className="font-serif text-3xl italic text-black font-semibold">Pedidos Web</h2>
-          <p className="text-[10px] text-black/50 uppercase tracking-[2px] mt-1 font-medium">Visualización y gestión de reservas enviadas por clientes.</p>
+          <h2 className="font-serif text-2xl italic font-normal text-stone-900">Pedidos Web</h2>
+          <p className="text-[9px] text-stone-400 uppercase tracking-[0.18em] mt-0.5 font-light">Visualización y gestión de reservas enviadas por clientes.</p>
         </div>
         <button 
           onClick={fetchOrders}
-          className="self-start bg-black text-white px-6 py-3 text-[10px] tracking-[2.5px] uppercase font-medium hover:bg-neutral-800 transition-colors shadow-sm"
+          className="self-start bg-stone-900 text-white px-5 py-2.5 text-[9px] tracking-[0.18em] uppercase font-medium hover:bg-black transition-colors rounded-xl shadow-2xs"
         >
           Actualizar Lista
         </button>
       </div>
 
       {/* Filters Bar */}
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white border border-[#D4C4B0] p-4 rounded-xl shadow-sm">
+      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white border border-stone-200/60 p-3.5 rounded-2xl shadow-2xs">
         <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30" size={14} />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={14} strokeWidth={1.5} />
           <input
             type="text"
             placeholder="BUSCAR CLIENTE O PEDIDO..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-[#F5F1EB]/30 border border-[#D4C4B0] py-2.5 pl-10 pr-3 text-[11px] uppercase tracking-[1px] text-black placeholder:text-black/35 focus:outline-none focus:border-black transition-colors rounded-lg"
+            className="w-full bg-stone-50/50 border border-stone-200/70 py-2 pl-9 pr-3 text-xs uppercase tracking-[0.1em] text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-stone-400 transition-colors rounded-xl font-medium"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-          <span className="text-[9px] font-bold tracking-[2px] text-black/40 uppercase">Filtrar por:</span>
-          <div className="flex border border-[#D4C4B0] rounded-lg overflow-hidden">
+          <span className="text-[9px] font-semibold tracking-[0.18em] text-stone-400 uppercase">Filtrar por:</span>
+          <div className="flex border border-stone-200/70 rounded-xl overflow-hidden p-0.5 bg-stone-50/50">
             {[
               { id: 'todos', label: 'Todos' },
               { id: 'Pendiente', label: 'Pendientes' },
@@ -373,10 +400,10 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
               <button
                 key={tab.id}
                 onClick={() => setStatusFilter(tab.id)}
-                className={`px-4 py-2 text-[9px] tracking-[1.5px] uppercase font-semibold transition-colors ${
+                className={`px-3 py-1.5 text-[9px] tracking-[0.15em] uppercase font-medium transition-all rounded-lg ${
                   statusFilter === tab.id 
-                    ? 'bg-black text-white' 
-                    : 'bg-white text-black hover:bg-neutral-50'
+                    ? 'bg-stone-900 text-white shadow-2xs' 
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
                 }`}
               >
                 {tab.label}
@@ -389,30 +416,30 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
       {/* Orders Grid */}
       {isLoading ? (
         <div className="flex items-center justify-center py-32">
-          <div className="w-6 h-6 border-2 border-black/10 border-t-black rounded-full animate-spin"></div>
+          <div className="w-6 h-6 border-2 border-stone-200 border-t-stone-800 rounded-full animate-spin"></div>
         </div>
       ) : filteredOrders.length === 0 ? (
-        <div className="text-center py-32 bg-white/70 backdrop-blur-sm rounded-2xl border border-[#C9B8A8]/30">
-          <ShoppingBag size={32} className="mx-auto text-black/20 mb-4 animate-bounce" />
-          <p className="text-[12px] tracking-[3px] uppercase text-black/40 font-medium">No se encontraron pedidos web</p>
+        <div className="text-center py-32 bg-white rounded-2xl border border-stone-200/60 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)]">
+          <ShoppingBag size={30} strokeWidth={1.5} className="mx-auto text-stone-300 mb-3" />
+          <p className="text-[10px] tracking-[0.2em] uppercase text-stone-400 font-light">No se encontraron pedidos web</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-3.5">
           {filteredOrders.map(order => (
             <div 
               key={order.id}
-              className={`border rounded-xl p-6 transition-all duration-300 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6 ${
+              className={`border rounded-2xl p-5 transition-all duration-200 ease-out shadow-2xs flex flex-col md:flex-row justify-between items-start md:items-center gap-5 ${
                 order.estado === 'Cancelado' 
-                  ? 'bg-neutral-100 border-black/10 opacity-60 grayscale' 
-                  : 'bg-white border-[#D4C4B0] hover:border-black'
+                  ? 'bg-stone-50 border-stone-200/60 opacity-60' 
+                  : 'bg-white border-stone-200/60 hover:border-stone-300 hover:-translate-y-1 hover:shadow-md'
               }`}
             >
               <div className="space-y-3 flex-1">
-                <div className="flex flex-wrap gap-3 items-center">
-                  <span className="font-mono text-xs font-bold text-black bg-[#C9B8A8]/20 px-2 py-0.5 rounded">
+                <div className="flex flex-wrap gap-2.5 items-center">
+                  <span className="font-mono text-xs font-semibold text-stone-900 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     #{order.id.substring(0, 8).toUpperCase()}
                   </span>
-                  <span className="text-[10px] tracking-[0.5px] text-black/40 font-semibold font-mono">
+                  <span className="text-[10px] tracking-[0.5px] text-stone-400 font-normal font-mono">
                     {new Date(order.fecha).toLocaleString('es-AR')}
                   </span>
                   {getStatusBadge(order.estado)}
@@ -420,33 +447,33 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-2 gap-x-6">
                   <div>
-                    <p className="text-[8px] tracking-[1.5px] text-black/40 uppercase font-bold">Cliente</p>
-                    <p className="text-[12px] font-semibold text-black uppercase">{order.customerNombre}</p>
+                    <p className="text-[8px] tracking-[0.18em] text-stone-400 uppercase font-semibold">Cliente</p>
+                    <p className="text-xs font-semibold text-stone-900 uppercase">{order.customerNombre}</p>
                   </div>
                   <div>
-                    <p className="text-[8px] tracking-[1.5px] text-black/40 uppercase font-bold">Contacto</p>
-                    <p className="text-[11px] font-medium text-black/70">{order.customerEmail} · {order.customerTelefono}</p>
+                    <p className="text-[8px] tracking-[0.18em] text-stone-400 uppercase font-semibold">Contacto</p>
+                    <p className="text-[11px] font-medium text-stone-600">{order.customerEmail} · {order.customerTelefono}</p>
                   </div>
                   <div>
-                    <p className="text-[8px] tracking-[1.5px] text-black/40 uppercase font-bold">Método Entrega</p>
-                    <p className="text-[11px] font-semibold text-black uppercase">
+                    <p className="text-[8px] tracking-[0.18em] text-stone-400 uppercase font-semibold">Método Entrega</p>
+                    <p className="text-[11px] font-medium text-stone-800 uppercase">
                       {order.tipoEnvio === 'envio' ? '🏠 Envío a domicilio' : '🏢 Retiro local'}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0 justify-between md:justify-end">
+              <div className="flex items-center gap-4 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0 justify-between md:justify-end border-stone-100">
                 <div className="text-right">
-                  <p className="text-[8px] tracking-[1.5px] text-black/40 uppercase font-bold">Total</p>
-                  <p className="text-[20px] font-bold text-black font-serif">${order.total.toLocaleString()}</p>
+                  <p className="text-[8px] tracking-[0.18em] text-stone-400 uppercase font-semibold">Total</p>
+                  <p className="text-xl font-serif font-normal italic text-stone-900">${order.total.toLocaleString()}</p>
                 </div>
                 <button 
                   onClick={() => setSelectedOrder(order)}
-                  className="bg-neutral-50 hover:bg-neutral-100 border border-black/10 p-3 rounded-lg hover:border-black/30 transition-all"
+                  className="bg-stone-50 hover:bg-stone-100 border border-stone-200/70 p-2.5 rounded-xl transition-all shadow-2xs text-stone-700 hover:text-stone-900"
                   title="Ver Detalles"
                 >
-                  <Eye size={16} strokeWidth={1.5} className="text-black" />
+                  <Eye size={15} strokeWidth={1.5} />
                 </button>
               </div>
             </div>
@@ -525,9 +552,50 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                         <p className="text-[9px] text-[#A38A70] italic font-semibold mt-1">Indicaciones: {selectedOrder.direccionEnvio.indicaciones}</p>
                       )}
                       {selectedOrder.trackingNumber && (
-                        <p className="text-[10px] tracking-[1px] mt-2 font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded inline-block">
-                          Seguimiento: {selectedOrder.trackingNumber}
-                        </p>
+                        <div className="mt-3 pt-2 border-t border-[#C9B8A8]/30 space-y-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-[10px] tracking-[1px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded inline-block">
+                              Seguimiento: {selectedOrder.trackingNumber}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleConsultarTracking(selectedOrder.trackingNumber!)}
+                                disabled={isCheckingTracking}
+                                className="text-[9px] font-bold tracking-[1.5px] uppercase bg-black text-white px-3 py-1.5 rounded hover:bg-neutral-800 transition-colors flex items-center gap-1 disabled:opacity-40"
+                              >
+                                {isCheckingTracking ? <Loader2 size={10} className="animate-spin" /> : <Activity size={10} />}
+                                Ver Tracking
+                              </button>
+                              <a
+                                href="https://micorreo.correoargentino.com.ar/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[9px] font-bold tracking-[1.5px] uppercase bg-amber-600 text-white px-3 py-1.5 rounded hover:bg-amber-700 transition-colors flex items-center gap-1"
+                              >
+                                <ExternalLink size={10} />
+                                Ir a Mi Correo
+                              </a>
+                            </div>
+                          </div>
+
+                          {trackingInfo && (
+                            <div className="bg-white border border-blue-100 rounded-lg p-3 space-y-2 text-[10px] text-left">
+                              <p className="font-bold text-blue-950 uppercase tracking-[1px]">Historial de Movimientos</p>
+                              {Array.isArray(trackingInfo.event) && trackingInfo.event.length > 0 ? (
+                                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                  {trackingInfo.event.map((evt: any, i: number) => (
+                                    <div key={i} className="border-l-2 border-blue-500 pl-2 py-0.5">
+                                      <p className="font-semibold text-neutral-800">{evt.status || evt.evento}</p>
+                                      <p className="text-[9px] text-neutral-500">{evt.date} · {evt.facility || evt.planta}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-neutral-500 italic">No hay eventos registrados aún en Correo Argentino.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -630,20 +698,31 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                 </button>
                 
                 {selectedOrder.trackingNumber ? (
-                  <button
-                    onClick={() => handleDownloadLabel(selectedOrder.id)}
-                    disabled={isDownloadingLabel}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
-                  >
-                    {isDownloadingLabel ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Download size={13} />
-                    )}
-                    Etiqueta
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleDownloadLabel(selectedOrder.id)}
+                      disabled={isDownloadingLabel}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isDownloadingLabel ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Download size={13} />
+                      )}
+                      Etiqueta
+                    </button>
+                    <a
+                      href="https://micorreo.correoargentino.com.ar/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-center"
+                    >
+                      <ExternalLink size={13} />
+                      Ir a Mi Correo
+                    </a>
+                  </>
                 ) : (
-                  ['envio', 'envio_sucursal'].includes(selectedOrder.tipoEnvio) && selectedOrder.estado === 'Confirmado' && (
+                  ['envio', 'envio_sucursal'].includes(selectedOrder.tipoEnvio) && ['Confirmado', 'PAID', 'Pendiente'].includes(selectedOrder.estado) && (
                     <button
                       onClick={() => handleGenerarEnvio(selectedOrder)}
                       disabled={isGeneratingLabel}

@@ -8,7 +8,9 @@ import { collection, doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
 
-const PUBLIC_SHOWROOM_ID = localStorage.getItem('ropero_showroom_id_v3_2026') || 'EL-ROPERO-DEFAULT';
+import { getShowroomID } from '../services/storage';
+
+const PUBLIC_SHOWROOM_ID = getShowroomID();
 
 interface BuyGiftCardModalProps {
   isOpen: boolean;

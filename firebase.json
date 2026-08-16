@@ -12,9 +12,56 @@
       "**/.*",
       "**/node_modules/**"
     ],
-    "rewrites": [
+    "headers": [
       {
         "source": "**",
+        "headers": [
+          {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000; includeSubDomains; preload"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
+          {
+            "key": "X-XSS-Protection",
+            "value": "1; mode=block"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "upgrade-insecure-requests; default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.firebaseapp.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com wss://*.firebaseio.com https://*.firebasestorage.app https://auth.developers.ar.ua.la https://checkout.developers.ar.ua.la https://auth.stage.developers.ar.ua.la https://checkout.stage.developers.ar.ua.la https://us-central1-el-ropero-8989a.cloudfunctions.net; frame-src 'self' https://*.firebaseapp.com;"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/gestion-ropero-panel",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/gestion-ropero-panel/**",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/reset-password",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/reset-password/**",
         "destination": "/index.html"
       }
     ]

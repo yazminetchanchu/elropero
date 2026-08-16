@@ -1,32 +1,63 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as nodemailer from "nodemailer";
+import * as crypto from "crypto";
 
 // Importar y exportar los endpoints de MiCorreo
-export { cotizarEnvio, obtenerSucursales, importarEnvioMiCorreo, obtenerEtiquetaPdf, generarEnvioManual } from "./micorreo";
+export { cotizarEnvio, obtenerSucursales, importarEnvioMiCorreo, obtenerEtiquetaPdf, generarEnvioManual, obtenerTracking } from "./micorreo";
 import { importarEnvioMiCorreo as doImportMiCorreo } from "./micorreo";
 
 // Importar y exportar funciones de reservas y ordenes web
 export { reserveWebOrder, releaseExpiredReservationsCron } from "./orders";
 
-admin.initializeApp();
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 const db = admin.firestore();
 
 // Assume Ualá Webhook sends data as a POST request
 // Payload usually contains { id: "payment_id", status: "APPROVED", external_reference: "orderId" }
-// Or might be nested. We will try to parse it safely.
+// Or might be nested. We parse it safely and verify signatures.
 export const ualaWebhook = functions.https.onRequest(async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).send('Method Not Allowed');
     return;
   }
 
-  // Validación opcional de secreto si está configurado en variables de entorno
+  // Validación de secreto y firma HMAC SHA-256 si está configurado en variables de entorno
   const webhookSecret = process.env.UALA_WEBHOOK_SECRET;
   if (webhookSecret) {
-    const receivedSecret = req.headers['x-webhook-secret'] || req.headers['authorization'] || '';
-    if (receivedSecret !== webhookSecret && receivedSecret !== `Bearer ${webhookSecret}`) {
-      console.warn("Unauthorized webhook call with invalid secret");
+    const receivedSecret = (req.headers['x-webhook-secret'] || req.headers['authorization'] || '').toString();
+    const receivedSig = (req.headers['x-uala-signature'] || req.headers['x-signature'] || '').toString();
+
+    let isValid = false;
+
+    // 1. Coincidencia directa de secreto en encabezado
+    if (receivedSecret === webhookSecret || receivedSecret === `Bearer ${webhookSecret}`) {
+      isValid = true;
+    }
+
+    // 2. Verificación de firma HMAC SHA-256
+    if (!isValid && receivedSig) {
+      try {
+        const rawBody = typeof req.rawBody === 'string'
+          ? req.rawBody
+          : (req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body || {}));
+        const calculatedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+
+        const bufReceived = Buffer.from(receivedSig.toLowerCase(), 'utf8');
+        const bufCalculated = Buffer.from(calculatedSig.toLowerCase(), 'utf8');
+
+        if (bufReceived.length === bufCalculated.length && crypto.timingSafeEqual(bufReceived, bufCalculated)) {
+          isValid = true;
+        }
+      } catch (sigErr) {
+        console.error("Error validating Uala signature HMAC:", sigErr);
+      }
+    }
+
+    if (!isValid) {
+      console.warn("Unauthorized webhook call with invalid signature or secret");
       res.status(401).send("Unauthorized");
       return;
     }
@@ -36,8 +67,10 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
     const body = req.body || {};
     console.log("Ualá Webhook received:", JSON.stringify(body));
 
-    const status = body.status || body.payment_status || body.state || '';
-    const externalReference = body.external_reference || body.order_id || '';
+    const payload = body.data || body.payment || body.checkout || body;
+    const status = (payload.status || payload.payment_status || payload.state || body.status || '').toString().toUpperCase();
+    const externalReference = (payload.external_reference || payload.order_id || payload.orderId || body.external_reference || body.order_id || '').toString();
+    const webhookAmount = Number(payload.amount || payload.total_amount || payload.amount_total || body.amount || 0);
 
     if (!externalReference || typeof externalReference !== 'string' || !/^[a-zA-Z0-9_-]{3,64}$/.test(externalReference)) {
       console.warn("No valid external_reference provided in webhook:", externalReference);
@@ -46,8 +79,6 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
     }
 
     // Buscar la orden en cualquier showroom usando Collection Group Query.
-    // El campo 'orderId' es guardado por el checkout en cada documento de orden,
-    // y 'showroomId' indica en qué showroom está, eliminando la dependencia del ID hardcodeado.
     const ordersQuery = await db.collectionGroup('orders')
       .where('orderId', '==', externalReference)
       .limit(1)
@@ -64,17 +95,74 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
     const showroomRef = db.collection('showrooms').doc(showroomId);
     const orderRef = orderDoc.ref;
 
-    if (status.toUpperCase() !== 'APPROVED' && status.toUpperCase() !== 'SUCCESS') {
+    if (status !== 'APPROVED' && status !== 'SUCCESS' && status !== 'PAID') {
       console.log(`Payment not approved (Status: ${status}) for order ${externalReference}`);
-      if (status.toUpperCase() === 'REJECTED' || status.toUpperCase() === 'CANCELLED' || status.toUpperCase() === 'FAILED') {
+      if (['REJECTED', 'CANCELLED', 'FAILED', 'EXPIRED', 'REFUNDED'].includes(status)) {
         try {
-          const orderSnap = await orderRef.get();
-          if (orderSnap.exists) {
+          await db.runTransaction(async (transaction) => {
+            const orderSnap = await transaction.get(orderRef);
+            if (!orderSnap.exists) return;
             const orderData = orderSnap.data() || {};
-            if (orderData.estado !== 'Cancelado') {
-              await orderRef.update({ estado: 'Cancelado', paymentStatus: status });
-              await enqueueBackendOrderCancelled({ ...orderData, id: externalReference });
+            
+            if (orderData.estado === 'Cancelado') {
+              return; // Ya cancelada previamente
             }
+
+            const showroomSnap = await transaction.get(showroomRef);
+            let nextInventory = showroomSnap.exists ? [...(showroomSnap.data()?.inventory || [])] : [];
+            const items = orderData.items || [];
+
+            // Devolver stock si la orden estaba en estado de reserva (PENDING_PAYMENT o Pendiente)
+            if (orderData.estado === 'PENDING_PAYMENT' || orderData.estado === 'Pendiente') {
+              for (const oi of items) {
+                if (oi.isVirtualGiftCard) continue;
+                const idx = nextInventory.findIndex(i => i.id === oi.productId);
+                if (idx === -1) continue;
+
+                const item = { ...nextInventory[idx] };
+                const returnQty = oi.cantidad || 1;
+
+                if (item.stockPorVariante && oi.talle && oi.color) {
+                  const varKey = `${oi.talle}-${oi.color}`;
+                  const matchKey = Object.keys(item.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase()) || varKey;
+                  
+                  item.stockPorVariante = { ...item.stockPorVariante };
+                  item.stockPorVariante[matchKey] = (item.stockPorVariante[matchKey] || 0) + returnQty;
+
+                  if (item.coloresStock && oi.color) {
+                    const cKey = Object.keys(item.coloresStock).find(k => k.toLowerCase() === oi.color.trim().toLowerCase()) || oi.color.trim().toUpperCase();
+                    item.coloresStock = { ...item.coloresStock };
+                    item.coloresStock[cKey] = (item.coloresStock[cKey] || 0) + returnQty;
+                  }
+                  item.cantidad += returnQty;
+                } else {
+                  const colorKey = oi.color?.trim().toUpperCase();
+                  if (colorKey && item.coloresStock && item.coloresStock[colorKey] !== undefined) {
+                    item.coloresStock = { ...item.coloresStock };
+                    item.coloresStock[colorKey] = (item.coloresStock[colorKey] || 0) + returnQty;
+                  }
+                  item.cantidad += returnQty;
+                }
+
+                nextInventory[idx] = item;
+              }
+
+              if (showroomSnap.exists) {
+                transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
+              }
+            }
+
+            transaction.update(orderRef, { estado: 'Cancelado', paymentStatus: status });
+
+            if (orderData.customerId && orderData.customerId !== 'GUEST') {
+              const customerOrderRef = showroomRef.collection('customers').doc(orderData.customerId).collection('orders').doc(externalReference);
+              transaction.set(customerOrderRef, { estado: 'Cancelado', paymentStatus: status }, { merge: true });
+            }
+          });
+
+          const latestOrderSnap = await orderRef.get();
+          if (latestOrderSnap.exists) {
+            await enqueueBackendOrderCancelled({ ...latestOrderSnap.data(), id: externalReference });
           }
         } catch (err) {
           console.error("Error updating cancelled order on webhook:", err);
@@ -105,7 +193,6 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
       if (!Array.isArray(orderData.items) || orderData.items.length === 0) {
         throw new Error(`Order ${externalReference} has no valid items`);
       }
-      const webhookAmount = Number(body.amount || body.total_amount || 0);
       if (webhookAmount > 0 && Math.abs(webhookAmount - orderTotal) > 1.0) {
         console.warn(`[SECURITY ALERT] Amount mismatch for order ${externalReference}: Webhook reports $${webhookAmount}, Order requires $${orderTotal}`);
         throw new Error(`Payment amount ($${webhookAmount}) does not match order total ($${orderTotal})`);
@@ -836,7 +923,17 @@ const ALLOWED_ORIGINS = [
 
 function getSafeCorsOrigin(req: functions.https.Request): string {
   const origin = req.headers.origin || "";
-  return ALLOWED_ORIGINS.includes(origin) ? origin : "https://elropero.ar";
+  if (!origin) return "*";
+  if (
+    ALLOWED_ORIGINS.includes(origin) ||
+    origin.startsWith("http://localhost:") ||
+    origin.startsWith("http://127.0.0.1:") ||
+    origin.endsWith(".web.app") ||
+    origin.endsWith(".firebaseapp.com")
+  ) {
+    return origin;
+  }
+  return "https://elropero.ar";
 }
 
 export const sendCustomPasswordResetEmail = functions.https.onRequest(async (req, res) => {
@@ -1197,6 +1294,154 @@ export const requestWelcomeEmail = functions.https.onCall(async (data, context) 
 
   return { success: true };
 });
+
+/**
+ * Genera y envía un código OTP de 6 dígitos por email para autenticación de dos factores (2FA) en el panel de administración.
+ */
+export const sendAdmin2FACode = functions.https.onRequest(async (req, res) => {
+  const safeOrigin = getSafeCorsOrigin(req);
+  res.set("Access-Control-Allow-Origin", safeOrigin);
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method Not Allowed" });
+    return;
+  }
+
+  try {
+    const { email } = req.body?.data || req.body || {};
+    const cleanEmail = String(email || "").trim().toLowerCase();
+
+    const allowedAdmins = ["elropero.informacion@gmail.com", "yazminetchanchu@gmail.com"];
+    if (!allowedAdmins.includes(cleanEmail)) {
+      res.status(403).json({ error: "Email no autorizado para acceso administrativo." });
+      return;
+    }
+
+    // Generar código numérico de 6 dígitos
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutos de validez
+
+    // Guardar en colección oculta _admin_otp
+    await db.collection("_admin_otp").doc(cleanEmail).set({
+      code: otpCode,
+      expiresAt,
+      attempts: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Enviar correo electrónico con el código OTP
+    const htmlContent = `
+      <div style="font-family: 'Inter', system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px; background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; color: #111111;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <p style="font-size: 10px; letter-spacing: 4px; text-transform: uppercase; color: #888888; margin: 0;">Acceso Administrativo Seguro</p>
+          <h2 style="font-size: 20px; letter-spacing: 6px; text-transform: uppercase; margin: 8px 0 0 0; font-weight: 600;">EL ROPERO</h2>
+        </div>
+
+        <div style="background-color: #f9f9f9; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 24px;">
+          <p style="font-size: 12px; color: #666666; margin: 0 0 12px 0;">Tu código de verificación de 2 factores (2FA) es:</p>
+          <div style="font-size: 36px; font-weight: 700; letter-spacing: 12px; color: #000000; margin: 12px 0;">${otpCode}</div>
+          <p style="font-size: 11px; color: #e53e3e; margin: 12px 0 0 0; font-weight: 500;">⏱️ Este código expira en 5 minutos.</p>
+        </div>
+
+        <p style="font-size: 12px; color: #666666; line-height: 1.5; margin: 0 0 16px 0;">
+          Si no solicitaste este acceso al panel de administración, ignorá este mensaje y asegurate de cambiar tu contraseña inmediatamente.
+        </p>
+
+        <div style="border-top: 1px solid #eeeeee; padding-top: 16px; margin-top: 24px; text-align: center;">
+          <p style="font-size: 10px; color: #aaaaaa; margin: 0;">EL ROPERO SHOWROOM · Sistema de Seguridad 2FA</p>
+        </div>
+      </div>
+    `;
+
+    await db.collection("mail").add({
+      to: cleanEmail,
+      message: {
+        subject: "🔒 Código de Verificación 2FA - El Ropero Admin",
+        html: htmlContent
+      }
+    });
+
+    res.status(200).json({ success: true, message: "Código 2FA enviado a tu email." });
+  } catch (err: any) {
+    console.error("Error al generar/enviar 2FA OTP:", err);
+    res.status(500).json({ error: "Error interno al enviar el código de verificación." });
+  }
+});
+
+/**
+ * Valida el código OTP ingresado por el administrador.
+ */
+export const verifyAdmin2FACode = functions.https.onRequest(async (req, res) => {
+  const safeOrigin = getSafeCorsOrigin(req);
+  res.set("Access-Control-Allow-Origin", safeOrigin);
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method Not Allowed" });
+    return;
+  }
+
+  try {
+    const { email, code } = req.body?.data || req.body || {};
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanCode = String(code || "").trim();
+
+    if (!cleanEmail || !cleanCode) {
+      res.status(400).json({ error: "Email y código son obligatorios." });
+      return;
+    }
+
+    const docRef = db.collection("_admin_otp").doc(cleanEmail);
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) {
+      res.status(400).json({ error: "No hay un código 2FA activo. Por favor, solicitá uno nuevo." });
+      return;
+    }
+
+    const data = docSnap.data() || {};
+
+    if (Date.now() > (data.expiresAt || 0)) {
+      await docRef.delete();
+      res.status(400).json({ error: "El código 2FA ha expirado (límite 5 min). Solicitá un nuevo código." });
+      return;
+    }
+
+    if ((data.attempts || 0) >= 3) {
+      await docRef.delete();
+      res.status(429).json({ error: "Demasiados intentos fallidos. Por seguridad, solicitá un nuevo código." });
+      return;
+    }
+
+    if (data.code !== cleanCode) {
+      await docRef.update({ attempts: admin.firestore.FieldValue.increment(1) });
+      res.status(400).json({ error: "Código de verificación incorrecto. Verificá tu correo." });
+      return;
+    }
+
+    // Código válido -> Eliminar documento de OTP usado
+    await docRef.delete();
+
+    res.status(200).json({ success: true, verified: true, message: "Autenticación 2FA exitosa." });
+  } catch (err: any) {
+    console.error("Error al verificar 2FA OTP:", err);
+    res.status(500).json({ error: "Error interno al verificar el código 2FA." });
+  }
+});
+
 
 
 

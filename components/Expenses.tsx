@@ -58,35 +58,35 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
   return (
     <div className="flex flex-col space-y-6 text-left max-w-7xl">
       <section className="space-y-6 max-w-4xl">
-        <div className="border-b-2 border-[#C9B8A8]/30 pb-4">
-            <h2 className="font-serif text-3xl mb-1 italic tracking-tight text-[#1A1A1A]">Egresos de Caja</h2>
-            <p className="text-[10px] tracking-[4px] uppercase font-medium text-[#1A1A1A]">Registro de gastos operativos y salidas varias</p>
+        <div className="border-b border-stone-200/60 pb-3">
+            <h2 className="font-serif text-2xl mb-0.5 italic font-normal tracking-tight text-stone-900">Egresos de Caja</h2>
+            <p className="text-[9px] tracking-[0.18em] uppercase font-light text-stone-400">Registro de gastos operativos y salidas varias</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-2xl p-6 md:p-8 space-y-6 shadow-xl text-left">
+        <form onSubmit={handleSubmit} className="bg-white border border-stone-200/60 rounded-2xl p-6 md:p-8 space-y-6 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)] text-left transition-all duration-200 ease-out hover:border-stone-300 hover:shadow-[0_8px_30px_-5px_rgba(0,0,0,0.05)]">
           <div className="space-y-6">
-            <div className="space-y-3">
-              <label className="text-[10px] tracking-[4px] uppercase font-medium text-[#1A1A1A] leading-none">Concepto del Gasto</label>
+            <div className="space-y-2">
+              <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Concepto del Gasto</label>
               <input
                 type="text"
                 required
                 value={formData.concepto}
                 onChange={(e) => setFormData({ ...formData, concepto: e.target.value })}
-                className="w-full bg-transparent border-b-2 border-[#C9B8A8]/40 py-4 focus:outline-none focus:border-[#C9B8A8] text-sm font-medium uppercase tracking-wide text-[#1A1A1A] placeholder:text-gray-500 transition-colors"
+                className="w-full bg-transparent border-b border-stone-200/80 py-3 focus:outline-none focus:border-stone-500 text-sm font-medium uppercase tracking-wide text-stone-900 placeholder:text-stone-400 transition-colors"
                 placeholder="EJ: ALQUILER, PACKAGING, PUBLICIDAD"
               />
             </div>
 
-            <div className="space-y-3">
-              <label className="text-[10px] tracking-[4px] uppercase font-medium text-[#1A1A1A] leading-none">Monto</label>
-              <div className="relative flex items-center border-b-2 border-[#C9B8A8]/40 focus-within:border-[#C9B8A8] transition-colors">
-                <span className="text-2xl font-medium text-[#1A1A1A]/40 pr-1">$</span>
+            <div className="space-y-2">
+              <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Monto ($)</label>
+              <div className="relative flex items-center border-b border-stone-200/80 focus-within:border-stone-500 transition-colors">
+                <span className="text-xl font-mono text-stone-400 pr-1">$</span>
                 <input
                   type="text"
                   required
                   value={formData.monto === 0 ? "0" : formData.monto}
                   onChange={(e) => handlePriceInput(e.target.value, (val) => setFormData({ ...formData, monto: val }))}
-                  className="w-full bg-transparent py-4 focus:outline-none text-2xl font-medium text-[#1A1A1A]"
+                  className="w-full bg-transparent py-3 focus:outline-none text-xl font-mono font-medium text-stone-900"
                 />
               </div>
             </div>
@@ -94,48 +94,48 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
 
           <button
             type="submit"
-            className="w-full bg-[#C9B8A8] text-[#1A1A1A] py-7 text-[12px] tracking-[7px] font-medium uppercase hover:bg-[#B8A696] transition-all rounded-xl shadow-lg hover:shadow-xl"
+            className="w-full bg-stone-900 text-white py-3.5 text-[10px] tracking-[0.2em] font-medium uppercase hover:bg-black transition-all duration-200 ease-out rounded-xl shadow-xs hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
           >
-            REGISTRAR EGRESO
+            Registrar Egreso
           </button>
         </form>
       </section>
 
-      <section className="space-y-6 max-w-5xl">
-        <div className="text-left border-b-2 border-[#C9B8A8]/30 pb-4">
-            <h3 className="font-serif text-2xl italic mb-1 text-[#1A1A1A]">Historial de Salidas</h3>
-            <p className="text-[10px] tracking-[4px] uppercase font-medium text-[#1A1A1A]">Detalle cronológico de gastos registrados</p>
+      <section className="space-y-5 max-w-5xl">
+        <div className="text-left border-b border-stone-200/60 pb-3">
+            <h3 className="font-serif text-xl italic font-normal text-stone-900">Historial de Salidas</h3>
+            <p className="text-[9px] tracking-[0.18em] uppercase font-light text-stone-400">Detalle cronológico de gastos registrados</p>
         </div>
-        <div className="bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-xl shadow-lg overflow-hidden">
+        <div className="bg-white border border-stone-200/60 rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="max-h-[calc(100vh-320px)] min-h-[250px] overflow-y-auto">
             {expenses.length > 0 ? (
-                <ul className="divide-y divide-[#C9B8A8]/20">
+                <ul className="divide-y divide-stone-100">
                     {expenses.slice().reverse().map((exp) => (
-                        <li key={exp.id} className="p-4 flex justify-between items-center hover:bg-[#C9B8A8]/5 transition-colors">
+                        <li key={exp.id} className="p-4 flex justify-between items-center hover:bg-stone-50/70 transition-colors">
                             <div className="flex-1 text-left">
-                                <p className="font-medium text-sm tracking-[2px] uppercase text-[#1A1A1A]">{exp.concepto}</p>
-                                <p className="text-[10px] text-[#1A1A1A]/60 mt-1 uppercase tracking-[3px] font-medium">{exp.fecha}</p>
+                                <p className="font-medium text-xs tracking-[0.15em] uppercase text-stone-900">{exp.concepto}</p>
+                                <p className="text-[9px] text-stone-400 mt-0.5 uppercase tracking-[0.15em] font-light">{exp.fecha}</p>
                             </div>
-                            <div className="flex items-center gap-6">
-                                <p className="font-serif text-2xl italic text-red-700 leading-none">-$ {exp.monto.toLocaleString()}</p>
-                                <div className="flex gap-3">
+                            <div className="flex items-center gap-5">
+                                <p className="font-serif text-xl italic text-rose-700 leading-none">-$ {exp.monto.toLocaleString()}</p>
+                                <div className="flex gap-2">
                                   <button 
                                     onClick={() => setEditingExpense(exp)} 
-                                    className="p-3 border border-[#C9B8A8]/50 rounded-lg hover:bg-[#C9B8A8] hover:text-[#1A1A1A] transition-all text-[#1A1A1A] shadow-sm"
+                                    className="p-2 border border-stone-200/70 rounded-xl hover:bg-stone-100 text-stone-700 transition-all shadow-2xs"
                                     title="Editar"
                                   >
-                                    <Edit2 size={16} />
+                                    <Edit2 size={13} strokeWidth={1.5} />
                                   </button>
                                   <button 
                                     onClick={() => handleDelete(exp.id)} 
-                                    className={`p-3 border rounded-lg transition-all flex items-center gap-2 shadow-sm ${
+                                    className={`p-2 border rounded-xl transition-all flex items-center gap-1.5 shadow-2xs ${
                                       pendingDeleteId === exp.id 
-                                        ? 'bg-red-600 border-red-600 text-white' 
-                                        : 'border-red-200 text-red-600 hover:bg-red-50'
+                                        ? 'bg-rose-600 border-rose-600 text-white font-medium' 
+                                        : 'border-rose-200/80 text-rose-600 hover:bg-rose-50'
                                     }`}
                                     title="Eliminar"
                                   >
-                                    {pendingDeleteId === exp.id ? <span className="text-[9px] font-black uppercase tracking-widest">¿BORRAR?</span> : <Trash2 size={16} />}
+                                    {pendingDeleteId === exp.id ? <span className="text-[9px] uppercase tracking-wider">¿Borrar?</span> : <Trash2 size={13} strokeWidth={1.5} />}
                                   </button>
                                 </div>
                             </div>
@@ -143,8 +143,8 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
                     ))}
                 </ul>
             ) : (
-                <div className="p-32 text-center opacity-20">
-                    <p className="text-[10px] tracking-[8px] uppercase font-black text-[#1A1A1A]">Sin egresos registrados</p>
+                <div className="p-24 text-center text-stone-400">
+                    <p className="text-[10px] tracking-[0.2em] uppercase font-light">Sin egresos registrados</p>
                 </div>
             )}
           </div>
@@ -152,33 +152,33 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
       </section>
 
       {editingExpense && (
-        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6 text-left">
-          <div className="bg-white/95 backdrop-blur-md border border-[#C9B8A8]/50 rounded-2xl w-full max-w-lg p-12 shadow-2xl relative">
-            <button onClick={() => setEditingExpense(null)} className="absolute top-8 right-8 p-2 hover:bg-[#C9B8A8]/20 rounded-lg transition-colors text-[#1A1A1A]"><X size={24} /></button>
-            <h3 className="font-serif text-3xl mb-10 italic text-[#1A1A1A]">Editar Egreso</h3>
-            <form onSubmit={handleEditSubmit} className="space-y-10">
-              <div className="space-y-3">
-                <label className="text-[10px] tracking-[4px] uppercase font-black text-[#1A1A1A]/70 leading-none">Concepto</label>
+        <div className="fixed inset-0 z-[60] bg-stone-900/30 backdrop-blur-md flex items-center justify-center p-4 text-left">
+          <div className="bg-white border border-stone-200/70 rounded-3xl w-full max-w-md p-8 shadow-xl relative">
+            <button onClick={() => setEditingExpense(null)} className="absolute top-6 right-6 p-1.5 hover:bg-stone-100 rounded-xl transition-colors text-stone-500"><X size={18} strokeWidth={1.5} /></button>
+            <h3 className="font-serif text-2xl mb-6 italic text-stone-900">Editar Egreso</h3>
+            <form onSubmit={handleEditSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Concepto</label>
                 <input 
                   type="text" 
                   value={editingExpense.concepto} 
                   onChange={(e) => setEditingExpense({...editingExpense, concepto: e.target.value})}
-                  className="w-full bg-transparent border-b-2 border-[#C9B8A8]/40 py-3 focus:outline-none focus:border-[#C9B8A8] text-sm font-bold uppercase text-[#1A1A1A] transition-colors"
+                  className="w-full bg-transparent border-b border-stone-200/80 py-2.5 focus:outline-none focus:border-stone-500 text-sm font-medium uppercase text-stone-900 transition-colors"
                 />
               </div>
-              <div className="space-y-3">
-                <label className="text-[10px] tracking-[4px] uppercase font-black text-[#1A1A1A]/70 leading-none">Monto</label>
-                <div className="relative flex items-center border-b-2 border-[#C9B8A8]/40 focus-within:border-[#C9B8A8] transition-colors">
-                  <span className="text-xl font-black text-[#1A1A1A]/50 pr-1">$</span>
+              <div className="space-y-2">
+                <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Monto</label>
+                <div className="relative flex items-center border-b border-stone-200/80 focus-within:border-stone-500 transition-colors">
+                  <span className="text-lg font-mono text-stone-400 pr-1">$</span>
                   <input 
                     type="text" 
                     value={editingExpense.monto === 0 ? "0" : editingExpense.monto} 
                     onChange={(e) => handlePriceInput(e.target.value, (val) => setEditingExpense({...editingExpense, monto: val}))}
-                    className="w-full bg-transparent py-3 focus:outline-none text-2xl font-black text-[#1A1A1A]"
+                    className="w-full bg-transparent py-2.5 focus:outline-none text-lg font-mono font-medium text-stone-900"
                   />
                 </div>
               </div>
-              <button type="submit" className="w-full bg-[#C9B8A8] text-[#1A1A1A] py-6 mt-6 text-[12px] tracking-[6px] font-medium uppercase hover:bg-[#B8A696] transition-all rounded-xl shadow-lg hover:shadow-xl">
+              <button type="submit" className="w-full bg-stone-900 text-white py-3 text-[10px] tracking-[0.2em] font-medium uppercase hover:bg-black transition-all rounded-xl shadow-xs">
                 Guardar Cambios
               </button>
             </form>

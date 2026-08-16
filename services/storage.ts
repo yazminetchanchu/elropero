@@ -19,14 +19,10 @@ const SHOWROOM_KEY = "ropero_showroom_id_v3_2026";
 // =======================
 // SHOWROOM ID
 // =======================
-const getShowroomID = () => {
-  if (import.meta.env.DEV) {
-    return 'EL-ROPERO-TEST';
-  }
-
+export const getShowroomID = () => {
   let id = localStorage.getItem(SHOWROOM_KEY);
   if (!id) {
-    id = 'ROPERO';
+    id = import.meta.env.DEV ? 'EL-ROPERO-TEST' : 'ROPERO';
     localStorage.setItem(SHOWROOM_KEY, id);
   }
   return id;

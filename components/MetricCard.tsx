@@ -29,48 +29,45 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div 
       data-testid={dataTestId}
       onClick={clickable ? onClick : undefined}
-      className={`group relative bg-white/95 backdrop-blur-md border border-[#C9B8A8]/50 rounded-2xl p-6 text-left shadow-lg flex flex-col justify-between min-h-[145px] transition-all duration-300 overflow-hidden ${
+      className={`group relative bg-white border border-stone-200/80 rounded-2xl p-5 md:p-6 text-left shadow-[0_2px_18px_-4px_rgba(0,0,0,0.03)] flex flex-col justify-between min-h-[140px] transition-all duration-200 ease-out overflow-hidden ${
         clickable 
-          ? 'cursor-pointer hover:-translate-y-1.5 hover:shadow-xl hover:border-[#1A1A1A]/40 active:translate-y-0' 
-          : 'hover:-translate-y-0.5 hover:shadow-xl'
+          ? 'cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_32px_-6px_rgba(0,0,0,0.07)] hover:border-stone-300 hover:bg-stone-50/60 active:translate-y-0 active:shadow-xs' 
+          : 'hover:-translate-y-1 hover:shadow-[0_10px_25px_-5px_rgba(0,0,0,0.05)] hover:border-stone-300 hover:bg-stone-50/40'
       }`}
     >
-      {/* Top subtle hover accent */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#C9B8A8] via-[#1A1A1A] to-[#C9B8A8] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
       <div>
         <div className="flex items-center justify-between gap-2 mb-3">
-          <span className="text-[9px] uppercase tracking-[3px] text-[#1A1A1A]/70 font-bold leading-none truncate">
+          <span className="text-[9px] uppercase tracking-[0.2em] text-stone-400 font-semibold leading-none truncate">
             {label}
           </span>
           {trend && (
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold tracking-tight border shadow-2xs shrink-0 ${
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-medium tracking-tight border shadow-2xs shrink-0 ${
               trend.isPositive 
-                ? 'bg-emerald-500/15 text-emerald-800 border-emerald-500/30' 
-                : 'bg-rose-500/15 text-rose-800 border-rose-500/30'
+                ? 'bg-emerald-500/10 text-emerald-800 border-emerald-500/20' 
+                : 'bg-rose-500/10 text-rose-800 border-rose-500/20'
             }`}>
-              {trend.isPositive ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+              {trend.isPositive ? <TrendingUp size={10} strokeWidth={1.5} /> : <TrendingDown size={10} strokeWidth={1.5} />}
               <span>{trend.value > 0 ? '+' : ''}{trend.value.toFixed(1)}%</span>
             </span>
           )}
         </div>
 
-        <h3 className="font-serif text-2xl md:text-3xl font-extrabold tracking-tight text-[#1A1A1A] mb-2 leading-none">
+        <h3 className="font-serif text-2xl md:text-3xl font-medium tracking-tight text-stone-900 mb-1 leading-none">
           {value}
         </h3>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-[#C9B8A8]/30 flex items-center justify-between gap-2">
+      <div className="mt-3 pt-3 border-t border-stone-100/80 flex items-center justify-between gap-2">
         {subValue ? (
-          <span className="text-[9px] text-[#1A1A1A]/60 tracking-[2px] uppercase font-medium truncate">
+          <span className="text-[9px] text-stone-400 tracking-[0.15em] uppercase font-light truncate">
             {subValue}
           </span>
         ) : <span />}
 
         {clickable && (
-          <span className="text-[9px] text-[#1A1A1A]/50 font-medium group-hover:text-[#1A1A1A] transition-colors flex items-center gap-1 shrink-0">
+          <span className="text-[9px] text-stone-400 font-medium group-hover:text-stone-900 tracking-[0.1em] uppercase transition-colors flex items-center gap-1 shrink-0">
             <span>Ver detalles</span>
-            <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
+            <ArrowRight size={11} strokeWidth={1.5} className="group-hover:translate-x-0.5 transition-transform" />
           </span>
         )}
       </div>

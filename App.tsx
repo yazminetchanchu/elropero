@@ -8,7 +8,7 @@ import Expenses from './components/Expenses';
 import { InventoryItem, Sale, Expense, Section, GiftCard, MonthlyClosure, WebSettings } from './types';
 import { database, DatabaseState } from './services/storage';
 import { DESCUENTO_BASE_TRANSFERENCIA } from './services/exchangePricing';
-import { Store, Lock, Loader2, Monitor, ArrowRightLeft, Smartphone, Globe } from 'lucide-react';
+import { Store, Lock, Loader2, Monitor, ArrowRightLeft, Smartphone, Globe, ShieldCheck, Clock, Key, RefreshCw } from 'lucide-react';
 import GiftCards from './components/GiftCard';
 import WebManager from './components/WebManager';
 import StorefrontPage from './components/StorefrontPage';
@@ -27,13 +27,92 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebas
 // Sistema seguro de autenticación activado
 const App: React.FC = () => {
   const [isEntered, setIsEntered] = React.useState(false);
-  const adminEmail = "elropero.informacion@gmail.com";
+  const [adminEmail, setAdminEmail] = React.useState("elropero.informacion@gmail.com");
   const [password, setPassword] = React.useState("");
-  const [showroomID, setShowroomID] = React.useState(() => database.getShowroomID() || 'EL-ROPERO-DEFAULT');
-  const [authError, setAuthError] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [showroomID, setShowroomID] = React.useState(() => database.getShowroomID());
+  const [authError, setAuthError] = React.useState<string | null>(null);
+
+  // Intentos fallidos guardados en localStorage para ser inmunes a F5 / recargas
+  const [failedAttempts, setFailedAttempts] = React.useState<number>(() => {
+    const saved = localStorage.getItem('ropero_admin_failed_attempts');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+  const [lockUntil, setLockUntil] = React.useState<number | null>(() => {
+    const saved = localStorage.getItem('ropero_admin_lock_until');
+    if (!saved) return null;
+    const lockTime = parseInt(saved, 10);
+    if (Date.now() >= lockTime) {
+      localStorage.removeItem('ropero_admin_lock_until');
+      localStorage.removeItem('ropero_admin_failed_attempts');
+      return null;
+    }
+    return lockTime;
+  });
+
+  // Estados para autenticación de 2 factores (2FA OTP)
+  const [step2FA, setStep2FA] = React.useState(false);
+  const [otpCode, setOtpCode] = React.useState("");
+  const [isSendingOTP, setIsSendingOTP] = React.useState(false);
+  const [otpCountdown, setOtpCountdown] = React.useState(300); // 5 min
+  const [showInactivityWarning, setShowInactivityWarning] = React.useState(false);
+
+  const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
   const [section, setSection] = React.useState<Section>('admin');
+
+  // Countdown timer para el código 2FA
+  React.useEffect(() => {
+    if (!step2FA || otpCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setOtpCountdown(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [step2FA, otpCountdown]);
+
+  // Timer de inactividad de 30 minutos con advertencia previa de 60 segundos
+  React.useEffect(() => {
+    if (!isEntered) return;
+
+    let warningTimer: NodeJS.Timeout;
+    let logoutTimer: NodeJS.Timeout;
+
+    const INACTIVITY_LIMIT = 30 * 60 * 1000; // 30 minutos
+    const WARNING_TIME = 29 * 60 * 1000; // 29 minutos (alerta a los 60 seg restantes)
+
+    const resetInactivityTimers = () => {
+      clearTimeout(warningTimer);
+      clearTimeout(logoutTimer);
+      setShowInactivityWarning(false);
+
+      warningTimer = setTimeout(() => {
+        setShowInactivityWarning(true);
+      }, WARNING_TIME);
+
+      logoutTimer = setTimeout(async () => {
+        console.warn('🔒 Sesión de administración cerrada por inactividad.');
+        setShowInactivityWarning(false);
+        sessionStorage.removeItem('ropero_2fa_verified');
+        try {
+          await signOut(auth);
+        } catch (err) {
+          console.error('Error cerrando sesión por inactividad:', err);
+        }
+        setIsEntered(false);
+        setStep2FA(false);
+        alert('Su sesión de administración ha sido cerrada automáticamente por inactividad.');
+      }, INACTIVITY_LIMIT);
+    };
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach(ev => window.addEventListener(ev, resetInactivityTimers));
+    resetInactivityTimers();
+
+    return () => {
+      clearTimeout(warningTimer);
+      clearTimeout(logoutTimer);
+      events.forEach(ev => window.removeEventListener(ev, resetInactivityTimers));
+    };
+  }, [isEntered]);
 
   const [inventory, setInventory] = React.useState<InventoryItem[]>([]);
   const [sales, setSales] = React.useState<Sale[]>([]);
@@ -401,13 +480,17 @@ const App: React.FC = () => {
   }, [applyRemoteData]);
 
   // =======================
-  // LOGIN CON FIREBASE AUTH
+  // LOGIN CON FIREBASE AUTH Y RUTA PROTEGIDA
   // =======================
   React.useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user && !isEntered && window.location.pathname.includes('/admin')) {
-        console.log('✅ Sesión activa detectada en Firebase Auth para:', user.email);
-        const currentID = database.getShowroomID() || 'EL-ROPERO-DEFAULT';
+      const cleanEmail = user?.email?.trim().toLowerCase();
+      const is2FAVerified = sessionStorage.getItem('ropero_2fa_verified') === 'true' || 
+        (cleanEmail && localStorage.getItem(`ropero_trusted_device_${cleanEmail}`) === 'true');
+
+      if (user && is2FAVerified && !isEntered && window.location.pathname.includes('/gestion-ropero-panel')) {
+        console.log('✅ Sesión activa y dispositivo verificado para:', user.email);
+        const currentID = database.getShowroomID();
         try {
           const remote = await database.fetchRemote(currentID);
           if (remote) {
@@ -423,35 +506,76 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [applyRemoteData, isEntered]);
 
+  // Solicitud inicial de usuario/contraseña -> Paso 1 de Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showroomID.trim()) return;
 
-    setIsLoading(true);
-    setAuthError(false);
+    // Verificar si el usuario está bloqueado por fuerza bruta (Persistente en localStorage)
+    if (lockUntil && Date.now() < lockUntil) {
+      const remainingSec = Math.ceil((lockUntil - Date.now()) / 1000);
+      const remainingMin = Math.ceil(remainingSec / 60);
+      setAuthError(`Bloqueo activo por seguridad. Reintente en ${remainingMin} minuto(s).`);
+      return;
+    }
 
+    if (lockUntil && Date.now() >= lockUntil) {
+      setLockUntil(null);
+      setFailedAttempts(0);
+      localStorage.removeItem('ropero_admin_lock_until');
+      localStorage.removeItem('ropero_admin_failed_attempts');
+    }
+
+    setIsLoading(true);
+    setAuthError(null);
+
+    const cleanEmail = adminEmail.trim().toLowerCase();
+
+    // Paso 1A: Autenticar credenciales en Firebase Auth
     try {
       if (!adminEmail.trim() || !password) {
         throw new Error('Debe proveer email y contraseña.');
       }
-      
-      try {
-        await signInWithEmailAndPassword(auth, adminEmail.trim(), password);
-        console.log('✅ Autenticado exitosamente con Firebase Auth:', adminEmail);
-      } catch (fbAuthErr: any) {
-        console.warn('⚠️ Error al autenticar con Firebase Auth:', fbAuthErr?.message);
-        throw fbAuthErr;
-      }
 
+      await signInWithEmailAndPassword(auth, adminEmail.trim(), password);
+      console.log('✅ Credenciales correctas en Firebase Auth:', adminEmail);
+
+      // Reiniciar contador de intentos fallidos al acertar contraseña
+      setFailedAttempts(0);
+      setLockUntil(null);
+      localStorage.removeItem('ropero_admin_failed_attempts');
+      localStorage.removeItem('ropero_admin_lock_until');
+    } catch (fbAuthErr: any) {
+      console.warn('⚠️ Error al autenticar con Firebase Auth:', fbAuthErr?.message);
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      localStorage.setItem('ropero_admin_failed_attempts', String(newAttempts));
+
+      if (newAttempts >= 5) {
+        const lockoutTime = Date.now() + 5 * 60 * 1000; // 5 minutos
+        setLockUntil(lockoutTime);
+        localStorage.setItem('ropero_admin_lock_until', String(lockoutTime));
+        setAuthError('Bloqueo de seguridad: 5 intentos fallidos acumulados. Reintente en 5 minutos.');
+      } else {
+        const attemptsLeft = 5 - newAttempts;
+        setAuthError(`Credenciales o ID incorrectos. (${attemptsLeft} intento(s) restante(s))`);
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // Paso 1B: Comprobar si el dispositivo ya es de confianza en este navegador
+    const isDeviceTrusted = localStorage.getItem(`ropero_trusted_device_${cleanEmail}`) === 'true';
+
+    if (isDeviceTrusted) {
+      console.log('✅ Dispositivo conocido y verificado para:', cleanEmail, '- Omitiendo código 2FA.');
+      
       const cleanID = database.setShowroomID(showroomID);
       setShowroomID(cleanID);
 
       try {
-        console.log('🔍 Buscando datos remotos para ID:', cleanID);
         const remote = await database.fetchRemote(cleanID);
-
         if (remote) {
-          console.log('✅ Datos remotos encontrados, aplicando...');
           applyRemoteData(remote);
           setLastUpdate(remote.lastSync || Date.now());
         }
@@ -464,17 +588,125 @@ const App: React.FC = () => {
         setGiftCards(local.giftCards || []);
         setClosures(local.closures || []);
         setLastUpdate(local.lastSync || Date.now());
-        alert('Error al conectar con Firebase. Se cargaron datos locales. Verifica tu conexión.');
       }
 
+      sessionStorage.setItem('ropero_2fa_verified', 'true');
+      setStep2FA(false);
       setIsEntered(true);
-    } catch (error) {
-      console.error('❌ Error al iniciar sesión en el panel de administración:', error);
-      setAuthError(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Paso 1C: Dispositivo nuevo -> Solicitar código 2FA OTP mediante Cloud Function
+    setIsSendingOTP(true);
+    try {
+      const response = await fetch('https://us-central1-el-ropero-8989a.cloudfunctions.net/sendAdmin2FACode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'No se pudo enviar el código de verificación 2FA por correo.');
+      }
+
+      setStep2FA(true);
+      setOtpCountdown(300); // 5 minutos
+      setAuthError(null);
+    } catch (otpErr: any) {
+      console.error('❌ Error al enviar código 2FA:', otpErr);
+      setAuthError(otpErr?.message || 'Error al enviar el código de verificación 2FA. Reintentá nuevamente.');
+    } finally {
+      setIsLoading(false);
+      setIsSendingOTP(false);
+    }
+  };
+
+  // Reenviar código 2FA
+  const handleResendOTP = async () => {
+    if (isSendingOTP) return;
+    setIsSendingOTP(true);
+    setAuthError(null);
+    try {
+      const response = await fetch('https://us-central1-el-ropero-8989a.cloudfunctions.net/sendAdmin2FACode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: adminEmail.trim() })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Error al reenviar código.');
+      }
+      setOtpCountdown(300);
+      alert('🔒 Código 2FA reenviado a tu email.');
+    } catch (err: any) {
+      setAuthError(err?.message || 'Error al reenviar código 2FA.');
+    } finally {
+      setIsSendingOTP(false);
+    }
+  };
+
+  // Verificación de código 2FA -> Paso 2 de Login (Dispositivo Nuevo)
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode.trim() || otpCode.length !== 6) {
+      setAuthError('Ingresá el código de 6 dígitos.');
+      return;
+    }
+
+    setIsLoading(true);
+    setAuthError(null);
+
+    const cleanEmail = adminEmail.trim().toLowerCase();
+
+    try {
+      const response = await fetch('https://us-central1-el-ropero-8989a.cloudfunctions.net/verifyAdmin2FACode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, code: otpCode.trim() })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.verified) {
+        throw new Error(data.error || 'Código 2FA incorrecto o expirado.');
+      }
+
+      // Código correcto -> Guardar este dispositivo como verificado/de confianza en este navegador
+      localStorage.setItem(`ropero_trusted_device_${cleanEmail}`, 'true');
+
+      // Autenticación completa -> Aplicar ID y cargar datos del Showroom
+      const cleanID = database.setShowroomID(showroomID);
+      setShowroomID(cleanID);
+
+      try {
+        const remote = await database.fetchRemote(cleanID);
+        if (remote) {
+          applyRemoteData(remote);
+          setLastUpdate(remote.lastSync || Date.now());
+        }
+      } catch (error) {
+        console.error('❌ Error al obtener datos remotos post-2FA:', error);
+        const local = database.getLocalBackup();
+        setInventory(local.inventory || []);
+        setSales(local.sales || []);
+        setExpenses(local.expenses || []);
+        setGiftCards(local.giftCards || []);
+        setClosures(local.closures || []);
+        setLastUpdate(local.lastSync || Date.now());
+      }
+
+      sessionStorage.setItem('ropero_2fa_verified', 'true');
+      setStep2FA(false);
+      setOtpCode('');
+      setIsEntered(true);
+    } catch (err: any) {
+      setAuthError(err?.message || 'Error al verificar el código 2FA.');
     } finally {
       setIsLoading(false);
     }
   };
+
 
   // =======================
   // INITIAL FETCH (PUBLIC)
@@ -483,7 +715,7 @@ const App: React.FC = () => {
     const initFetch = async () => {
       setIsInitialLoading(true);
       try {
-        const id = database.getShowroomID() || 'EL-ROPERO-DEFAULT';
+        const id = database.getShowroomID();
         const remote = await database.fetchRemote(id);
         if (remote) {
           applyRemoteData(remote);
@@ -1014,146 +1246,261 @@ const handleCancelGiftCard = (id: string) => {
       <ModalProvider>
         <Router>
           <NetworkStatus />
+
+          {/* Banner Flotante de Advertencia por Inactividad */}
+          {showInactivityWarning && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-black text-white px-6 py-3.5 rounded-full shadow-2xl flex items-center gap-4 text-[11px] tracking-[1px] uppercase border border-white/20 animate-in fade-in duration-300">
+              <Clock size={16} className="text-amber-400 animate-pulse" />
+              <span>Tu sesión expirará en menos de 60 segundos por inactividad.</span>
+              <button
+                onClick={() => setShowInactivityWarning(false)}
+                className="bg-white text-black hover:bg-neutral-200 px-4 py-1.5 rounded-full text-[9px] font-bold tracking-[2px] transition-all"
+              >
+                Mantener Activa
+              </button>
+            </div>
+          )}
+
           <Routes>
             <Route path="/" element={<StorefrontPage inventoryProp={inventory} settingsProp={webSettings} />} />
             <Route path="/reset-password" element={<ResetPasswordPage webSettings={webSettings} />} />
 
-          
-          <Route path="/admin" element={
-            !isEntered ? (
-              <div className="min-h-screen w-full flex items-center justify-center bg-white p-6 selection:bg-black selection:text-white font-['Inter'] overflow-y-auto py-12">
-                <div className="max-w-[400px] w-full my-auto space-y-12 sm:space-y-16 animate-in fade-in duration-700">
-                  <div className="text-center space-y-2 w-full px-2">
-                    <p className="text-[10px] tracking-[6px] uppercase opacity-40 font-light">Acceso Reservado</p>
-                    <h1 className="text-[clamp(15px,4.5vw,24px)] tracking-[clamp(4px,2.5vw,18px)] uppercase font-medium leading-none text-black whitespace-nowrap overflow-hidden text-ellipsis">
-                      {webSettings.storeName || 'EL ROPERO'}
-                    </h1>
-                  </div>
+            {/* Redireccionar la ruta obsoleta /admin al inicio para evitar escaneo automatizado */}
+            <Route path="/admin" element={<Navigate to="/" replace />} />
 
-                  <form onSubmit={handleLogin} className="space-y-10">
-                    <div className="space-y-10">
-                      <div className="relative group">
-                        <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
-                          Identificador
-                        </label>
-                        <input
-                          type="text"
-                          value={showroomID}
-                          onChange={(e) => setShowroomID(e.target.value.toUpperCase())}
-                          className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[3px] font-light uppercase text-black placeholder:text-black/10 transition-all"
-                          placeholder="SHOWROOM-ID"
-                        />
+            {/* Ruta Oculta y Protegida del Panel de Administración */}
+            <Route path="/gestion-ropero-panel" element={
+              !isEntered ? (
+                <div className="min-h-screen w-full flex items-center justify-center bg-white p-6 selection:bg-black selection:text-white font-['Inter'] overflow-y-auto py-12">
+                  <div className="max-w-[400px] w-full my-auto space-y-12 sm:space-y-16 animate-in fade-in duration-700">
+                    <div className="text-center space-y-2 w-full px-2">
+                      <p className="text-[10px] tracking-[6px] uppercase opacity-40 font-light">Acceso Reservado</p>
+                      <h1 className="text-[clamp(15px,4.5vw,24px)] tracking-[clamp(4px,2.5vw,18px)] uppercase font-medium leading-none text-black whitespace-nowrap overflow-hidden text-ellipsis">
+                        {webSettings.storeName || 'EL ROPERO'}
+                      </h1>
+                    </div>
+
+                    {!step2FA ? (
+                      /* PASO 1: Email + Identificador de Showroom + Contraseña */
+                      <form onSubmit={handleLogin} className="space-y-8">
+                        <div className="space-y-6">
+                          <div className="relative group">
+                            <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                              Email de Administrador
+                            </label>
+                            <input
+                              type="email"
+                              value={adminEmail}
+                              onChange={(e) => { setAdminEmail(e.target.value); setAuthError(null); }}
+                              className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[1px] font-light text-black placeholder:text-black/10 transition-all"
+                              placeholder="admin@elropero.ar"
+                              required
+                            />
+                          </div>
+
+                          <div className="relative group">
+                            <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                              Identificador de Showroom
+                            </label>
+                            <input
+                              type="text"
+                              value={showroomID}
+                              onChange={(e) => setShowroomID(e.target.value.toUpperCase())}
+                              className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[3px] font-light uppercase text-black placeholder:text-black/10 transition-all"
+                              placeholder="SHOWROOM-ID"
+                              required
+                            />
+                          </div>
+
+                          <div className="relative group">
+                            <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                              Contraseña
+                            </label>
+                            <input
+                              type="password"
+                              value={password}
+                              onChange={(e) => { setPassword(e.target.value); setAuthError(null); }}
+                              className={`w-full bg-transparent border-b py-3 text-[13px] focus:outline-none tracking-[6px] transition-all ${
+                                authError 
+                                  ? 'border-red-400 text-red-600 focus:border-red-500' 
+                                  : 'border-black/10 text-black focus:border-black'
+                              }`}
+                              placeholder="••••••••"
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 pt-2">
+                          <button
+                            type="submit"
+                            className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-4 disabled:opacity-30"
+                            disabled={isLoading || (lockUntil !== null && Date.now() < lockUntil)}
+                          >
+                            {isLoading ? <Loader2 className="animate-spin" size={14} strokeWidth={1.5} /> : "Iniciar Sesión"}
+                          </button>
+
+                          {authError && (
+                            <p className="text-[10px] text-red-600 text-center uppercase tracking-[2px] font-medium leading-relaxed">
+                              {authError}
+                            </p>
+                          )}
+                        </div>
+                      </form>
+                    ) : (
+                      /* PASO 2: Verificación de 2 Factores (Código OTP enviado por Email para Dispositivo Nuevo) */
+                      <form onSubmit={handleVerifyOTP} className="space-y-8 animate-in fade-in duration-500">
+                        <div className="text-center space-y-3">
+                          <div className="w-12 h-12 rounded-full bg-black/5 flex items-center justify-center mx-auto mb-2 text-black">
+                            <ShieldCheck size={24} strokeWidth={1.5} />
+                          </div>
+                          <h2 className="text-[11px] tracking-[4px] uppercase font-semibold text-black">Dispositivo Nuevo Detectado</h2>
+                          <p className="text-[11px] text-black/60 font-light leading-relaxed">
+                            Por seguridad, enviamos un código de 6 dígitos a tu correo para autorizar este navegador:<br/>
+                            <span className="font-medium text-black">{adminEmail}</span>
+                          </p>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="relative group text-center">
+                            <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-3">
+                              Código de Verificación (6 dígitos)
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={6}
+                              value={otpCode}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '');
+                                setOtpCode(val);
+                                setAuthError(null);
+                              }}
+                              className={`w-full bg-transparent border-b text-center text-[22px] font-mono tracking-[12px] py-3 focus:outline-none transition-all ${
+                                authError 
+                                  ? 'border-red-400 text-red-600 focus:border-red-500' 
+                                  : 'border-black/20 text-black focus:border-black'
+                              }`}
+                              placeholder="••••••"
+                              autoFocus
+                              required
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-black/50 tracking-[1px] font-light pt-2">
+                            <span>Expiración: <strong className="text-black font-mono">{Math.floor(otpCountdown / 60)}:{String(otpCountdown % 60).padStart(2, '0')}</strong></span>
+                            <button
+                              type="button"
+                              onClick={handleResendOTP}
+                              disabled={isSendingOTP || otpCountdown > 240}
+                              className="underline hover:text-black transition-colors disabled:opacity-40"
+                            >
+                              {isSendingOTP ? 'Enviando...' : 'Reenviar código'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 pt-2">
+                          <button
+                            type="submit"
+                            className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-4 disabled:opacity-30"
+                            disabled={isLoading || otpCode.length !== 6}
+                          >
+                            {isLoading ? <Loader2 className="animate-spin" size={14} strokeWidth={1.5} /> : "Verificar e Ingresar"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => { setStep2FA(false); setOtpCode(''); setAuthError(null); }}
+                            className="w-full text-black/40 hover:text-black text-[10px] tracking-[2px] uppercase font-light transition-colors py-1"
+                          >
+                            ← Volver al paso anterior
+                          </button>
+
+                          {authError && (
+                            <p className="text-[10px] text-red-600 text-center uppercase tracking-[2px] font-medium leading-relaxed">
+                              {authError}
+                            </p>
+                          )}
+                        </div>
+                      </form>
+                    )}
+
+                    <div className="pt-10 border-t border-black/5 flex flex-col items-center gap-6">
+                      <div className="flex items-center gap-10 opacity-20">
+                        <Monitor size={20} strokeWidth={1} />
+                        <div className="w-10 h-[1px] bg-black/20" />
+                        <Smartphone size={20} strokeWidth={1} />
                       </div>
-
-                      <div className="relative group">
-                        <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
-                          Contraseña
-                        </label>
-                        <input
-                          type="password"
-                          value={password}
-                          onChange={(e) => { setPassword(e.target.value); setAuthError(false); }}
-                          className={`w-full bg-transparent border-b py-3 text-[13px] focus:outline-none tracking-[6px] transition-all ${
-                            authError 
-                              ? 'border-red-400 text-red-600 focus:border-red-500' 
-                              : 'border-black/10 text-black focus:border-black'
-                          }`}
-                          placeholder="••••••••"
-                        />
-                      </div>
+                      <p className="text-[9px] uppercase tracking-[3px] font-light text-black/40 leading-relaxed text-center max-w-[280px]">
+                        Sincronización en tiempo real activa entre dispositivos mediante ID.
+                      </p>
                     </div>
-
-                    <div className="space-y-4 pt-4">
-                      <button
-                        type="submit"
-                        className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-4 disabled:opacity-30"
-                        disabled={isLoading}
-                      >
-                        {isLoading ? <Loader2 className="animate-spin" size={14} strokeWidth={1.5} /> : "Ingresar"}
-                      </button>
-
-                      {authError && (
-                        <p className="text-[9px] text-red-600 text-center uppercase tracking-[3px] font-medium animate-pulse">
-                          Credenciales incorrectas
-                        </p>
-                      )}
-                    </div>
-                  </form>
-
-                  <div className="pt-10 border-t border-black/5 flex flex-col items-center gap-6">
-                    <div className="flex items-center gap-10 opacity-20">
-                      <Monitor size={20} strokeWidth={1} />
-                      <div className="w-10 h-[1px] bg-black/20" />
-                      <Smartphone size={20} strokeWidth={1} />
-                    </div>
-                    <p className="text-[9px] uppercase tracking-[3px] font-light text-black/40 leading-relaxed text-center max-w-[280px]">
-                      Sincronización en tiempo real activa entre dispositivos mediante ID.
-                    </p>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <Layout 
-                currentSection={section} 
-                setSection={setSection} 
-                onLogout={async () => {
-                  try {
-                    await signOut(auth);
-                  } catch (err) {
-                    console.error('Error al cerrar sesión de Firebase Auth:', err);
-                  }
-                  setIsEntered(false);
-                }} 
-                isSyncing={isSyncing}
-                onForceSync={forceSync}
-                webSettings={webSettings}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-              >
-                {section === 'admin' && (
-                  <Dashboard 
-                    inventory={inventory} 
-                    sales={sales} 
-                    expenses={expenses} 
-                    giftCards={giftCards}
-                    closures={closures}
-                    webSettings={webSettings}
-                    selectedCategory={selectedCategory}
-                    onSelectCategory={(cat) => setSelectedCategory(cat)}
-                    onUpdateItem={handleUpdateItem} 
-                    onDeleteItem={handleDeleteItem} 
-                    onNavigateToWebManager={handleNavigateToWebManager}
-                  />
-                )}
-                {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} onUpdateSalePago={handleUpdateSalePago} giftCards={giftCards} isSyncing={isSyncing} />}
-                {section === 'stock' && <Stock onAddItem={handleAddItem} inventory={inventory} webSettings={webSettings} />}
-                {section === 'gastos' && <Expenses expenses={expenses} onAddExpense={handleAddExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />}
-                {section === 'giftcards' && (
-                  <GiftCards
-                    giftCards={giftCards}
-                    onAddGiftCard={handleAddGiftCard}
-                    onUpdateGiftCard={handleUpdateGiftCard}
-                    onCancelGiftCard={handleCancelGiftCard}
-                  />
-                )}
-                {section === 'sitio' && (
-                  <WebManager 
-                    inventory={inventory} 
-                    webSettings={webSettings}
-                    selectedCategory={selectedCategory}
-                    onSelectCategory={(cat) => setSelectedCategory(cat)}
-                    onUpdateInventory={(next) => handleDataChange(next, sales, expenses, giftCards)}
-                    onUpdateSettings={(next) => handleDataChange(inventory, sales, expenses, giftCards, closures, next)}
-                    initialEditingItemId={webManagerEditItemId}
-                    onClearEditItem={() => setWebManagerEditItemId(null)}
-                  />
-                )}
-                {section === 'pedidos' && (
-                  <WebOrdersManager onOrderFulfilled={forceSync} />
-                )}
-              </Layout>
-            )
-          } />
+              ) : (
+                <Layout 
+                  currentSection={section} 
+                  setSection={setSection} 
+                  onLogout={async () => {
+                    sessionStorage.removeItem('ropero_2fa_verified');
+                    try {
+                      await signOut(auth);
+                    } catch (err) {
+                      console.error('Error al cerrar sesión de Firebase Auth:', err);
+                    }
+                    setIsEntered(false);
+                    setStep2FA(false);
+                  }} 
+                  isSyncing={isSyncing}
+                  onForceSync={forceSync}
+                  webSettings={webSettings}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                >
+                  {section === 'admin' && (
+                    <Dashboard 
+                      inventory={inventory} 
+                      sales={sales} 
+                      expenses={expenses} 
+                      giftCards={giftCards}
+                      closures={closures}
+                      webSettings={webSettings}
+                      selectedCategory={selectedCategory}
+                      onSelectCategory={(cat) => setSelectedCategory(cat)}
+                      onUpdateItem={handleUpdateItem} 
+                      onDeleteItem={handleDeleteItem} 
+                      onNavigateToWebManager={handleNavigateToWebManager}
+                    />
+                  )}
+                  {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} onUpdateSalePago={handleUpdateSalePago} giftCards={giftCards} isSyncing={isSyncing} />}
+                  {section === 'stock' && <Stock onAddItem={handleAddItem} inventory={inventory} webSettings={webSettings} />}
+                  {section === 'gastos' && <Expenses expenses={expenses} onAddExpense={handleAddExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />}
+                  {section === 'giftcards' && (
+                    <GiftCards
+                      giftCards={giftCards}
+                      onAddGiftCard={handleAddGiftCard}
+                      onUpdateGiftCard={handleUpdateGiftCard}
+                      onCancelGiftCard={handleCancelGiftCard}
+                    />
+                  )}
+                  {section === 'sitio' && (
+                    <WebManager 
+                      inventory={inventory} 
+                      webSettings={webSettings}
+                      selectedCategory={selectedCategory}
+                      onSelectCategory={(cat) => setSelectedCategory(cat)}
+                      onUpdateInventory={(next) => handleDataChange(next, sales, expenses, giftCards)}
+                      onUpdateSettings={(next) => handleDataChange(inventory, sales, expenses, giftCards, closures, next)}
+                      initialEditingItemId={webManagerEditItemId}
+                      onClearEditItem={() => setWebManagerEditItemId(null)}
+                    />
+                  )}
+                  {section === 'pedidos' && (
+                    <WebOrdersManager onOrderFulfilled={forceSync} />
+                  )}
+                </Layout>
+              )
+            } />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

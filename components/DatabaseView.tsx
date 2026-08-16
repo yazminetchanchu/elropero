@@ -139,7 +139,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses,
               <button
                 onClick={handleCloudPush}
                 disabled={isSyncing || isKeyDifferent || !isOnline}
-                className="flex-1 min-w-[280px] flex items-center justify-center gap-4 bg-white text-black py-8 px-10 text-[12px] tracking-[5px] font-black uppercase hover:bg-neutral-200 transition-all disabled:opacity-20 shadow-2xl"
+                className="flex-1 min-w-[280px] flex items-center justify-center gap-4 bg-white text-black py-8 px-10 text-[12px] tracking-[5px] font-black uppercase hover:bg-stone-100 hover:-translate-y-0.5 hover:shadow-xl transition-all duration-200 ease-out disabled:opacity-20 shadow-2xl active:translate-y-0"
               >
                 {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <CloudUpload size={24} />}
                 {isSyncing ? 'Procesando...' : 'Subir a la Nube'}
@@ -148,7 +148,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses,
               <button
                 onClick={handleCloudPull}
                 disabled={isSyncing || !isOnline}
-                className="flex-1 min-w-[280px] flex items-center justify-center gap-4 border-2 border-white/20 py-8 px-10 text-[12px] tracking-[5px] font-black uppercase hover:bg-white/10 transition-all disabled:opacity-20"
+                className="flex-1 min-w-[280px] flex items-center justify-center gap-4 border-2 border-white/20 py-8 px-10 text-[12px] tracking-[5px] font-black uppercase hover:bg-white/10 hover:-translate-y-0.5 transition-all duration-200 ease-out disabled:opacity-20 active:translate-y-0"
               >
                 <CloudDownload size={24} /> Descargar Datos
               </button>
@@ -163,7 +163,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses,
 
             <button
               onClick={database.exportBackupFile}
-              className="text-[10px] tracking-[3px] font-black uppercase opacity-60 hover:opacity-100 flex items-center gap-3 border border-white/20 px-6 py-3 hover:bg-white/5 transition-all"
+              className="text-[10px] tracking-[3px] font-black uppercase opacity-60 hover:opacity-100 flex items-center gap-3 border border-white/20 px-6 py-3 hover:bg-white/10 hover:-translate-y-0.5 transition-all duration-200"
             >
               <Download size={18} /> Exportar Backup JSON
             </button>

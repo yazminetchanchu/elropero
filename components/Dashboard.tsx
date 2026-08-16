@@ -254,27 +254,28 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Alertas y Tareas Rápidas */}
       {(sinStock.length > 0 || conStock.some(i => i.cantidad <= 2)) && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-500/20 text-amber-800 rounded-xl">
-              <AlertTriangle size={20} />
+        <div className="bg-stone-100/90 border border-stone-200/80 rounded-2xl px-4 py-2.5 sm:px-5 sm:py-3 flex items-center justify-between gap-3 sm:gap-4 shadow-2xs">
+          <div className="flex items-center gap-3 shrink-0 min-w-0">
+            <div className="p-1.5 bg-stone-200/80 text-stone-700 rounded-xl shrink-0">
+              <AlertTriangle size={16} strokeWidth={1.5} />
             </div>
-            <div>
-              <h4 className="font-serif text-lg font-bold text-[#1A1A1A] leading-tight italic">
+            <div className="flex items-center gap-2 truncate">
+              <h4 className="font-serif text-sm italic font-medium text-stone-900 leading-none shrink-0 whitespace-nowrap">
                 Cinta de Alertas Operativas
               </h4>
-              <p className="text-[10px] text-[#1A1A1A]/70 uppercase tracking-[1.5px] font-medium mt-0.5">
+              <span className="hidden md:inline text-[9px] text-stone-400 font-light">•</span>
+              <p className="text-[9px] text-stone-500 uppercase tracking-[0.12em] font-light truncate whitespace-nowrap">
                 Atención requerida en inventario y reposición del showroom
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2 shrink-0">
             {sinStock.length > 0 && (
               <button
                 onClick={() => setShowSinStock(true)}
-                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-[10px] font-bold uppercase tracking-[1.5px] transition-all flex items-center gap-1.5 shadow-2xs"
+                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100/70 text-rose-700 border border-rose-200/80 rounded-xl text-[9px] font-medium uppercase tracking-[0.15em] transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
               >
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
                 <span>Agotados ({sinStock.length})</span>
               </button>
             )}
@@ -284,34 +285,26 @@ const Dashboard: React.FC<DashboardProps> = ({
                   setShowSinStock(false);
                   setSearchTerm('');
                 }}
-                className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-[10px] font-bold uppercase tracking-[1.5px] transition-all flex items-center gap-1.5 shadow-2xs"
+                className="px-3 py-1.5 bg-white hover:bg-stone-50 text-stone-800 border border-stone-200/80 rounded-xl text-[9px] font-medium uppercase tracking-[0.15em] transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
               >
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                 <span>Stock Crítico ({conStock.filter(i => i.cantidad <= 2).length})</span>
               </button>
             )}
-            <button
-              onClick={handleExportCSV}
-              className="px-3.5 py-2 bg-white/90 hover:bg-white text-[#1A1A1A] border border-[#C9B8A8]/60 rounded-xl text-[10px] font-bold uppercase tracking-[1.5px] transition-all flex items-center gap-1.5 shadow-2xs"
-              title="Descargar inventario en CSV para Excel"
-            >
-              <Download size={13} />
-              <span>Exportar Excel</span>
-            </button>
           </div>
         </div>
       )}
 
       {/* Comparación mensual */}
-      <div className="bg-white/95 backdrop-blur-md border border-[#C9B8A8]/50 rounded-2xl p-6 md:p-8 shadow-lg">
-        <div className="flex items-center justify-between mb-6 border-b border-[#C9B8A8]/30 pb-4">
+      <div className="bg-white border border-stone-200/60 rounded-2xl p-6 md:p-7 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)]">
+        <div className="flex items-center justify-between mb-6 border-b border-stone-100 pb-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#C9B8A8]/20 rounded-xl text-[#1A1A1A]">
-              <Calendar size={20} />
+            <div className="p-2 bg-stone-100 rounded-xl text-stone-700">
+              <Calendar size={18} strokeWidth={1.5} />
             </div>
             <div>
-              <h3 className="font-serif text-2xl italic font-bold text-[#1A1A1A]">Comparación Mensual</h3>
-              <p className="text-[10px] text-[#1A1A1A]/60 uppercase tracking-[2px] font-medium">
+              <h3 className="font-serif text-xl italic font-normal text-stone-900">Comparación Mensual</h3>
+              <p className="text-[9px] text-stone-400 uppercase tracking-[0.18em] font-light">
                 Mes {currentMonth}/{currentYear} vs Mes {prevMonth}/{prevYear}
               </p>
             </div>
@@ -322,121 +315,118 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div 
             data-testid="compare-ganancia"
             onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'ganancia' })}
-            className="group relative overflow-hidden text-left p-5 sm:p-6 bg-gradient-to-br from-white to-[#F5F1EB]/60 hover:to-[#EAE2D6] rounded-xl border border-[#C9B8A8]/40 cursor-pointer transition-all duration-300 hover:-translate-y-1 shadow-xs hover:shadow-md"
+            className="group relative overflow-hidden text-left p-5 bg-white hover:bg-stone-50/70 rounded-xl border border-stone-200/70 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_8px_25px_-5px_rgba(0,0,0,0.06)] hover:border-stone-300 active:translate-y-0 shadow-2xs"
           >
-            <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="flex items-center justify-between gap-1 mb-3">
-              <span className="text-[9px] uppercase tracking-[2.5px] text-[#1A1A1A]/60 font-bold group-hover:text-[#1A1A1A]">Ganancia Neta</span>
-              <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold ${trendGanancia.isPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+            <div className="flex items-center justify-between gap-1 mb-2.5">
+              <span className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-medium group-hover:text-stone-700">Ganancia Neta</span>
+              <span className={`px-2 py-0.5 rounded-full text-[8px] font-medium ${trendGanancia.isPositive ? 'bg-emerald-50 text-emerald-800 border border-emerald-500/20' : 'bg-rose-50 text-rose-800 border border-rose-500/20'}`}>
                 {trendGanancia.isPositive ? '↑' : '↓'} {trendGanancia.value.toFixed(1)}%
               </span>
             </div>
-            <p className="font-serif text-2xl sm:text-3xl font-extrabold text-[#1A1A1A] mb-1.5">${gNetaMes.toLocaleString()}</p>
-            <p className="text-[10px] text-[#1A1A1A]/50 font-medium">vs ${prevGNeta.toLocaleString()} <span className="opacity-60 italic">ant.</span></p>
+            <p className="font-serif text-2xl font-medium text-stone-900 mb-1">${gNetaMes.toLocaleString()}</p>
+            <p className="text-[9px] text-stone-400 font-light tracking-wide">vs ${prevGNeta.toLocaleString()} <span className="opacity-70 italic">ant.</span></p>
           </div>
 
           <div 
             data-testid="compare-efectivo"
             onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'efectivo' })}
-            className="group relative overflow-hidden text-left p-5 sm:p-6 bg-gradient-to-br from-white to-[#F5F1EB]/60 hover:to-[#EAE2D6] rounded-xl border border-[#C9B8A8]/40 cursor-pointer transition-all duration-300 hover:-translate-y-1 shadow-xs hover:shadow-md"
+            className="group relative overflow-hidden text-left p-5 bg-white hover:bg-stone-50/70 rounded-xl border border-stone-200/70 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_8px_25px_-5px_rgba(0,0,0,0.06)] hover:border-stone-300 active:translate-y-0 shadow-2xs"
           >
-            <div className="absolute top-0 left-0 right-0 h-1 bg-[#1A1A1A] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="flex items-center justify-between gap-1 mb-3">
-              <span className="text-[9px] uppercase tracking-[2.5px] text-[#1A1A1A]/60 font-bold group-hover:text-[#1A1A1A]">Caja Efectivo</span>
-              <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold ${trendEfectivo.isPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+            <div className="flex items-center justify-between gap-1 mb-2.5">
+              <span className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-medium group-hover:text-stone-700">Caja Efectivo</span>
+              <span className={`px-2 py-0.5 rounded-full text-[8px] font-medium ${trendEfectivo.isPositive ? 'bg-emerald-50 text-emerald-800 border border-emerald-500/20' : 'bg-rose-50 text-rose-800 border border-rose-500/20'}`}>
                 {trendEfectivo.isPositive ? '↑' : '↓'} {trendEfectivo.value.toFixed(1)}%
               </span>
             </div>
-            <p className="font-serif text-2xl sm:text-3xl font-extrabold text-[#1A1A1A] mb-1.5">${totalEfectivo.toLocaleString()}</p>
-            <p className="text-[10px] text-[#1A1A1A]/50 font-medium">vs ${prevTotalEfectivo.toLocaleString()} <span className="opacity-60 italic">ant.</span></p>
+            <p className="font-serif text-2xl font-medium text-stone-900 mb-1">${totalEfectivo.toLocaleString()}</p>
+            <p className="text-[9px] text-stone-400 font-light tracking-wide">vs ${prevTotalEfectivo.toLocaleString()} <span className="opacity-70 italic">ant.</span></p>
           </div>
 
           <div 
             data-testid="compare-tarjeta"
             onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'tarjeta' })}
-            className="group relative overflow-hidden text-left p-5 sm:p-6 bg-gradient-to-br from-white to-[#F5F1EB]/60 hover:to-[#EAE2D6] rounded-xl border border-[#C9B8A8]/40 cursor-pointer transition-all duration-300 hover:-translate-y-1 shadow-xs hover:shadow-md"
+            className="group relative overflow-hidden text-left p-5 bg-white hover:bg-stone-50/70 rounded-xl border border-stone-200/70 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_8px_25px_-5px_rgba(0,0,0,0.06)] hover:border-stone-300 active:translate-y-0 shadow-2xs"
           >
-            <div className="absolute top-0 left-0 right-0 h-1 bg-[#C9B8A8] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="flex items-center justify-between gap-1 mb-3">
-              <span className="text-[9px] uppercase tracking-[2.5px] text-[#1A1A1A]/60 font-bold group-hover:text-[#1A1A1A]">Caja Tarjeta</span>
-              <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold ${trendTarjeta.isPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+            <div className="flex items-center justify-between gap-1 mb-2.5">
+              <span className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-medium group-hover:text-stone-700">Caja Tarjeta</span>
+              <span className={`px-2 py-0.5 rounded-full text-[8px] font-medium ${trendTarjeta.isPositive ? 'bg-emerald-50 text-emerald-800 border border-emerald-500/20' : 'bg-rose-50 text-rose-800 border border-rose-500/20'}`}>
                 {trendTarjeta.isPositive ? '↑' : '↓'} {trendTarjeta.value.toFixed(1)}%
               </span>
             </div>
-            <p className="font-serif text-2xl sm:text-3xl font-extrabold text-[#1A1A1A] mb-1.5">${totalTarjeta.toLocaleString()}</p>
-            <p className="text-[10px] text-[#1A1A1A]/50 font-medium">vs ${prevTotalTarjeta.toLocaleString()} <span className="opacity-60 italic">ant.</span></p>
+            <p className="font-serif text-2xl font-medium text-stone-900 mb-1">${totalTarjeta.toLocaleString()}</p>
+            <p className="text-[9px] text-stone-400 font-light tracking-wide">vs ${prevTotalTarjeta.toLocaleString()} <span className="opacity-70 italic">ant.</span></p>
           </div>
 
           <div 
             data-testid="compare-gastos"
             onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'gastos' })}
-            className="group relative overflow-hidden text-left p-5 sm:p-6 bg-gradient-to-br from-white to-[#F5F1EB]/60 hover:to-[#EAE2D6] rounded-xl border border-[#C9B8A8]/40 cursor-pointer transition-all duration-300 hover:-translate-y-1 shadow-xs hover:shadow-md"
+            className="group relative overflow-hidden text-left p-5 bg-white hover:bg-stone-50/70 rounded-xl border border-stone-200/70 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_8px_25px_-5px_rgba(0,0,0,0.06)] hover:border-stone-300 active:translate-y-0 shadow-2xs"
           >
-            <div className="absolute top-0 left-0 right-0 h-1 bg-rose-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="flex items-center justify-between gap-1 mb-3">
-              <span className="text-[9px] uppercase tracking-[2.5px] text-[#1A1A1A]/60 font-bold group-hover:text-[#1A1A1A]">Gastos Operativos</span>
-              <span className="px-2 py-0.5 rounded-full text-[8px] font-bold bg-gray-100 text-gray-700">
+            <div className="flex items-center justify-between gap-1 mb-2.5">
+              <span className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-medium group-hover:text-stone-700">Gastos Operativos</span>
+              <span className="px-2 py-0.5 rounded-full text-[8px] font-medium bg-stone-100 text-stone-600 border border-stone-200/50">
                 {expensesThisMonth <= prevExpensesTotal ? '↓' : '↑'} {calcTrend(expensesThisMonth, prevExpensesTotal).value.toFixed(1)}%
               </span>
             </div>
-            <p className="font-serif text-2xl sm:text-3xl font-extrabold text-rose-700 mb-1.5">${expensesThisMonth.toLocaleString()}</p>
-            <p className="text-[10px] text-[#1A1A1A]/50 font-medium">vs ${prevExpensesTotal.toLocaleString()} <span className="opacity-60 italic">ant.</span></p>
+            <p className="font-serif text-2xl font-medium text-rose-700 mb-1">${expensesThisMonth.toLocaleString()}</p>
+            <p className="text-[9px] text-stone-400 font-light tracking-wide">vs ${prevExpensesTotal.toLocaleString()} <span className="opacity-70 italic">ant.</span></p>
           </div>
         </div>
       </div>
-      <div className="space-y-6 mt-10">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-[#D4C4B0] pb-4 gap-4">
+      <div className="space-y-5 mt-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-stone-200/60 pb-4 gap-4">
           <div className="flex items-center gap-4">
-            <h3 className="font-serif text-3xl italic font-bold text-[#1A1A1A]">Inventario</h3>
+            <h3 className="font-serif text-2xl italic font-normal text-stone-900">Inventario</h3>
             {sinStock.length > 0 && (
               <button
                 onClick={() => setShowSinStock(v => !v)}
-                className={`text-[9px] uppercase tracking-[2px] font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs ${
+                className={`text-[9px] uppercase tracking-[0.15em] font-medium px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs ${
                   showSinStock
-                    ? 'bg-rose-600 text-white border-rose-600 scale-105'
-                    : 'bg-white/90 text-[#1A1A1A]/70 border border-[#C9B8A8]/60 hover:border-[#1A1A1A]'
+                    ? 'bg-rose-600 text-white border-rose-600'
+                    : 'bg-white text-stone-600 border border-stone-200/70 hover:border-stone-400 hover:text-stone-900'
                 }`}
               >
-                {showSinStock ? <EyeOff size={13} /> : <Eye size={13} />}
+                {showSinStock ? <EyeOff size={13} strokeWidth={1.5} /> : <Eye size={13} strokeWidth={1.5} />}
                 <span>{showSinStock ? '✕ Ver disponibles' : `Ver agotadas (${sinStock.length})`}</span>
               </button>
             )}
           </div>
           <div className="relative w-full md:w-72">
             <Search
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#1A1A1A]/40"
-              size={15}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400"
+              size={14}
+              strokeWidth={1.5}
             />
             <input
               type="text"
               placeholder="BUSCAR CÓDIGO, DESCRIPCIÓN..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-white/95 border border-[#C9B8A8]/60 rounded-xl py-2.5 pl-10 pr-9 text-xs uppercase font-medium text-[#1A1A1A] placeholder:text-[#1A1A1A]/40 focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/10 focus:border-[#1A1A1A] transition-all shadow-2xs"
+              className="w-full bg-white border border-stone-200/70 rounded-xl py-2 pl-9 pr-8 text-xs uppercase font-medium text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-900/10 focus:border-stone-400 transition-all shadow-2xs"
             />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#1A1A1A]/40 hover:text-[#1A1A1A] transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-800 transition-colors"
                 title="Limpiar búsqueda"
               >
-                <X size={14} />
+                <X size={13} strokeWidth={1.5} />
               </button>
             )}
           </div>
         </div>
 
         {allCategories.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 py-3.5 px-4 bg-[#F5F1EB]/80 backdrop-blur-md border border-[#C9B8A8]/40 rounded-2xl shadow-2xs">
-            <span className="text-[9px] font-extrabold uppercase tracking-[2px] text-[#1A1A1A]/50 mr-1 flex items-center gap-1">
-              <Filter size={12} /> Categorías:
+          <div className="flex flex-wrap items-center gap-2 py-3 px-4 bg-white/80 border border-stone-200/60 rounded-2xl shadow-2xs">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-stone-400 mr-1 flex items-center gap-1">
+              <Filter size={11} strokeWidth={1.5} /> Categorías:
             </span>
             <button
               onClick={() => handleCategoryChange('')}
-              className={`px-3 py-1.5 rounded-xl text-[9px] tracking-[1.5px] uppercase font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-[9px] tracking-[0.15em] uppercase font-medium transition-all ${
                 !activeCategory
-                  ? 'bg-[#1A1A1A] text-white shadow-md scale-105 ring-1 ring-[#1A1A1A]/20 font-black'
-                  : 'bg-white/90 text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A] border border-[#C9B8A8]/40'
+                  ? 'bg-stone-900 text-white shadow-2xs'
+                  : 'bg-stone-100/60 text-stone-600 hover:bg-stone-200/60 hover:text-stone-900 border border-stone-200/50'
               }`}
             >
               Todas ({baseInventory.length})
@@ -447,15 +437,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <button
                   key={cat}
                   onClick={() => handleCategoryChange(cat)}
-                  className={`px-3 py-1.5 rounded-xl text-[9px] tracking-[1.5px] uppercase font-bold transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-xl text-[9px] tracking-[0.15em] uppercase font-medium transition-all flex items-center gap-1.5 ${
                     activeCategory === cat
-                      ? 'bg-[#C9B8A8] text-[#1A1A1A] shadow-md scale-105 font-black border border-[#1A1A1A]/20'
-                      : 'bg-white/90 text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A] border border-[#C9B8A8]/40'
+                      ? 'bg-[#C5B4A0] text-stone-900 shadow-2xs font-semibold'
+                      : 'bg-stone-100/60 text-stone-600 hover:bg-stone-200/60 hover:text-stone-900 border border-stone-200/50'
                   }`}
                 >
                   <span>{cat}</span>
-                  <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-mono font-bold ${
-                    activeCategory === cat ? 'bg-[#1A1A1A] text-white' : 'bg-[#C9B8A8]/30 text-[#1A1A1A]'
+                  <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-mono font-medium ${
+                    activeCategory === cat ? 'bg-stone-900 text-white' : 'bg-stone-200/80 text-stone-700'
                   }`}>
                     {count}
                   </span>
@@ -465,84 +455,84 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         )}
 
-        <div className="border border-[#C9B8A8]/60 bg-white/95 rounded-2xl overflow-hidden shadow-md max-h-[calc(100vh-280px)] min-h-[350px]">
+        <div className="border border-stone-200/60 bg-white rounded-2xl overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)] max-h-[calc(100vh-280px)] min-h-[350px]">
           <table className="w-full">
-            <thead className="bg-[#EBE5DC] text-[#1A1A1A] sticky top-0 z-10 border-b border-[#C9B8A8]/60 shadow-2xs">
+            <thead className="bg-stone-50/90 text-stone-600 sticky top-0 z-10 border-b border-stone-200/60">
               <tr>
-                <th className="px-4 py-3.5 text-left text-[9px] font-extrabold uppercase tracking-[2px]">Código</th>
-                <th className="px-4 py-3.5 text-left text-[9px] font-extrabold uppercase tracking-[2px]">Descripción</th>
-                <th className="px-4 py-3.5 text-left text-[9px] font-extrabold uppercase tracking-[2px]">Proveedor</th>
-                <th className="px-4 py-3.5 text-right text-[9px] font-extrabold uppercase tracking-[2px]">Costo</th>
-                <th className="px-4 py-3.5 text-right text-[9px] font-extrabold uppercase tracking-[2px]">P. Efectivo</th>
-                <th className="px-4 py-3.5 text-right text-[9px] font-extrabold uppercase tracking-[2px]">P. Tarjeta</th>
-                <th className="px-4 py-3.5 text-center text-[9px] font-extrabold uppercase tracking-[2px]">Stock & Ajuste</th>
-                <th className="px-4 py-3.5 text-center text-[9px] font-extrabold uppercase tracking-[2px]">Acciones</th>
+                <th className="px-4 py-3.5 text-left text-[9px] font-semibold uppercase tracking-[0.18em]">Código</th>
+                <th className="px-4 py-3.5 text-left text-[9px] font-semibold uppercase tracking-[0.18em]">Descripción</th>
+                <th className="px-4 py-3.5 text-left text-[9px] font-semibold uppercase tracking-[0.18em]">Proveedor</th>
+                <th className="px-4 py-3.5 text-right text-[9px] font-semibold uppercase tracking-[0.18em]">Costo</th>
+                <th className="px-4 py-3.5 text-right text-[9px] font-semibold uppercase tracking-[0.18em]">P. Efectivo</th>
+                <th className="px-4 py-3.5 text-right text-[9px] font-semibold uppercase tracking-[0.18em]">P. Tarjeta</th>
+                <th className="px-4 py-3.5 text-center text-[9px] font-semibold uppercase tracking-[0.18em]">Stock & Ajuste</th>
+                <th className="px-4 py-3.5 text-center text-[9px] font-semibold uppercase tracking-[0.18em]">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#C9B8A8]/20 text-xs">
+            <tbody className="divide-y divide-stone-100 text-xs">
               {filteredInventory.map(item => (
                 <tr
                   key={item.id}
-                  className={`transition-colors duration-150 ${item.cantidad <= 0 ? 'bg-gray-50/80 opacity-70' : 'hover:bg-[#C9B8A8]/10'}`}
+                  className={`transition-colors duration-150 ${item.cantidad <= 0 ? 'bg-stone-50/50 opacity-60' : 'hover:bg-stone-50/70'}`}
                 >
-                  <td className="px-4 py-3 font-mono font-bold text-[#1A1A1A] text-[11px]">{item.sku}</td>
-                  <td className="px-4 py-3 font-bold text-[#1A1A1A] text-[11px]">{item.descripcion}</td>
-                  <td className="px-4 py-3 text-[#1A1A1A]/80 font-medium">{item.proveedor}</td>
-                  <td className="px-4 py-3 text-right font-mono font-medium text-[#1A1A1A]/70">$ {item.costo.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-[#1A1A1A] bg-emerald-500/5">$ {item.ventaEfectivo.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-[#1A1A1A]">$ {(item.ventaTarjeta ?? item.ventaEfectivo).toLocaleString()}</td>
+                  <td className="px-4 py-3 font-mono font-medium text-stone-900 text-[11px]">{item.sku}</td>
+                  <td className="px-4 py-3 font-medium text-stone-800 text-[11px]">{item.descripcion}</td>
+                  <td className="px-4 py-3 text-stone-500 font-normal">{item.proveedor}</td>
+                  <td className="px-4 py-3 text-right font-mono font-normal text-stone-500">$ {item.costo.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-mono font-semibold text-stone-900 bg-emerald-500/5">$ {item.ventaEfectivo.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-mono font-medium text-stone-800">$ {(item.ventaTarjeta ?? item.ventaEfectivo).toLocaleString()}</td>
                   <td className="px-4 py-3 text-center">
-                    <div className="inline-flex items-center gap-1.5 bg-[#F5F1EB]/80 border border-[#C9B8A8]/40 rounded-full px-1.5 py-0.5 shadow-2xs">
+                    <div className="inline-flex items-center gap-1.5 bg-stone-50 border border-stone-200/60 rounded-full px-2 py-0.5 shadow-2xs">
                       <button
                         onClick={() => handleFastStockUpdate(item, -1)}
                         disabled={item.cantidad <= 0}
                         title="Restar 1 unidad"
-                        className="w-5 h-5 rounded-full bg-white hover:bg-rose-100 text-[#1A1A1A] hover:text-rose-700 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed transition-colors font-bold shadow-2xs"
+                        className="w-4 h-4 rounded-full bg-white hover:bg-rose-50 text-stone-600 hover:text-rose-700 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed transition-colors font-medium shadow-2xs"
                       >
-                        <Minus size={11} />
+                        <Minus size={10} strokeWidth={1.5} />
                       </button>
 
                       {item.cantidad <= 0 ? (
-                        <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider inline-flex items-center gap-1">
+                        <span className="bg-rose-50 text-rose-700 border border-rose-200/60 px-2 py-0.5 rounded-full text-[8px] font-medium uppercase tracking-wider inline-flex items-center gap-1">
                           Agotado
                         </span>
                       ) : (
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold inline-flex items-center gap-1 ${
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-medium inline-flex items-center gap-1 ${
                           item.cantidad <= 2 
-                            ? 'bg-amber-50 text-amber-800 border border-amber-200' 
-                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200/80'
+                            ? 'bg-amber-50 text-amber-800 border border-amber-200/60' 
+                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200/60'
                         }`}>
                           <span>{item.cantidad}</span>
-                          <span className="text-[8px] font-normal opacity-60 uppercase tracking-tighter">u.</span>
+                          <span className="text-[8px] font-normal opacity-60 uppercase">u.</span>
                         </span>
                       )}
 
                       <button
                         onClick={() => handleFastStockUpdate(item, 1)}
                         title="Sumar 1 unidad"
-                        className="w-5 h-5 rounded-full bg-white hover:bg-emerald-100 text-[#1A1A1A] hover:text-emerald-700 flex items-center justify-center transition-colors font-bold shadow-2xs"
+                        className="w-4 h-4 rounded-full bg-white hover:bg-emerald-50 text-stone-600 hover:text-emerald-700 flex items-center justify-center transition-colors font-medium shadow-2xs"
                       >
-                        <Plus size={11} />
+                        <Plus size={10} strokeWidth={1.5} />
                       </button>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <div className="inline-flex items-center gap-1 bg-[#F5F1EB]/80 border border-[#C9B8A8]/40 rounded-xl p-1 shadow-2xs">
+                    <div className="inline-flex items-center gap-1 bg-stone-50 border border-stone-200/60 rounded-xl p-1 shadow-2xs">
                       <button 
                         onClick={() => setEditingItem(item)} 
                         title="Editar producto"
-                        className="p-1.5 hover:bg-white hover:scale-110 active:scale-95 text-[#1A1A1A] rounded-lg transition-all"
+                        className="p-1 hover:bg-white text-stone-600 hover:text-stone-900 rounded-lg transition-all"
                       >
-                        <Edit2 size={13} />
+                        <Edit2 size={12} strokeWidth={1.5} />
                       </button>
                       <button 
                         onClick={() => handleDelete(item.id)} 
                         title={pendingDeleteId === item.id ? "Confirmar eliminación" : "Eliminar producto"}
-                        className={`p-1.5 rounded-lg transition-all hover:scale-110 active:scale-95 ${
-                          pendingDeleteId === item.id ? 'bg-rose-600 text-white font-bold' : 'hover:bg-rose-50 text-rose-600'
+                        className={`p-1 rounded-lg transition-all ${
+                          pendingDeleteId === item.id ? 'bg-rose-600 text-white font-medium' : 'hover:bg-rose-50 text-rose-600'
                         }`}
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={12} strokeWidth={1.5} />
                       </button>
                     </div>
                   </td>
@@ -889,9 +879,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {editingItem && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex justify-center items-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white/95 backdrop-blur-xl p-8 w-full max-w-xl rounded-3xl border border-[#C9B8A8]/60 shadow-2xl relative overflow-hidden space-y-6">
-            {/* Top accent line */}
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#C9B8A8] via-[#1A1A1A] to-[#C9B8A8]" />
+          <div className="bg-white p-8 w-full max-w-xl rounded-3xl border border-stone-200 shadow-2xl relative overflow-hidden space-y-6">
             
             <div className="flex items-center justify-between border-b border-[#C9B8A8]/30 pb-4">
               <div>

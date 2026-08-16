@@ -8,7 +8,7 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Identificación estricta del Admin
+    // Identificación estricta del Admin por Custom Claim o email autorizado
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.admin == true || 
@@ -19,7 +19,7 @@ service cloud.firestore {
 
     // Reglas para el documento principal del showroom e inventario
     match /showrooms/{showroomId} {
-      // Lectura pública necesaria para el catálogo web y sincronización del dashboard
+      // Lectura pública necesaria para el catálogo web y configuración del sitio
       allow read: if true;
       
       // Prohibir creación y borrado desde clientes no autorizados
@@ -29,31 +29,27 @@ service cloud.firestore {
       // Usuarios no-admin (clientes en checkout) SOLO pueden modificar inventory y lastSync
       // para la reserva temporal de stock. sales, expenses y giftCards son exclusivos del admin.
       allow update: if isAdmin() || (
-        // El cliente nunca debe decrementar directamente el saldo de una Gift Card o escribir una venta
         request.resource.data.sales     == resource.data.sales &&
         request.resource.data.expenses  == resource.data.expenses &&
         (resource.data.giftCards == null || request.resource.data.giftCards == resource.data.giftCards) &&
-        // Solo se permiten actualizaciones de inventory con un lastSync válido
         request.resource.data.lastSync is number &&
         request.resource.data.inventory is list
       );
 
-      // Subcolección de pedidos web directos (/webOrders)
+      // Subcolección de pedidos web directos (/webOrders) - Solo Admin
       match /webOrders/{orderId} {
-        allow read: if true;
-        // Solo Admin o a través de Cloud Functions para forzar validación y recálculo
+        allow read: if isAdmin();
         allow write: if isAdmin();
       }
 
       // Subcolección de clientes y sus pedidos (/customers/{uid}/orders/{orderId})
       match /customers/{uid} {
-        // Los clientes pueden leerse a sí mismos y modificar su propia información de perfil/carrito
-        allow read: if true;
+        // Los clientes solo pueden leer y modificar su propio perfil
+        allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
         allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
 
         match /orders/{orderId} {
-          allow read: if true;
-          // Admin o el propio cliente autenticado puede registrar su orden
+          allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
           allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
         }
       }
@@ -61,18 +57,17 @@ service cloud.firestore {
 
     // Colecciones independientes explícitas para Gift Cards y Ventas
     match /gift_cards/{cardId} {
-      allow read: if true;
-      // Solo Admin (Cloud Functions) puede escribir para forzar validación
+      allow read: if true; // Requerido para verificación por código en Checkout
       allow write: if isAdmin();
     }
 
     match /sales/{saleId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 
     match /orders/{orderId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 
@@ -90,9 +85,9 @@ service cloud.firestore {
     }
 
     // Bloquear acceso por defecto a cualquier otra colección o ruta no explícita
-    // Acceso general para el Admin
     match /{document=**} {
       allow read, write: if isAdmin();
     }
   }
 }
+

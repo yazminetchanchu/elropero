@@ -15,7 +15,9 @@ import { auth, db, googleProvider } from '../services/firebase';
 import { InventoryItem } from '../types';
 import { sendWelcomeEmail } from '../services/emailService';
 
-const PUBLIC_SHOWROOM_ID = localStorage.getItem('ropero_showroom_id_v3_2026') || 'EL-ROPERO-DEFAULT';
+import { getShowroomID } from '../services/storage';
+
+const PUBLIC_SHOWROOM_ID = getShowroomID();
 
 export interface ShippingAddress {
   id: string;

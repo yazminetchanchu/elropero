@@ -211,9 +211,9 @@ const GiftCards: React.FC<GiftCardsProps> = ({
 
   return (
     <div className="space-y-6 text-left max-w-6xl">
-      <header className="border-b-2 border-[#C9B8A8]/30 pb-4">
-        <h2 className="font-serif text-3xl italic text-[#1A1A1A]">Gift Cards</h2>
-        <p className="text-[10px] tracking-[4px] uppercase font-medium text-[#1A1A1A]/60 mt-1">
+      <header className="border-b border-stone-200/60 pb-3">
+        <h2 className="font-serif text-2xl italic font-normal text-stone-900">Gift Cards</h2>
+        <p className="text-[9px] tracking-[0.18em] uppercase font-light text-stone-400 mt-0.5">
           Administración de tarjetas y registros contables
         </p>
       </header>
@@ -221,82 +221,82 @@ const GiftCards: React.FC<GiftCardsProps> = ({
       {/* ── CREAR ─────────────────────────────────── */}
       <form
         onSubmit={handleSubmit}
-        className="bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-2xl p-6 space-y-5 shadow-xl max-w-xl"
+        className="bg-white border border-stone-200/60 rounded-2xl p-6 space-y-5 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)] max-w-xl transition-all duration-200 ease-out hover:border-stone-300 hover:shadow-[0_8px_30px_-5px_rgba(0,0,0,0.05)]"
       >
         <div className="flex items-center gap-3">
-          <Gift className="text-[#1A1A1A]" size={20} />
-          <h3 className="font-serif text-xl italic text-[#1A1A1A]">Nueva Gift Card</h3>
+          <Gift className="text-stone-800" size={18} strokeWidth={1.5} />
+          <h3 className="font-serif text-xl italic text-stone-900">Nueva Gift Card</h3>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2">
-            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">Destinatario</label>
+            <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400">Destinatario</label>
             <input
               value={destinatario}
               onChange={(e) => setDestinatario(e.target.value)}
-              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400"
+              className="w-full border-b border-stone-200/80 py-2 bg-transparent focus:outline-none focus:border-stone-500 text-stone-900 text-xs transition-colors placeholder:text-stone-400"
               placeholder="Nombre del destinatario"
             />
           </div>
           <div>
-            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">Monto inicial</label>
-            <div className="flex items-center border-b-2 border-[#C9B8A8]/40 focus-within:border-[#C9B8A8] transition-colors">
-              <span className="text-sm font-bold pr-1 text-[#1A1A1A]/40">$</span>
+            <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400">Monto inicial</label>
+            <div className="flex items-center border-b border-stone-200/80 focus-within:border-stone-500 transition-colors">
+              <span className="text-xs font-mono font-medium pr-1 text-stone-400">$</span>
               <input
                 type="text"
                 value={monto === 0 ? '' : monto}
                 onChange={(e) => setMonto(toInt(e.target.value))}
-                className="w-full py-2.5 bg-transparent focus:outline-none text-[#1A1A1A] text-sm placeholder:text-gray-400"
+                className="w-full py-2 bg-transparent focus:outline-none text-stone-900 text-xs font-mono placeholder:text-stone-400"
                 placeholder="0"
               />
             </div>
           </div>
 
           <div className="col-span-2 md:col-span-1">
-            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">De parte de (Opcional)</label>
+            <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400">De parte de (Opcional)</label>
             <input
               value={deParteDe}
               onChange={(e) => setDeParteDe(e.target.value)}
-              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400"
+              className="w-full border-b border-stone-200/80 py-2 bg-transparent focus:outline-none focus:border-stone-500 text-stone-900 text-xs transition-colors placeholder:text-stone-400"
               placeholder="Tu nombre"
             />
           </div>
           <div className="col-span-2 md:col-span-1">
-            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">Email comprador (Opcional)</label>
+            <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400">Email comprador (Opcional)</label>
             <input
               type="email"
               value={emailComprador}
               onChange={(e) => setEmailComprador(e.target.value)}
-              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400"
+              className="w-full border-b border-stone-200/80 py-2 bg-transparent focus:outline-none focus:border-stone-500 text-stone-900 text-xs transition-colors placeholder:text-stone-400"
               placeholder="Para enviar comprobante"
             />
           </div>
           <div className="col-span-2 md:col-span-1">
-            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">Email destinatario (Opcional)</label>
+            <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400">Email destinatario (Opcional)</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400"
+              className="w-full border-b border-stone-200/80 py-2 bg-transparent focus:outline-none focus:border-stone-500 text-stone-900 text-xs transition-colors placeholder:text-stone-400"
               placeholder="Para enviar por email"
             />
           </div>
           <div className="col-span-2">
-            <label className="text-[10px] tracking-[3px] uppercase font-medium text-[#1A1A1A]">Mensaje (Opcional)</label>
+            <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400">Mensaje (Opcional)</label>
             <textarea
               value={mensaje}
               onChange={(e) => setMensaje(e.target.value)}
-              className="w-full border-b-2 border-[#C9B8A8]/40 py-2.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-[#1A1A1A] text-sm transition-colors placeholder:text-gray-400 resize-none h-10"
+              className="w-full border-b border-stone-200/80 py-2 bg-transparent focus:outline-none focus:border-stone-500 text-stone-900 text-xs transition-colors placeholder:text-stone-400 resize-none h-10"
               placeholder="Escribí un mensaje lindo"
             />
           </div>
 
           {/* Selector de Medios de Pago */}
-          <div className="col-span-2 border-t border-[#C9B8A8]/20 pt-3 space-y-3">
-            <p className="text-[9px] uppercase font-bold tracking-[2px] text-[#1A1A1A]">Medio de Pago</p>
+          <div className="col-span-2 border-t border-stone-100 pt-3 space-y-3">
+            <p className="text-[9px] uppercase font-semibold tracking-[0.18em] text-stone-400">Medio de Pago</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] text-[#1A1A1A]/60 font-medium">Efectivo %</label>
+                <label className="text-[9px] text-stone-500 font-medium">Efectivo %</label>
                 <input
                   type="number"
                   min="0"
@@ -307,16 +307,16 @@ const GiftCards: React.FC<GiftCardsProps> = ({
                     setPagoEfectivo(v);
                     setPagoTarjeta(100 - v);
                   }}
-                  className="w-full border-b border-[#C9B8A8]/40 py-1.5 bg-transparent focus:outline-none focus:border-[#C9B8A8] text-sm text-[#1A1A1A] font-bold"
+                  className="w-full border-b border-stone-200/80 py-1 bg-transparent focus:outline-none focus:border-stone-500 text-xs text-stone-900 font-mono font-medium"
                 />
               </div>
               <div>
-                <label className="text-[10px] text-[#1A1A1A]/60 font-medium">Tarjeta %</label>
+                <label className="text-[9px] text-stone-500 font-medium">Tarjeta %</label>
                 <input
                   type="number"
                   value={pagoTarjeta}
                   readOnly
-                  className="w-full border-b border-[#C9B8A8]/40 py-1.5 bg-[#F5F1EB]/50 focus:outline-none text-sm text-[#1A1A1A] font-bold"
+                  className="w-full border-b border-stone-200/80 py-1 bg-stone-50 focus:outline-none text-xs text-stone-900 font-mono font-medium"
                 />
               </div>
             </div>
@@ -324,14 +324,14 @@ const GiftCards: React.FC<GiftCardsProps> = ({
               <button
                 type="button"
                 onClick={() => { setPagoEfectivo(100); setPagoTarjeta(0); }}
-                className="text-[10px] uppercase underline hover:text-[#C9B8A8] text-[#1A1A1A] font-medium"
+                className="text-[9px] uppercase underline hover:text-stone-900 text-stone-500 font-medium tracking-wider"
               >
                 100% Efectivo
               </button>
               <button
                 type="button"
                 onClick={() => { setPagoEfectivo(0); setPagoTarjeta(100); }}
-                className="text-[10px] uppercase underline hover:text-[#C9B8A8] text-[#1A1A1A] font-medium"
+                className="text-[9px] uppercase underline hover:text-stone-900 text-stone-500 font-medium tracking-wider"
               >
                 100% Tarjeta
               </button>
@@ -340,9 +340,9 @@ const GiftCards: React.FC<GiftCardsProps> = ({
 
           {/* Total a Cobrar Display */}
           {monto > 0 && (
-            <div className="col-span-2 bg-[#F5F1EB] rounded-xl p-4 flex items-center justify-between border border-[#C9B8A8]/30 mt-2">
-              <span className="text-[10px] uppercase font-bold tracking-[2px] text-[#1A1A1A]/70">Total a cobrar al cliente:</span>
-              <span className="text-xl font-bold text-[#1A1A1A]">
+            <div className="col-span-2 bg-stone-50 rounded-xl p-3.5 flex items-center justify-between border border-stone-200/60 mt-1">
+              <span className="text-[9px] uppercase font-medium tracking-[0.18em] text-stone-500">Total a cobrar al cliente:</span>
+              <span className="text-lg font-serif italic font-normal text-stone-900">
                 ${Math.round(monto * (pagoEfectivo / 100) + (monto * (pagoTarjeta / 100)) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)).toLocaleString('es-AR')}
               </span>
             </div>
@@ -352,9 +352,9 @@ const GiftCards: React.FC<GiftCardsProps> = ({
         <button
           type="submit"
           disabled={!destinatario.trim() || monto <= 0}
-          className="bg-[#C9B8A8] text-[#1A1A1A] px-6 py-3.5 text-[11px] tracking-[3px] font-medium uppercase flex items-center gap-3 hover:bg-[#B8A696] transition-all rounded-lg shadow-md hover:shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+          className="bg-stone-900 text-white px-5 py-3 text-[10px] tracking-[0.2em] font-medium uppercase flex items-center gap-2 hover:bg-black transition-all duration-200 ease-out rounded-xl shadow-xs hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <Plus size={15} /> Crear e informar venta
+          <Plus size={14} strokeWidth={1.5} /> Crear e informar venta
         </button>
       </form>
 
@@ -364,17 +364,17 @@ const GiftCards: React.FC<GiftCardsProps> = ({
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Buscar gift card por nombre o código..."
-          className="w-full border border-[#C9B8A8]/50 rounded-xl p-3 text-sm text-[#1A1A1A] bg-white outline-none focus:border-[#C9B8A8] shadow-sm"
+          className="w-full border border-stone-200/80 rounded-xl p-3 text-xs text-stone-900 bg-white outline-none focus:border-stone-400 shadow-2xs hover:border-stone-300 transition-all duration-200"
         />
       </div>
       <section className="space-y-3">
-        <h3 className="font-serif text-2xl italic text-[#1A1A1A]">
+        <h3 className="font-serif text-2xl italic text-stone-900">
           Activas
           {activas.length > 0 && (
-            <span className="ml-2 text-sm font-sans font-normal text-[#1A1A1A]/40 not-italic">({activas.length})</span>
+            <span className="ml-2 text-sm font-sans font-normal text-stone-400 not-italic">({activas.length})</span>
           )}
         </h3>
-        <div className="border border-[#C9B8A8]/50 bg-white/90 backdrop-blur-sm rounded-xl divide-y divide-[#C9B8A8]/20 shadow-lg overflow-hidden">
+        <div className="border border-stone-200/60 bg-white rounded-2xl divide-y divide-stone-100 shadow-2xs overflow-hidden">
           {activas.length === 0
             ? <p className="p-5 text-sm italic text-[#1A1A1A]/40">No hay gift cards activas.</p>
             : activas.map(gc => <React.Fragment key={gc.id}><GcCard gc={gc} /></React.Fragment>)

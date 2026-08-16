@@ -66,4 +66,27 @@ describe('Componente Sales', () => {
     // Buscamos un label de Cantidad en el carrito
     expect(screen.getByText(/Cant:/i)).toBeInTheDocument();
   });
+
+  it('no muestra descuento en precio efectivo cuando el descuento es inferior o igual al 20%', () => {
+    render(<Sales inventory={mockInventory} onAddSale={vi.fn()} onDeleteSale={vi.fn()} recentSales={[]} giftCards={[]} />);
+
+    // Buscar y agregar al carrito
+    const searchInput = screen.getByPlaceholderText(/Buscar producto.../i);
+    fireEvent.change(searchInput, { target: { value: 'Remera' } });
+    const productItem = screen.getByText('Remera Negra').closest('div');
+    if (productItem) {
+      fireEvent.mouseDown(productItem);
+    }
+
+    // Aplicar descuento del 10%
+    const descInput = screen.getByPlaceholderText('0');
+    fireEvent.change(descInput, { target: { value: '10' } });
+
+    // El precio en tarjeta ($2500) debe tener descuento (mostrar $2.250)
+    expect(screen.getByText('$2.250')).toBeInTheDocument();
+
+    // El precio en efectivo ($2000) NO debe estar tachado (clase line-through)
+    const precioEfectivoSpan = screen.getByText('$2.000');
+    expect(precioEfectivoSpan).not.toHaveClass('line-through');
+  });
 });

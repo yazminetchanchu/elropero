@@ -1,6 +1,6 @@
 import React from 'react';
 import { InventoryItem, Sale, GiftCard, SaleItem } from '../types';
-import { Trash2, CreditCard, Banknote } from 'lucide-react';
+import { Trash2, CreditCard, Banknote, CheckCircle } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
 
 
@@ -51,6 +51,7 @@ const Sales: React.FC<SalesProps> = ({
   const [quantity, setQuantity] = React.useState(1);
   const [showResults, setShowResults] = React.useState(false);
   const [cart, setCart] = React.useState<CartItem[]>([]);
+  const [addedToast, setAddedToast] = React.useState<string | null>(null);
 
   const [pagoEfectivo, setPagoEfectivo] = React.useState(100);
   const [pagoTarjeta, setPagoTarjeta] = React.useState(0);
@@ -188,6 +189,9 @@ const Sales: React.FC<SalesProps> = ({
     setSearchTerm('');
     setQuantity(1);
     setShowResults(false);
+
+    setAddedToast(product.descripcion);
+    setTimeout(() => setAddedToast(null), 2500);
   };
 
   const removeFromCart = (idx: number) => {
@@ -463,7 +467,6 @@ const devolucionLabel = pagoOriginal
       setGiftMensaje('');
       setGiftDeParteDe('');
       setModoCambio(false);
-      setStep('cart');
       return;
     }
 
@@ -541,14 +544,29 @@ const devolucionLabel = pagoOriginal
   // =======================
   return (
     <div className="space-y-6 text-left">
-      <header className="border-b-2 border-[#C9B8A8]/30 pb-4">
-        <h2 className="font-serif text-3xl italic text-[#1A1A1A]">Caja</h2>
+      <header className="border-b border-stone-200/60 pb-3 flex items-center justify-between">
+        <div>
+          <h2 className="font-serif text-2xl italic font-normal text-stone-900">Caja</h2>
+          <p className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-light mt-0.5">Registro de ventas y cambios</p>
+        </div>
+        {modoCambio && (
+          <button
+            onClick={() => {
+              setModoCambio(false);
+              setVentaOriginal(null);
+              setItemsDevueltos([]);
+            }}
+            className="text-[9px] uppercase tracking-[0.15em] font-medium text-rose-700 bg-rose-50 border border-rose-200/70 px-3 py-1.5 rounded-xl hover:bg-rose-100/70 transition-all"
+          >
+            ✕ Cancelar Cambio
+          </button>
+        )}
       </header>
 
       {/* SELECCIÓN DE PRENDAS A DEVOLVER */}
 {modoCambio && ventaOriginal && (
-  <div className="border border-[#C9B8A8]/50 bg-white/90 backdrop-blur-sm rounded-xl p-4 space-y-2 shadow-lg">
-    <h4 className="text-xs uppercase font-bold tracking-widest text-[#1A1A1A]">
+  <div className="border border-stone-200/60 bg-white rounded-2xl p-4 space-y-3 shadow-2xs">
+    <h4 className="text-[10px] uppercase font-semibold tracking-[0.18em] text-stone-500">
       Prendas a devolver
     </h4>
 
@@ -559,10 +577,10 @@ const devolucionLabel = pagoOriginal
       return (
         <div
           key={item.id}
-          className={`flex items-center gap-3 p-2.5 border rounded-lg transition-colors ${
+          className={`flex items-center gap-3 p-3 border rounded-xl transition-colors ${
             seleccionada
-              ? 'bg-[#C9B8A8]/20 border-[#C9B8A8]'
-              : 'border-[#C9B8A8]/30 hover:bg-[#C9B8A8]/10'
+              ? 'bg-stone-100/70 border-stone-300'
+              : 'border-stone-200/60 hover:bg-stone-50'
           }`}
         >
           {/* Checkbox */}
@@ -580,16 +598,16 @@ const devolucionLabel = pagoOriginal
                 return [...prev, { ...item, cantidad: Math.min(cant, item.cantidad) }];
               });
             }}
-            className="accent-[#1A1A1A] w-4 h-4 flex-shrink-0"
+            className="accent-stone-900 w-4 h-4 rounded shrink-0 cursor-pointer"
           />
           {/* Info prenda */}
-          <label htmlFor={`dev-${item.id}`} className="flex-1 cursor-pointer text-sm text-[#1A1A1A]">
-            <span className="font-mono text-xs text-[#1A1A1A]/60 mr-1">{item.sku}</span>
+          <label htmlFor={`dev-${item.id}`} className="flex-1 cursor-pointer text-xs text-stone-800">
+            <span className="font-mono text-xs text-stone-400 mr-2">{item.sku}</span>
             {item.descripcion}
           </label>
           {/* Cantidad editable */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <span className="text-[10px] text-[#1A1A1A]/50">x</span>
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[10px] text-stone-400">x</span>
             <input
               type="number"
               min={1}
@@ -603,9 +621,9 @@ const devolucionLabel = pagoOriginal
                   prev.map(i => i.id === item.id ? { ...i, cantidad: val } : i)
                 );
               }}
-              className="w-14 border border-[#C9B8A8]/50 rounded px-2 py-1 text-xs text-center text-[#1A1A1A] focus:outline-none disabled:opacity-30"
+              className="w-14 border border-stone-200/80 rounded-lg px-2 py-1 text-xs text-center text-stone-900 focus:outline-none focus:border-stone-400 disabled:opacity-30"
             />
-            <span className="text-[10px] text-[#1A1A1A]/40">/ {item.cantidad}</span>
+            <span className="text-[10px] text-stone-400">/ {item.cantidad}</span>
           </div>
         </div>
       );
@@ -614,36 +632,41 @@ const devolucionLabel = pagoOriginal
 )}
 
       {modoCambio && (
-        <div className="border border-[#C9B8A8]/50 bg-white/90 backdrop-blur-sm rounded-xl p-5 space-y-3 shadow-lg">
-          <div className="flex justify-between text-sm">
-  <span className="text-[#1A1A1A]">Valor devuelto</span>
-  <span className="flex items-center gap-2 text-[#1A1A1A] font-medium">
-    $ {totalDevuelto.toLocaleString()}
-    {devolucionLabel && (
-      <span className="text-[10px] uppercase text-[#1A1A1A]/60">
-        ({devolucionLabel})
-      </span>
-    )}
-  </span>
-</div>
-
-
-          <div className="flex justify-between text-sm">
-            <span className="text-[#1A1A1A]">Valor nuevo</span>
-            <span className="text-[#1A1A1A] font-medium">$ {totalNuevo.toLocaleString()}</span>
+        <div className="border border-stone-200/60 bg-white rounded-2xl p-5 space-y-3 shadow-2xs">
+          <div className="flex justify-between text-xs">
+            <span className="text-stone-500 font-light uppercase tracking-wider text-[10px]">Valor devuelto</span>
+            <span className="flex items-center gap-2 text-stone-900 font-medium">
+              $ {totalDevuelto.toLocaleString()}
+              {devolucionLabel && (
+                <span className="text-[9px] uppercase text-stone-400 font-mono">
+                  ({devolucionLabel})
+                </span>
+              )}
+            </span>
           </div>
 
-          <div className="border-t-2 border-[#C9B8A8]/30 pt-3 flex justify-between font-bold">
-            <span className="text-[#1A1A1A]">{etiquetaDiferencia}</span>
-            <span className="text-[#1A1A1A]">$ {diferenciaAbs.toLocaleString()}</span>
+          <div className="flex justify-between text-xs">
+            <span className="text-stone-500 font-light uppercase tracking-wider text-[10px]">Valor nuevo</span>
+            <span className="text-stone-900 font-medium">$ {totalNuevo.toLocaleString()}</span>
+          </div>
+
+          <div className="border-t border-stone-100 pt-3 flex justify-between font-medium">
+            <span className="text-stone-900 text-xs tracking-wider uppercase font-semibold">{etiquetaDiferencia}</span>
+            <span className="text-stone-900 font-serif text-lg">${diferenciaAbs.toLocaleString()}</span>
           </div>
         </div>
       )}
 
       {/* PANEL BUSCADOR + CARRITO */}
-      <div className="border border-[#C9B8A8]/50 bg-white/90 backdrop-blur-sm rounded-xl grid md:grid-cols-2 gap-0 shadow-lg">
+      <div className="border border-stone-200/60 bg-white rounded-2xl grid md:grid-cols-2 gap-0 shadow-2xs overflow-hidden relative">
+        {addedToast && (
+          <div className="absolute top-3 right-3 z-[110] bg-black text-white text-[10px] tracking-[1.5px] uppercase font-semibold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-200">
+            <CheckCircle size={12} className="text-emerald-400" />
+            <span className="truncate max-w-[200px]">{addedToast}</span>
+          </div>
+        )}
         {/* BUSCADOR */}
-        <div className="border-b md:border-b-0 md:border-r border-[#C9B8A8]/30 relative">
+        <div className="border-b md:border-b-0 md:border-r border-stone-100 relative">
           <div className="relative">
             <input
               value={searchTerm}
@@ -652,7 +675,6 @@ const devolucionLabel = pagoOriginal
                 setShowResults(true);
               }}
               onBlur={() => {
-                // Delay para permitir el click en los resultados
                 setTimeout(() => setShowResults(false), 200);
               }}
               onFocus={() => {
@@ -660,32 +682,32 @@ const devolucionLabel = pagoOriginal
                   setShowResults(true);
                 }
               }}
-              placeholder="Buscar producto..."
-              className="w-full p-3.5 text-sm outline-none text-[#1A1A1A] placeholder:text-gray-500 focus:bg-white transition-colors"
+              placeholder="Buscar producto por SKU o nombre..."
+              className="w-full p-4 text-xs outline-none text-stone-800 placeholder:text-stone-400 focus:bg-stone-50/50 transition-colors uppercase font-medium"
             />
 
             {showResults && filteredProducts.length > 0 && (
-              <div className="absolute z-[100] bg-white border border-[#C9B8A8]/50 rounded-lg w-full left-0 top-full shadow-xl max-h-60 overflow-y-auto mt-1">
+              <div className="absolute z-[100] bg-white border border-stone-200/80 rounded-xl w-full left-0 top-full shadow-lg max-h-60 overflow-y-auto mt-1">
                 {filteredProducts.map(p => (
                   <div
                     key={p.id}
                     onMouseDown={(e) => {
-                      e.preventDefault(); // Prevenir que onBlur se ejecute antes del click
+                      e.preventDefault();
                       addToCart(p);
                     }}
-                    className="p-3.5 hover:bg-[#C9B8A8]/15 cursor-pointer border-b border-[#C9B8A8]/20 last:border-b-0 text-sm transition-colors"
+                    className="p-3.5 hover:bg-stone-50 cursor-pointer border-b border-stone-100 last:border-b-0 text-xs transition-colors"
                   >
                     <div className="flex justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-[#1A1A1A] truncate">{p.descripcion}</div>
-                        <div className="flex items-center gap-3 mt-1.5 opacity-40">
+                        <div className="font-medium text-stone-900 truncate">{p.descripcion}</div>
+                        <div className="flex items-center gap-3 mt-1 text-stone-400">
                           <span className="text-[9px] font-mono">REF: {p.sku}</span>
                           <span className="text-[9px] font-mono">{p.proveedor}</span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                        <span className="text-[11px] font-bold text-[#1A1A1A]">${p.ventaEfectivo.toLocaleString()}</span>
-                        <span className="text-[8px] tracking-[2px] uppercase font-black text-[#1A1A1A]/30">
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className="text-[11px] font-mono font-medium text-stone-900">${p.ventaEfectivo.toLocaleString()}</span>
+                        <span className="text-[8px] tracking-[0.15em] uppercase font-medium text-stone-400">
                           {getStockDisponible(p)} DISPONIBLES
                         </span>
                       </div>
@@ -700,7 +722,7 @@ const devolucionLabel = pagoOriginal
         {/* CARRITO */}
         <div className="max-h-[300px] overflow-y-auto">
           {cart.length === 0 && (
-            <div className="p-6 text-center text-gray-600 text-sm">
+            <div className="p-8 text-center text-stone-400 text-xs tracking-wider uppercase font-light">
               No hay productos en el carrito
             </div>
           )}
@@ -712,40 +734,41 @@ const devolucionLabel = pagoOriginal
             return (
               <div
                 key={idx}
-                className="p-3 border-b border-[#D4C4B0] last:border-b-0 hover:bg-[#D4C4B0]/10 transition-colors"
+                className="p-3.5 border-b border-stone-100 last:border-b-0 hover:bg-stone-50/50 transition-colors"
               >
                 <div className="flex justify-between items-start gap-4">
                   <div className="flex flex-col flex-1 min-w-0">
-                    <span className="font-medium text-[#1A1A1A] text-sm truncate">
+                    <span className="font-medium text-stone-900 text-xs truncate">
                       {item.descripcion}
                     </span>
 
                     {/* PRECIOS POR PRENDA */}
                     {(() => {
                       const desc = item.descuento || 0;
-                      const factor = 1 - desc / 100;
-                      const pEfe = Math.round(item.precioEfectivo * factor);
-                      const pTar = Math.round(item.precioTarjeta * factor);
-                      const tieneDescuento = desc > 0;
+                      const descExtraEfectivo = Math.max(0, desc - 20);
+                      const pEfe = Math.round(item.precioEfectivo * (1 - descExtraEfectivo / 100));
+                      const pTar = Math.round(item.precioTarjeta * (1 - desc / 100));
+                      const tieneDescuentoEfectivo = descExtraEfectivo > 0;
+                      const tieneDescuentoTarjeta = desc > 0;
                       return (
                         <div className="flex gap-3 mt-1">
-                          <span className="flex items-center gap-1 text-[10px] text-[#1A1A1A]/70">
-                            <span className="uppercase font-semibold tracking-wide">E</span>
-                            <span className={tieneDescuento ? 'line-through opacity-40 text-[9px]' : ''}>
+                          <span className="flex items-center gap-1 text-[10px] text-stone-500 font-mono">
+                            <span className="uppercase font-semibold text-[9px]">E:</span>
+                            <span className={tieneDescuentoEfectivo ? 'line-through opacity-40 text-[9px]' : ''}>
                               ${item.precioEfectivo.toLocaleString()}
                             </span>
-                            {tieneDescuento && (
-                              <span className="font-bold text-emerald-700">${pEfe.toLocaleString()}</span>
+                            {tieneDescuentoEfectivo && (
+                              <span className="font-semibold text-emerald-800">${pEfe.toLocaleString()}</span>
                             )}
                           </span>
-                          <span className="text-[#C9B8A8]/60">·</span>
-                          <span className="flex items-center gap-1 text-[10px] text-[#1A1A1A]/70">
-                            <span className="uppercase font-semibold tracking-wide">T</span>
-                            <span className={tieneDescuento ? 'line-through opacity-40 text-[9px]' : ''}>
+                          <span className="text-stone-300">·</span>
+                          <span className="flex items-center gap-1 text-[10px] text-stone-500 font-mono">
+                            <span className="uppercase font-semibold text-[9px]">T:</span>
+                            <span className={tieneDescuentoTarjeta ? 'line-through opacity-40 text-[9px]' : ''}>
                               ${item.precioTarjeta.toLocaleString()}
                             </span>
-                            {tieneDescuento && (
-                              <span className="font-bold text-emerald-700">${pTar.toLocaleString()}</span>
+                            {tieneDescuentoTarjeta && (
+                              <span className="font-semibold text-emerald-800">${pTar.toLocaleString()}</span>
                             )}
                           </span>
                         </div>
@@ -757,14 +780,14 @@ const devolucionLabel = pagoOriginal
                       <div className="flex gap-2 mt-2 flex-wrap items-center">
                         {item.productTalles.length > 0 && (
                           <div className="flex items-center gap-1">
-                            <label className="text-[9px] uppercase font-bold text-[#1A1A1A]">Talle</label>
+                            <label className="text-[9px] uppercase font-semibold text-stone-500">Talle</label>
                             <select
                               value={item.talle || ''}
                               onChange={e => updateCartItemTalle(idx, e.target.value || undefined)}
-                              className={`text-[10px] border rounded px-1.5 py-0.5 focus:outline-none bg-white cursor-pointer ${
+                              className={`text-[10px] border rounded-lg px-2 py-0.5 focus:outline-none bg-white cursor-pointer ${
                                 !item.talle
-                                  ? 'border-amber-400 text-amber-700 bg-amber-50'
-                                  : 'border-[#C9B8A8]/60 text-[#1A1A1A]'
+                                  ? 'border-amber-300 text-amber-800 bg-amber-50/50'
+                                  : 'border-stone-200/80 text-stone-800'
                               }`}
                             >
                               <option value="">— Talle —</option>
@@ -782,14 +805,14 @@ const devolucionLabel = pagoOriginal
                         )}
                         {item.productColores.length > 0 && (
                           <div className="flex items-center gap-1">
-                            <label className="text-[9px] uppercase font-bold text-[#1A1A1A]">Color</label>
+                            <label className="text-[9px] uppercase font-semibold text-stone-500">Color</label>
                             <select
                               value={item.color || ''}
                               onChange={e => updateCartItemColor(idx, e.target.value || undefined)}
-                              className={`text-[10px] border rounded px-1.5 py-0.5 focus:outline-none bg-white cursor-pointer ${
+                              className={`text-[10px] border rounded-lg px-2 py-0.5 focus:outline-none bg-white cursor-pointer ${
                                 !item.color
-                                  ? 'border-amber-400 text-amber-700 bg-amber-50'
-                                  : 'border-[#C9B8A8]/60 text-[#1A1A1A]'
+                                  ? 'border-amber-300 text-amber-800 bg-amber-50/50'
+                                  : 'border-stone-200/80 text-stone-800'
                               }`}
                             >
                               <option value="">— Color —</option>
@@ -806,19 +829,19 @@ const devolucionLabel = pagoOriginal
                           </div>
                         )}
                         {item.talle && item.color && item.stockPorVariante && (
-                          <span className="text-[9px] text-[#1A1A1A]/50">
+                          <span className="text-[9px] text-stone-400">
                             Stock: {item.stockPorVariante[`${item.talle}-${item.color}`] ?? 0} u.
                           </span>
                         )}
                         {((item.productTalles.length > 0 && !item.talle) || (item.productColores.length > 0 && !item.color)) && (
-                          <span className="text-[9px] font-bold text-amber-600">⚠ Requerido</span>
+                          <span className="text-[9px] font-medium text-amber-700">⚠ Requerido</span>
                         )}
                       </div>
                     )}
 
                     <div className="flex gap-4 mt-2 items-center">
                       <div className="flex items-center gap-2">
-                        <label className="text-[9px] uppercase text-[#1A1A1A] font-medium">
+                        <label className="text-[9px] uppercase text-stone-400 font-medium">
                           Cant:
                         </label>
                         <div className="flex items-center gap-1">
@@ -826,27 +849,23 @@ const devolucionLabel = pagoOriginal
                             type="button"
                             onClick={() => updateCartItemQty(idx, item.cantidad - 1)}
                             disabled={item.cantidad <= 1}
-                            className="w-6 h-6 flex items-center justify-center border border-[#C9B8A8]/50 rounded text-xs text-[#1A1A1A] hover:bg-[#C9B8A8]/20 disabled:opacity-30 transition-colors"
+                            className="w-5 h-5 flex items-center justify-center border border-stone-200/80 rounded-md text-xs text-stone-700 hover:bg-stone-100 disabled:opacity-30 transition-colors"
                           >−</button>
                           <input
                             type="number"
                             value={rawQtyInput[idx] ?? String(item.cantidad)}
                             onChange={e => {
                               const raw = e.target.value;
-                              // Guardar el valor raw para que el usuario pueda tipear libremente
                               setRawQtyInput(prev => ({ ...prev, [idx]: raw }));
-                              // Solo actualizar el carrito si es un número válido y positivo
                               const num = parseInt(raw, 10);
                               if (!isNaN(num) && num >= 1) {
                                 updateCartItemQty(idx, num);
                               }
                             }}
                             onBlur={e => {
-                              // Al salir del campo, clampear el valor final
                               const num = parseInt(e.target.value, 10);
                               const final = isNaN(num) ? 1 : num;
                               updateCartItemQty(idx, final);
-                              // Limpiar el estado raw para que muestre el valor clampleado
                               setRawQtyInput(prev => {
                                 const next = { ...prev };
                                 delete next[idx];
@@ -854,22 +873,22 @@ const devolucionLabel = pagoOriginal
                               });
                             }}
                             onFocus={e => e.target.select()}
-                            className="w-14 border border-[#C9B8A8]/50 rounded-lg px-2 py-1 text-xs text-center text-[#1A1A1A] focus:outline-none focus:border-[#C9B8A8] shadow-sm"
+                            className="w-12 border border-stone-200/80 rounded-lg px-2 py-0.5 text-xs text-center text-stone-900 focus:outline-none focus:border-stone-400 font-mono"
                           />
                           <button
                             type="button"
                             onClick={() => updateCartItemQty(idx, item.cantidad + 1)}
                             disabled={item.cantidad >= stockTotal}
-                            className="w-6 h-6 flex items-center justify-center border border-[#C9B8A8]/50 rounded text-xs text-[#1A1A1A] hover:bg-[#C9B8A8]/20 disabled:opacity-30 transition-colors"
+                            className="w-5 h-5 flex items-center justify-center border border-stone-200/80 rounded-md text-xs text-stone-700 hover:bg-stone-100 disabled:opacity-30 transition-colors"
                           >+</button>
                         </div>
-                        <span className="text-[9px] text-[#1A1A1A]/60">
-                          (Stock: {stockTotal})
+                        <span className="text-[9px] text-stone-400 font-mono">
+                          ({stockTotal})
                         </span>
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <label className="text-[9px] uppercase text-[#1A1A1A] font-medium">
+                        <label className="text-[9px] uppercase text-stone-400 font-medium">
                           Desc:
                         </label>
                         <input
@@ -880,20 +899,20 @@ const devolucionLabel = pagoOriginal
                           onChange={e =>
                             updateCartItemDiscount(idx, parseFloat(e.target.value) || 0)
                           }
-                          className="w-16 border border-[#C9B8A8]/50 rounded-lg px-2 py-1 text-xs text-[#1A1A1A] focus:outline-none focus:border-[#C9B8A8] shadow-sm"
+                          className="w-14 border border-stone-200/80 rounded-lg px-2 py-0.5 text-xs text-stone-900 focus:outline-none focus:border-stone-400 font-mono"
                           placeholder="0"
                         />
-                        <span className="text-[9px] text-[#1A1A1A]">%</span>
+                        <span className="text-[9px] text-stone-400">%</span>
                       </div>
                     </div>
                   </div>
 
                   <button
                     onClick={() => removeFromCart(idx)}
-                    className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg transition-colors flex-shrink-0"
+                    className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
                     title="Eliminar del carrito"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} strokeWidth={1.5} />
                   </button>
                 </div>
               </div>
@@ -903,13 +922,13 @@ const devolucionLabel = pagoOriginal
       </div>
 
       {/* FORMAS DE PAGO */}
-      <div className="border border-[#D4C4B0] bg-white p-6 space-y-4">
-        <h3 className="font-serif text-xl italic text-black">Forma de pago</h3>
+      <div className="border border-stone-200/60 bg-white rounded-2xl p-6 space-y-4 shadow-2xs">
+        <h3 className="font-serif text-lg italic text-stone-900">Forma de pago</h3>
 
         {/* EFECTIVO */}
-        <div className="flex justify-between items-center border-b-2 border-[#C9B8A8]/20 pb-4">
+        <div className="flex justify-between items-center border-b border-stone-100 pb-3">
           <div className="flex items-center gap-3">
-            <Banknote size={18} className="text-[#1A1A1A]" />
+            <Banknote size={16} strokeWidth={1.5} className="text-stone-700" />
 
             <button
               type="button"
@@ -917,7 +936,7 @@ const devolucionLabel = pagoOriginal
                 setPagoEfectivo(100);
                 setPagoTarjeta(0);
               }}
-              className="uppercase text-xs font-bold text-[#1A1A1A] hover:text-[#C9B8A8] transition-colors underline"
+              className="uppercase text-[10px] font-semibold text-stone-800 hover:text-stone-900 tracking-[0.15em] transition-colors underline"
             >
               Efectivo
             </button>
@@ -930,13 +949,13 @@ const devolucionLabel = pagoOriginal
                 setPagoEfectivo(v);
                 setPagoTarjeta(100 - v);
               }}
-              className="border border-[#C9B8A8]/50 rounded-lg w-20 p-2 text-center font-bold text-[#1A1A1A] focus:outline-none focus:border-[#C9B8A8] shadow-sm"
+              className="border border-stone-200/80 rounded-xl w-16 p-1.5 text-center font-mono font-semibold text-xs text-stone-900 focus:outline-none focus:border-stone-400 shadow-2xs"
             />
 
-            <span className="text-xs text-[#1A1A1A]/70">%</span>
+            <span className="text-xs text-stone-400">%</span>
           </div>
 
-          <div className="font-serif text-2xl italic text-[#1A1A1A]">
+          <div className="font-serif text-xl italic text-stone-900">
             $ {totals.efectivo.toLocaleString()}
           </div>
         </div>
@@ -944,7 +963,7 @@ const devolucionLabel = pagoOriginal
         {/* TARJETA */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <CreditCard size={18} className="text-[#1A1A1A]" />
+            <CreditCard size={16} strokeWidth={1.5} className="text-stone-700" />
 
             <button
               type="button"
@@ -952,7 +971,7 @@ const devolucionLabel = pagoOriginal
                 setPagoEfectivo(0);
                 setPagoTarjeta(100);
               }}
-              className="uppercase text-xs font-bold text-[#1A1A1A] hover:text-[#C9B8A8] transition-colors underline"
+              className="uppercase text-[10px] font-semibold text-stone-800 hover:text-stone-900 tracking-[0.15em] transition-colors underline"
             >
               Tarjeta
             </button>
@@ -965,13 +984,13 @@ const devolucionLabel = pagoOriginal
                 setPagoTarjeta(v);
                 setPagoEfectivo(100 - v);
               }}
-              className="border border-[#C9B8A8]/50 rounded-lg w-20 p-2 text-center font-bold text-[#1A1A1A] focus:outline-none focus:border-[#C9B8A8] shadow-sm"
+              className="border border-stone-200/80 rounded-xl w-16 p-1.5 text-center font-mono font-semibold text-xs text-stone-900 focus:outline-none focus:border-stone-400 shadow-2xs"
             />
 
-            <span className="text-xs text-[#1A1A1A]/70">%</span>
+            <span className="text-xs text-stone-400">%</span>
           </div>
 
-          <div className="font-serif text-2xl italic text-[#1A1A1A]">
+          <div className="font-serif text-xl italic text-stone-900">
             $ {totals.tarjeta.toLocaleString()}
           </div>
         </div>
@@ -979,8 +998,8 @@ const devolucionLabel = pagoOriginal
 
       {/* GIFT CARD */}
 {giftCards.length > 0 && (
-  <div className="border border-[#D4C4B0] bg-white p-6 space-y-4">
-    <h3 className="font-serif text-xl italic text-black">Gift Card</h3>
+  <div className="border border-stone-200/60 bg-white rounded-2xl p-6 space-y-4 shadow-2xs">
+    <h3 className="font-serif text-lg italic text-stone-900">Gift Card</h3>
 
     <select
       value={giftCardSeleccionada?.codigo || ''}
@@ -988,7 +1007,7 @@ const devolucionLabel = pagoOriginal
         const gc = giftCards.find(g => g.codigo === e.target.value) || null;
         setGiftCardSeleccionada(gc);
       }}
-      className="w-full border border-[#C9B8A8]/50 rounded-lg p-3 text-[#1A1A1A] text-sm placeholder:text-gray-500 focus:outline-none focus:border-[#C9B8A8] shadow-sm bg-white"
+      className="w-full border border-stone-200/80 rounded-xl p-3 text-stone-800 text-xs focus:outline-none focus:border-stone-400 shadow-2xs bg-white cursor-pointer"
     >
       <option value="">Seleccionar Gift Card</option>
       {giftCards
@@ -1001,32 +1020,32 @@ const devolucionLabel = pagoOriginal
     </select>
 
     {giftCardSeleccionada && !modoCambio && (
-      <div className="space-y-2 border border-[#C9B8A8]/30 bg-[#F5F1EB]/60 rounded-lg p-4">
-        <div className="flex justify-between items-center text-sm">
-          <span className="text-[#1A1A1A] font-medium">Saldo disponible:</span>
-          <span className="font-serif text-lg italic text-[#1A1A1A]">$ {giftCardSeleccionada.saldo.toLocaleString()}</span>
+      <div className="space-y-2 border border-stone-200/60 bg-stone-50/60 rounded-xl p-4">
+        <div className="flex justify-between items-center text-xs">
+          <span className="text-stone-600 font-medium">Saldo disponible:</span>
+          <span className="font-serif text-base italic text-stone-900">$ {giftCardSeleccionada.saldo.toLocaleString()}</span>
         </div>
         
-        <div className="flex justify-between items-center text-sm">
-          <span className="text-[#1A1A1A] font-medium">Total de la venta:</span>
-          <span className="font-serif text-lg italic text-[#1A1A1A]">$ {totals.total.toLocaleString()}</span>
+        <div className="flex justify-between items-center text-xs">
+          <span className="text-stone-600 font-medium">Total de la venta:</span>
+          <span className="font-serif text-base italic text-stone-900">$ {totals.total.toLocaleString()}</span>
         </div>
         
-        <div className="border-t border-[#C9B8A8]/30 pt-3 mt-3">
+        <div className="border-t border-stone-200/50 pt-3 mt-3">
           <div className="flex justify-between items-center">
-            <span className="text-[#1A1A1A] font-bold uppercase text-xs tracking-wider">Se usará de la gift card:</span>
-            <span className="font-serif text-xl italic text-[#1A1A1A] font-bold">$ {montoGiftUsar.toLocaleString()}</span>
+            <span className="text-stone-900 font-semibold uppercase text-[10px] tracking-wider">Se usará de la gift card:</span>
+            <span className="font-serif text-lg italic text-stone-900 font-semibold">$ {montoGiftUsar.toLocaleString()}</span>
           </div>
           
           {giftCardSeleccionada.saldo > totals.total && (
-            <div className="flex justify-between items-center mt-2 text-xs text-[#1A1A1A]/60">
+            <div className="flex justify-between items-center mt-2 text-[10px] text-stone-400">
               <span>Saldo restante en la gift card:</span>
-              <span className="font-medium">$ {(giftCardSeleccionada.saldo - montoGiftUsar).toLocaleString()}</span>
+              <span className="font-mono font-medium">$ {(giftCardSeleccionada.saldo - montoGiftUsar).toLocaleString()}</span>
             </div>
           )}
           
           {giftCardSeleccionada.saldo <= totals.total && montoGiftUsar > 0 && (
-            <div className="mt-2 text-xs text-amber-700 font-medium">
+            <div className="mt-2 text-[10px] text-amber-700 font-medium">
               ⚠️ Se usará el 100% del saldo de la gift card
             </div>
           )}
@@ -1037,10 +1056,10 @@ const devolucionLabel = pagoOriginal
 )}
 
       {/* TOTAL */}
-      <div className="bg-[#D4C4B0] p-6 flex justify-between items-center">
+      <div className="bg-stone-900 text-white rounded-2xl p-6 flex justify-between items-center shadow-xs">
         <div>
-          <span className="text-xs uppercase tracking-widest">Total a cobrar</span>
-          <div className="text-3xl font-serif italic">
+          <span className="text-[9px] uppercase tracking-[0.2em] font-light text-stone-300">Total a cobrar</span>
+          <div className="text-3xl font-serif italic font-normal text-white">
             $ {totalFinal.toLocaleString()}
           </div>
         </div>
@@ -1048,8 +1067,8 @@ const devolucionLabel = pagoOriginal
 
       {/* CAMPO DESTINATARIO GIFT AUTO (cuando diferencia negativa en cambio) */}
       {modoCambio && diferenciaCambio < 0 && (
-        <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-amber-700">
+        <div className="border border-amber-200/80 bg-amber-50/70 rounded-2xl p-5 space-y-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-800">
             🎁 Se generará gift card — Detalles del regalo
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1057,26 +1076,26 @@ const devolucionLabel = pagoOriginal
               value={giftDestinatario}
               onChange={e => setGiftDestinatario(e.target.value)}
               placeholder="Nombre del destinatario (Ej: María)"
-              className="w-full border-b-2 border-amber-300 bg-transparent py-1.5 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
+              className="w-full border-b border-amber-300 bg-transparent py-1.5 focus:outline-none text-xs text-stone-900 placeholder:text-amber-700/50"
             />
             <input
               value={giftDeParteDe}
               onChange={e => setGiftDeParteDe(e.target.value)}
               placeholder="De parte de (Opcional)"
-              className="w-full border-b-2 border-amber-300 bg-transparent py-1.5 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
+              className="w-full border-b border-amber-300 bg-transparent py-1.5 focus:outline-none text-xs text-stone-900 placeholder:text-amber-700/50"
             />
             <input
               value={giftEmail}
               onChange={e => setGiftEmail(e.target.value)}
               type="email"
               placeholder="Email del destinatario (Opcional)"
-              className="w-full border-b-2 border-amber-300 bg-transparent py-1.5 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
+              className="w-full border-b border-amber-300 bg-transparent py-1.5 focus:outline-none text-xs text-stone-900 placeholder:text-amber-700/50"
             />
             <input
               value={giftMensaje}
               onChange={e => setGiftMensaje(e.target.value)}
               placeholder="Mensaje (Opcional)"
-              className="w-full border-b-2 border-amber-300 bg-transparent py-1.5 focus:outline-none text-sm text-[#1A1A1A] placeholder:text-amber-400"
+              className="w-full border-b border-amber-300 bg-transparent py-1.5 focus:outline-none text-xs text-stone-900 placeholder:text-amber-700/50"
             />
           </div>
         </div>
@@ -1086,8 +1105,7 @@ const devolucionLabel = pagoOriginal
       <button
         onClick={confirmSale}
         disabled={isSyncing}
-        className="w-full bg-[#D4C4B0] py-6 text-sm font-medium tracking-[4px]
-                   hover:bg-[#C9B99B] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full bg-stone-900 hover:bg-black text-white py-4 rounded-xl text-xs font-medium tracking-[0.2em] uppercase transition-all duration-200 ease-out shadow-sm hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isSyncing
           ? '⏳ GUARDANDO...'
@@ -1101,7 +1119,7 @@ const devolucionLabel = pagoOriginal
           value={searchSale}
           onChange={e => setSearchSale(e.target.value)}
           placeholder="Buscar por código, fecha o monto…"
-          className="flex-1 min-w-[180px] border border-[#D4C4B0] p-3 text-sm text-black outline-none focus:bg-[#FAF8F5]"
+          className="flex-1 min-w-[180px] border border-stone-200/80 rounded-xl p-3 text-xs text-stone-900 outline-none focus:border-stone-400 focus:bg-stone-50/50 shadow-2xs hover:border-stone-300 transition-all duration-200"
         />
         <select
           value={filtroMes}
