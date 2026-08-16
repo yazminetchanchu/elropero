@@ -72,6 +72,60 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
   const [isGeneratingLabel, setIsGeneratingLabel] = React.useState(false);
   const [isCheckingTracking, setIsCheckingTracking] = React.useState(false);
   const [trackingInfo, setTrackingInfo] = React.useState<any | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = React.useState<string[]>([]);
+
+  const handleSelectAll = (filteredList: WebOrder[]) => {
+    if (selectedOrderIds.length === filteredList.length) {
+      setSelectedOrderIds([]);
+    } else {
+      setSelectedOrderIds(filteredList.map(o => o.id));
+    }
+  };
+
+  const handleToggleSelect = (orderId: string) => {
+    setSelectedOrderIds(prev => 
+      prev.includes(orderId) ? prev.filter(id => id !== orderId) : [...prev, orderId]
+    );
+  };
+
+  const handleBulkStatusChange = async (newStatus: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado') => {
+    if (selectedOrderIds.length === 0) return;
+    const ok = await showConfirm(
+      `¿Deseás cambiar el estado de ${selectedOrderIds.length} pedidos seleccionados a "${newStatus}"?`,
+      'Cambio Masivo de Estado',
+      'info'
+    );
+    if (!ok) return;
+
+    for (const id of selectedOrderIds) {
+      const ord = orders.find(o => o.id === id);
+      if (ord) {
+        await handleUpdateStatus(ord.id, ord.customerId, newStatus);
+      }
+    }
+    setSelectedOrderIds([]);
+    showAlert(`Se actualizaron ${selectedOrderIds.length} pedidos a ${newStatus}.`, 'Operación Exitosa', 'success');
+  };
+
+  const handleExportPickList = () => {
+    const selectedOrdersList = orders.filter(o => selectedOrderIds.includes(o.id));
+    if (selectedOrdersList.length === 0) return;
+
+    let csvContent = "ID Pedido,Fecha,Cliente,Email,Telefono,Metodo Pago,Tipo Envio,Direccion,Items,Total\n";
+    selectedOrdersList.forEach(o => {
+      const itemsStr = o.items.map(i => `${i.descripcion} (${i.talle}/${i.color}) x${i.cantidad}`).join('; ');
+      const addressStr = o.direccionEnvio ? `${o.direccionEnvio.calle} ${o.direccionEnvio.numero}, ${o.direccionEnvio.localidad}, ${o.direccionEnvio.provincia}` : 'N/A';
+      csvContent += `"${o.id}","${o.fecha}","${o.customerNombre}","${o.customerEmail}","${o.customerTelefono}","${o.metodoPago || ''}","${o.tipoEnvio}","${addressStr}","${itemsStr}",${o.total}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lista_empaque_${new Date().toISOString().substring(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleConsultarTracking = async (trackingNumber: string) => {
     setIsCheckingTracking(true);
@@ -413,6 +467,54 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
         </div>
       </div>
 
+      {/* Bulk Action Bar & Select All Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-100 border border-stone-200/80 p-3 rounded-2xl">
+        <div className="flex items-center gap-2">
+          <input 
+            type="checkbox"
+            checked={filteredOrders.length > 0 && selectedOrderIds.length === filteredOrders.length}
+            onChange={() => handleSelectAll(filteredOrders)}
+            className="w-4 h-4 accent-stone-900 rounded cursor-pointer"
+            id="select-all-orders"
+          />
+          <label htmlFor="select-all-orders" className="text-xs uppercase tracking-wider font-semibold text-stone-700 cursor-pointer">
+            Seleccionar Todos ({filteredOrders.length})
+          </label>
+        </div>
+
+        {selectedOrderIds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 animate-in fade-in">
+            <span className="text-[10px] font-bold uppercase tracking-wider bg-stone-900 text-white px-2.5 py-1 rounded-md">
+              {selectedOrderIds.length} Seleccionados
+            </span>
+            <button
+              onClick={() => handleBulkStatusChange('Confirmado')}
+              className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-[9px] uppercase tracking-widest font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Marcar Confirmado
+            </button>
+            <button
+              onClick={() => handleBulkStatusChange('Enviado')}
+              className="px-2.5 py-1 bg-blue-700 hover:bg-blue-600 text-white text-[9px] uppercase tracking-widest font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Marcar Enviado
+            </button>
+            <button
+              onClick={() => handleBulkStatusChange('Cancelado')}
+              className="px-2.5 py-1 bg-red-700 hover:bg-red-600 text-white text-[9px] uppercase tracking-widest font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Marcar Cancelado
+            </button>
+            <button
+              onClick={handleExportPickList}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white text-[9px] uppercase tracking-widest font-semibold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <Download size={11} /> CSV Empaque
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Orders Grid */}
       {isLoading ? (
         <div className="flex items-center justify-center py-32">
@@ -429,13 +531,21 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
             <div 
               key={order.id}
               className={`border rounded-2xl p-5 transition-all duration-200 ease-out shadow-2xs flex flex-col md:flex-row justify-between items-start md:items-center gap-5 ${
-                order.estado === 'Cancelado' 
-                  ? 'bg-stone-50 border-stone-200/60 opacity-60' 
-                  : 'bg-white border-stone-200/60 hover:border-stone-300 hover:-translate-y-1 hover:shadow-md'
+                selectedOrderIds.includes(order.id)
+                  ? 'bg-amber-50/40 border-stone-400 shadow-sm'
+                  : order.estado === 'Cancelado' 
+                    ? 'bg-stone-50 border-stone-200/60 opacity-60' 
+                    : 'bg-white border-stone-200/60 hover:border-stone-300 hover:-translate-y-1 hover:shadow-md'
               }`}
             >
               <div className="space-y-3 flex-1">
                 <div className="flex flex-wrap gap-2.5 items-center">
+                  <input 
+                    type="checkbox"
+                    checked={selectedOrderIds.includes(order.id)}
+                    onChange={() => handleToggleSelect(order.id)}
+                    className="w-4 h-4 accent-stone-900 rounded cursor-pointer mr-1"
+                  />
                   <span className="font-mono text-xs font-semibold text-stone-900 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     #{order.id.substring(0, 8).toUpperCase()}
                   </span>

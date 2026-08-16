@@ -84,6 +84,26 @@ const Sales: React.FC<SalesProps> = ({
 
   // Estado temporal para cantidades en el selector de devueltos
   const [cantDevueltasInput, setCantDevueltasInput] = React.useState<Record<string, number>>({});
+  
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+F o '/' para enfocar el buscador de prendas
+      if ((e.ctrlKey && e.key === 'f') || (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA')) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      // Esc para limpiar el buscador
+      if (e.key === 'Escape') {
+        setSearchTerm('');
+        setShowResults(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // =======================
   // BUSCADOR
@@ -669,6 +689,7 @@ const devolucionLabel = pagoOriginal
         <div className="border-b md:border-b-0 md:border-r border-stone-100 relative">
           <div className="relative">
             <input
+              ref={searchInputRef}
               value={searchTerm}
               onChange={e => {
                 setSearchTerm(e.target.value);

@@ -136,4 +136,75 @@ describe('StorefrontPage', () => {
     expect(btnBlanco).toBeDisabled();
     expect(btnNegro).not.toBeDisabled();
   });
+
+  it('activa el modo compacto en el header al hacer scroll hacia abajo', () => {
+    const mockInventory = [];
+    const mockSettings = { storeName: 'EL ROPERO' };
+
+    const { container } = render(
+      <BrowserRouter>
+        <StorefrontPage inventoryProp={mockInventory as any} settingsProp={mockSettings as any} />
+      </BrowserRouter>
+    );
+
+    const header = container.querySelector('header');
+    expect(header).toBeInTheDocument();
+    expect(header?.className).toContain('sticky');
+
+    // Simular scroll hacia abajo
+    window.scrollY = 50;
+    fireEvent.scroll(window);
+
+    // Verificar que el título se achique suavemente
+    const title = screen.getByText('EL ROPERO');
+    expect(title.className).toContain('text-[11px]');
+  });
+
+  it('abre el drawer de filtrado estetico estilo Zhoue y permite seleccionar talles y colores', () => {
+    const mockInventory = [
+      {
+        id: '1',
+        sku: 'TEST1',
+        descripcion: 'Vestido Negro',
+        proveedor: 'ZhoueProv',
+        categoria: 'VESTIDOS',
+        cantidad: 5,
+        costo: 1000,
+        ventaEfectivo: 2500,
+        ventaTarjeta: 3000,
+        talles: ['S', 'M'],
+        colores: ['NEGRO'],
+        imagenes: [],
+        visible: true
+      }
+    ];
+
+    const mockSettings = { storeName: 'EL ROPERO STORE' };
+
+    render(
+      <BrowserRouter>
+        <StorefrontPage inventoryProp={mockInventory as any} settingsProp={mockSettings as any} />
+      </BrowserRouter>
+    );
+
+    // Click en el botón de Filtrar estilo Zhoue
+    const btnFiltrar = screen.getByRole('button', { name: /Filtrar/i });
+    expect(btnFiltrar).toBeInTheDocument();
+    fireEvent.click(btnFiltrar);
+
+    // Debe mostrar el título del drawer "Filtros y Orden"
+    expect(screen.getByText('Filtros y Orden')).toBeInTheDocument();
+
+    // Seleccionar talle 'S' dentro del drawer
+    const talleButtons = screen.getAllByRole('button', { name: 'S' });
+    fireEvent.click(talleButtons[0]);
+
+    // Presionar "Ver 1 Producto"
+    fireEvent.click(screen.getByText(/Ver 1 Producto/i));
+
+    // Verificar que aparece la pill/chip activa del filtro "Talle:"
+    expect(screen.getByText('Talle:')).toBeInTheDocument();
+  });
 });
+
+

@@ -4,7 +4,24 @@ import { InventoryItem, WebSettings, GiftCard, SaleItem } from '../types';
 import { db, functions } from '../services/firebase';
 import { doc, onSnapshot, getDoc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle } from 'lucide-react';
+import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle, SlidersHorizontal } from 'lucide-react';
+
+const getColorDotStyle = (colorName: string): React.CSSProperties => {
+  const c = colorName.toLowerCase().trim();
+  if (c.includes('blanco') || c.includes('white')) return { backgroundColor: '#ffffff', border: '1px solid #d1d5db' };
+  if (c.includes('negro') || c.includes('black')) return { backgroundColor: '#000000' };
+  if (c.includes('beige') || c.includes('nude') || c.includes('crudo') || c.includes('crema')) return { backgroundColor: '#f3ebd9' };
+  if (c.includes('azul') || c.includes('marino') || c.includes('blue') || c.includes('jeans') || c.includes('denim')) return { backgroundColor: '#1d4ed8' };
+  if (c.includes('rojo') || c.includes('red') || c.includes('bordo') || c.includes('bordeaux')) return { backgroundColor: '#b91c1c' };
+  if (c.includes('verde') || c.includes('green') || c.includes('militar')) return { backgroundColor: '#15803d' };
+  if (c.includes('rosa') || c.includes('pink') || c.includes('fucsia')) return { backgroundColor: '#ec4899' };
+  if (c.includes('gris') || c.includes('gray') || c.includes('melange')) return { backgroundColor: '#6b7280' };
+  if (c.includes('marron') || c.includes('chocolate') || c.includes('suela') || c.includes('camel')) return { backgroundColor: '#78350f' };
+  if (c.includes('amarillo') || c.includes('yellow')) return { backgroundColor: '#eab308' };
+  if (c.includes('naranja') || c.includes('orange')) return { backgroundColor: '#f97316' };
+  if (c.includes('violeta') || c.includes('púrpura') || c.includes('purple')) return { backgroundColor: '#7e22ce' };
+  return { background: 'linear-gradient(135deg, #e5e7eb 0%, #9ca3af 100%)' };
+};
 import { useAuth, SavedCartItem } from '../contexts/AuthContext';
 import AuthModal from './auth/AuthModal';
 import UserDashboard from './auth/UserDashboard';
@@ -120,6 +137,18 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [search, setSearch] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(!inventoryProp || inventoryProp.length === 0);
   const [category, setCategory] = React.useState('');
+  const [filterTalle, setFilterTalle] = React.useState('');
+  const [filterColor, setFilterColor] = React.useState('');
+  const [sortOption, setSortOption] = React.useState<'destacados' | 'precio-asc' | 'precio-desc' | 'nombre'>('destacados');
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = React.useState(false);
+
+  const activeFilterCount = React.useMemo(() => {
+    let count = 0;
+    if (filterTalle) count++;
+    if (filterColor) count++;
+    if (sortOption !== 'destacados') count++;
+    return count;
+  }, [filterTalle, filterColor, sortOption]);
   const [showSearch, setShowSearch] = React.useState(false);
   const [showNav, setShowNav] = React.useState(false);
   const { showAlert, showConfirm } = useModal();
@@ -158,6 +187,34 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [showBuyGiftCard, setShowBuyGiftCard] = React.useState(false);
   const [pendingPaymentOrder, setPendingPaymentOrder] = React.useState<any | null>(null);
 
+  const headerRef = React.useRef<HTMLElement>(null);
+  const [headerHeight, setHeaderHeight] = React.useState<number>(64);
+  const [isScrolled, setIsScrolled] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 20) {
+        setIsScrolled(true);
+      } else {
+        setIsScrolled(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  React.useEffect(() => {
+    const updateHeaderHeight = () => {
+      if (headerRef.current) {
+        setHeaderHeight(headerRef.current.offsetHeight);
+      }
+    };
+    updateHeaderHeight();
+    window.addEventListener('resize', updateHeaderHeight);
+    return () => window.removeEventListener('resize', updateHeaderHeight);
+  }, [webSettings.announcementText, showSearch, isScrolled]);
+
   const handleOpenBuyGiftCard = () => {
     if (user) {
       setShowBuyGiftCard(true);
@@ -167,6 +224,46 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       setShowAuthModal(true);
     }
   };
+
+  // Deep linking para abrir producto directamente vía URL (?product=ID)
+  React.useEffect(() => {
+    if (!inventory || inventory.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const prodId = params.get('product') || params.get('producto');
+    if (prodId) {
+      const found = inventory.find(p => p.id === prodId || (p.sku && p.sku.toLowerCase() === prodId.toLowerCase()));
+      if (found) {
+        setSelectedProduct(found);
+      }
+    }
+  }, [inventory]);
+
+  // Escuchador en tiempo real para acreditación de pagos de Ualá Bis
+  React.useEffect(() => {
+    const rawLastPending = localStorage.getItem('ropero_last_pending_order');
+    if (!rawLastPending) return;
+
+    try {
+      const parsed = JSON.parse(rawLastPending);
+      const pendingId = parsed.orderId;
+      if (!pendingId) return;
+
+      const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', pendingId);
+      const unsubscribe = onSnapshot(orderRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (['PAID', 'APPROVED', 'Confirmada'].includes(data.estado)) {
+            localStorage.removeItem('ropero_last_pending_order');
+            showAlert('¡Excelente! Tu pago ha sido acreditado y confirmado con éxito.', '¡Pago Exitoso!', 'success');
+          }
+        }
+      });
+
+      return () => unsubscribe();
+    } catch (err) {
+      console.error('Error escuchando orden pendiente:', err);
+    }
+  }, []);
 
   // Abrir modal de login si se proviene de una restauración de contraseña exitosa
   React.useEffect(() => {
@@ -627,9 +724,32 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     }
   };
 
+  const availableTalles = React.useMemo(() => {
+    const set = new Set<string>();
+    inventory.forEach(item => {
+      if (item.talles) item.talles.forEach(t => set.add(t));
+      if (item.stockPorVariante) {
+        Object.keys(item.stockPorVariante).forEach(k => {
+          const parts = k.split('-');
+          if (parts[0]) set.add(parts[0]);
+        });
+      }
+    });
+    return Array.from(set).sort();
+  }, [inventory]);
+
+  const availableColores = React.useMemo(() => {
+    const set = new Set<string>();
+    inventory.forEach(item => {
+      if (item.colores) item.colores.forEach(c => set.add(c.toUpperCase()));
+      if (item.coloresStock) Object.keys(item.coloresStock).forEach(c => set.add(c.toUpperCase()));
+    });
+    return Array.from(set).sort();
+  }, [inventory]);
+
   const filteredItems = React.useMemo(() => {
     const hiddenSections = webSettings.hiddenSections || [];
-    return inventory
+    let result = inventory
       .filter(i => i.cantidad > 0 && i.visible !== false && !hiddenSections.includes(i.categoria))
       .filter(i => {
         if (!search.trim()) return true;
@@ -642,8 +762,33 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         if (!category) return true;
         if (category === 'SALE') return getDiscount(i) > 0;
         return i.categoria === category;
+      })
+      .filter(i => {
+        if (!filterTalle) return true;
+        if (i.talles) return i.talles.includes(filterTalle);
+        if (i.stockPorVariante) {
+          return Object.keys(i.stockPorVariante).some(k => k.toLowerCase().startsWith(filterTalle.toLowerCase() + '-') && (i.stockPorVariante![k] || 0) > 0);
+        }
+        return true;
+      })
+      .filter(i => {
+        if (!filterColor) return true;
+        if (i.colores) return i.colores.some(c => c.toLowerCase() === filterColor.toLowerCase());
+        if (i.coloresStock) {
+          return Object.keys(i.coloresStock).some(k => k.toLowerCase() === filterColor.toLowerCase() && (i.coloresStock![k] || 0) > 0);
+        }
+        return true;
       });
-  }, [inventory, search, category, getDiscount, webSettings.hiddenSections]);
+
+    if (sortOption === 'precio-asc') {
+      result = [...result].sort((a, b) => a.ventaEfectivo - b.ventaEfectivo);
+    } else if (sortOption === 'precio-desc') {
+      result = [...result].sort((a, b) => b.ventaEfectivo - a.ventaEfectivo);
+    } else if (sortOption === 'nombre') {
+      result = [...result].sort((a, b) => a.descripcion.localeCompare(b.descripcion));
+    }
+    return result;
+  }, [inventory, search, category, filterTalle, filterColor, sortOption, getDiscount, webSettings.hiddenSections]);
 
   const sections = React.useMemo(() => {
     const hiddenSections = webSettings.hiddenSections || [];
@@ -836,6 +981,14 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  const closeQuickView = () => {
+    setSelectedProduct(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('product');
+    url.searchParams.delete('producto');
+    window.history.replaceState({}, '', url.toString());
+  };
+
   const openQuickView = (product: InventoryItem) => {
     setSelectedProduct(product);
     
@@ -854,6 +1007,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     
     setModalColor(defaultColor);
     setModalImgIdx(0);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('product', product.id);
+    window.history.replaceState({}, '', url.toString());
   };
 
 
@@ -862,7 +1019,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col text-black font-['Inter'] selection:bg-black selection:text-white overflow-x-hidden w-full">
+    <div className="min-h-screen bg-white flex flex-col text-black font-['Inter'] selection:bg-black selection:text-white overflow-x-clip w-full">
       
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap');
@@ -965,8 +1122,15 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       `}</style>
 
       {/* ══════ HEADER ══════ */}
-      <header className="sticky top-0 z-[60] bg-white border-b border-black/10">
-        <div className="flex items-center justify-between px-4 sm:px-8 h-14 sm:h-16">
+      <header 
+        ref={headerRef} 
+        className={`sticky top-0 z-[60] bg-white/95 backdrop-blur-md border-b border-black/10 transition-all duration-300 ${
+          isScrolled ? 'shadow-sm border-black/15' : 'shadow-xs'
+        }`}
+      >
+        <div className={`flex items-center justify-between px-4 sm:px-8 transition-all duration-300 ${
+          isScrolled ? 'h-11 sm:h-12' : 'h-14 sm:h-16'
+        }`}>
           <div className="flex items-center gap-4 sm:gap-6 shrink-0">
             <button onClick={() => setShowNav(true)} className="flex items-center gap-2 hover:opacity-60 transition-opacity">
               <Menu size={18} strokeWidth={1.2} />
@@ -978,7 +1142,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           </div>
 
           <Link to="/" className="flex-1 min-w-0 flex items-center justify-center text-center px-2" onClick={() => { setCategory(''); setSearch(''); }}>
-            <h1 className="text-[13px] sm:text-[16px] md:text-[18px] tracking-[0.28em] uppercase font-light leading-none whitespace-nowrap transition-all duration-300 select-none text-black">
+            <h1 className={`tracking-[0.28em] uppercase font-light leading-none whitespace-nowrap transition-all duration-300 select-none text-black ${
+              isScrolled ? 'text-[11px] sm:text-[14px] md:text-[15px]' : 'text-[13px] sm:text-[16px] md:text-[18px]'
+            }`}>
               {webSettings.storeName || 'EL ROPERO'}
             </h1>
           </Link>
@@ -1015,7 +1181,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
         {/* Infinite Announcement Marquee */}
         {webSettings.announcementText && (
-          <div className="marquee-container bg-black text-white border-none py-1.5">
+          <div className={`marquee-container bg-black text-white border-none transition-all duration-300 ${
+            isScrolled ? 'py-1 text-[8px]' : 'py-1.5'
+          }`}>
             <div className="marquee-content text-[9px] tracking-[0.25em] font-light uppercase">
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
@@ -1134,22 +1302,29 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         </section>
       )}
 
-      {/* ══════ GIFT CARD BANNER ══════ */}
+      {/* ══════ GIFT CARD BANNER (SUBTLE & COMPACT - DARK MODE) ══════ */}
       {!category && !search && !webSettings.storeHidden && (
-        <section className="w-full bg-neutral-950 text-white py-14 px-6 flex flex-col items-center justify-center text-center">
-          <Gift size={28} strokeWidth={1} className="text-neutral-400 mb-4" />
-          <h3 className="text-base sm:text-xl tracking-[0.25em] uppercase font-light mb-3">
-            El Regalo Perfecto
-          </h3>
-          <p className="text-[11px] font-light text-neutral-400 max-w-md mb-8 leading-relaxed">
-            Sorprendé a quien quieras con una Gift Card digital. Elegí el monto, escribí una dedicatoria y se la enviamos por mail al instante.
-          </p>
-          <button 
-            onClick={handleOpenBuyGiftCard}
-            className="border border-white text-white px-8 py-2.5 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-white hover:text-black transition-all rounded-none"
-          >
-            Regalar Gift Card
-          </button>
+        <section className="w-full bg-neutral-950 text-white py-4 px-6 sm:px-12">
+          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
+              <Gift size={16} strokeWidth={1.2} className="text-neutral-400 shrink-0" />
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                <span className="text-[10px] tracking-[0.22em] uppercase font-medium text-white">
+                  Gift Cards Digitales
+                </span>
+                <span className="hidden sm:inline text-neutral-700">•</span>
+                <span className="text-[10px] tracking-[0.08em] font-light text-neutral-400">
+                  Regalá una tarjeta virtual con dedicatoria y envío inmediato por email.
+                </span>
+              </div>
+            </div>
+            <button 
+              onClick={handleOpenBuyGiftCard}
+              className="border border-white/80 text-white px-4 py-1.5 text-[9px] tracking-[0.2em] uppercase font-light hover:bg-white hover:text-black transition-all rounded-none shrink-0"
+            >
+              Regalar Gift Card
+            </button>
+          </div>
         </section>
       )}
 
@@ -1165,8 +1340,287 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           </div>
         ) : (
           <main className="w-full max-w-[1800px]">
+            {/* ══════ CATALOG CONTROL BAR (MINIMALIST & AESTHETIC - ZHOUE STYLE) ══════ */}
+            <div 
+              style={{ top: `${headerHeight}px` }}
+              className="sticky z-[40] bg-white/95 backdrop-blur-md py-3 px-4 sm:px-8 border-b border-black/10 text-xs tracking-wider mb-8 transition-all flex flex-wrap items-center justify-between gap-3 w-full"
+            >
+              {/* Left Side: Filter Trigger & Active Filter Badges */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <button 
+                  onClick={() => setIsFilterDrawerOpen(true)}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 border border-black/20 text-neutral-900 hover:border-black hover:bg-neutral-50 transition-all cursor-pointer font-light tracking-[0.2em] uppercase text-[11px] bg-white"
+                >
+                  <SlidersHorizontal size={14} strokeWidth={1.5} className="text-neutral-700" />
+                  <span>Filtrar</span>
+                  {activeFilterCount > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[9px] font-medium flex items-center justify-center ml-0.5">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
 
-            
+                {/* Active Filter Chips */}
+                {filterTalle && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
+                    Talle: <strong className="font-normal">{filterTalle}</strong>
+                    <button onClick={() => setFilterTalle('')} className="hover:text-black text-neutral-400 ml-0.5" title="Remover filtro de talle">
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+
+                {filterColor && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={getColorDotStyle(filterColor)} />
+                    Color: <strong className="font-normal">{filterColor}</strong>
+                    <button onClick={() => setFilterColor('')} className="hover:text-black text-neutral-400 ml-0.5" title="Remover filtro de color">
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+
+                {sortOption !== 'destacados' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
+                    Orden: <strong className="font-normal">{sortOption === 'precio-asc' ? 'Menor $' : sortOption === 'precio-desc' ? 'Mayor $' : 'A-Z'}</strong>
+                    <button onClick={() => setSortOption('destacados')} className="hover:text-black text-neutral-400 ml-0.5" title="Restablecer orden">
+                      <X size={12} />
+                    </button>
+                  </span>
+                )}
+
+                {activeFilterCount > 0 && (
+                  <button 
+                    onClick={() => { setFilterTalle(''); setFilterColor(''); setSortOption('destacados'); }}
+                    className="text-neutral-400 hover:text-black underline underline-offset-4 tracking-widest uppercase font-light ml-1 transition-colors text-[10px] cursor-pointer"
+                  >
+                    Limpiar todo
+                  </button>
+                )}
+              </div>
+
+              {/* Right Side: Quick Sort Trigger */}
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-neutral-500 font-light ml-auto sm:ml-0">
+                <span className="hidden sm:inline">Ordenar:</span>
+                <select 
+                  value={sortOption} 
+                  onChange={(e) => setSortOption(e.target.value as any)}
+                  className="px-2 py-1 bg-transparent border-b border-black/20 text-neutral-900 uppercase tracking-widest font-light focus:outline-none focus:border-black transition-colors rounded-none cursor-pointer text-[11px]"
+                >
+                  <option value="destacados">Destacados</option>
+                  <option value="precio-asc">Precio: Menor a Mayor</option>
+                  <option value="precio-desc">Precio: Mayor a Menor</option>
+                  <option value="nombre">Nombre: A-Z</option>
+                </select>
+              </div>
+            </div>
+
+            {/* ══════ ZHOU-STYLE OFF-CANVAS FILTER DRAWER ══════ */}
+            {isFilterDrawerOpen && (
+              <div className="fixed inset-0 z-[100] flex justify-end">
+                {/* Backdrop */}
+                <div 
+                  className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+                  onClick={() => setIsFilterDrawerOpen(false)}
+                />
+
+                {/* Off-canvas Panel */}
+                <div className="relative w-full max-w-md bg-white h-full shadow-2xl z-10 flex flex-col justify-between overflow-hidden transition-transform duration-300">
+                  {/* Drawer Header */}
+                  <div className="px-6 py-5 border-b border-neutral-100 flex items-center justify-between bg-white">
+                    <div className="flex items-center gap-2">
+                      <SlidersHorizontal size={16} strokeWidth={1.5} className="text-neutral-900" />
+                      <h3 className="text-xs uppercase font-light tracking-[0.25em] text-neutral-900">
+                        Filtros y Orden
+                      </h3>
+                      {activeFilterCount > 0 && (
+                        <span className="text-[10px] bg-neutral-900 text-white px-2 py-0.5 rounded-full font-light">
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => setIsFilterDrawerOpen(false)}
+                      className="p-2 text-neutral-500 hover:text-black transition-colors cursor-pointer"
+                      aria-label="Cerrar filtros"
+                    >
+                      <X size={18} strokeWidth={1.5} />
+                    </button>
+                  </div>
+
+                  {/* Drawer Body - Scrollable */}
+                  <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                    {/* Talles Section */}
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900">
+                          Talles
+                        </span>
+                        {filterTalle && (
+                          <button 
+                            onClick={() => setFilterTalle('')} 
+                            className="text-[10px] text-neutral-400 hover:text-black underline tracking-wider uppercase cursor-pointer"
+                          >
+                            Borrar
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => setFilterTalle('')}
+                          className={`px-3 py-2 text-xs tracking-wider uppercase transition-all border cursor-pointer ${
+                            filterTalle === '' 
+                              ? 'bg-neutral-900 text-white border-neutral-900 font-medium' 
+                              : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
+                          }`}
+                        >
+                          Todos
+                        </button>
+                        {availableTalles.map(t => {
+                          const isSelected = filterTalle === t;
+                          return (
+                            <button
+                              key={t}
+                              onClick={() => setFilterTalle(isSelected ? '' : t)}
+                              className={`min-w-[42px] px-3.5 py-2 text-xs tracking-wider uppercase transition-all border cursor-pointer ${
+                                isSelected 
+                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs' 
+                                  : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                              }`}
+                            >
+                              {t}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Colores Section */}
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900">
+                          Colores
+                        </span>
+                        {filterColor && (
+                          <button 
+                            onClick={() => setFilterColor('')} 
+                            className="text-[10px] text-neutral-400 hover:text-black underline tracking-wider uppercase cursor-pointer"
+                          >
+                            Borrar
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => setFilterColor('')}
+                          className={`px-3 py-2 text-xs tracking-wider uppercase text-left transition-all border flex items-center gap-2 cursor-pointer ${
+                            filterColor === '' 
+                              ? 'bg-neutral-900 text-white border-neutral-900 font-medium' 
+                              : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
+                          }`}
+                        >
+                          <span className="w-3 h-3 rounded-full bg-neutral-300 inline-block" />
+                          <span>Todos los colores</span>
+                        </button>
+                        {availableColores.map(c => {
+                          const isSelected = filterColor.toLowerCase() === c.toLowerCase();
+                          return (
+                            <button
+                              key={c}
+                              onClick={() => setFilterColor(isSelected ? '' : c)}
+                              className={`px-3 py-2 text-xs tracking-wider uppercase text-left transition-all border flex items-center justify-between gap-2 cursor-pointer ${
+                                isSelected 
+                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs' 
+                                  : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span 
+                                  className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-2xs" 
+                                  style={getColorDotStyle(c)} 
+                                />
+                                <span className="truncate">{c}</span>
+                              </div>
+                              {isSelected && <Check size={14} className="shrink-0 text-white" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Ordenar Por Section */}
+                    <div>
+                      <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900 block mb-4">
+                        Ordenar Por
+                      </span>
+                      <div className="space-y-2">
+                        {[
+                          { id: 'destacados', label: 'Destacados' },
+                          { id: 'precio-asc', label: 'Precio: Menor a Mayor' },
+                          { id: 'precio-desc', label: 'Precio: Mayor a Menor' },
+                          { id: 'nombre', label: 'Nombre: A - Z' },
+                        ].map(opt => {
+                          const isSelected = sortOption === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => setSortOption(opt.id as any)}
+                              className={`w-full px-4 py-2.5 text-xs tracking-wider uppercase text-left transition-all border flex items-center justify-between cursor-pointer ${
+                                isSelected 
+                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium' 
+                                  : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                              }`}
+                            >
+                              <span>{opt.label}</span>
+                              {isSelected && <Check size={14} />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Drawer Footer */}
+                  <div className="p-6 border-t border-neutral-100 bg-white space-y-3">
+                    <button
+                      onClick={() => setIsFilterDrawerOpen(false)}
+                      className="w-full bg-neutral-900 hover:bg-black text-white py-3.5 text-xs uppercase tracking-[0.25em] font-light transition-all cursor-pointer shadow-md"
+                    >
+                      Ver {filteredItems.length} {filteredItems.length === 1 ? 'Producto' : 'Productos'}
+                    </button>
+                    {activeFilterCount > 0 && (
+                      <button
+                        onClick={() => {
+                          setFilterTalle('');
+                          setFilterColor('');
+                          setSortOption('destacados');
+                        }}
+                        className="w-full text-center text-neutral-500 hover:text-black text-[11px] uppercase tracking-widest font-light py-1 cursor-pointer transition-colors"
+                      >
+                        Limpiar Todos los Filtros
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Floating Mobile Filter Pill */}
+            {activeFilterCount > 0 && !isFilterDrawerOpen && (
+              <div className="fixed bottom-6 right-6 z-[45] sm:hidden">
+                <button
+                  onClick={() => setIsFilterDrawerOpen(true)}
+                  className="bg-neutral-900 text-white px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 text-xs tracking-widest uppercase font-light border border-white/20 active:scale-95 transition-transform cursor-pointer"
+                >
+                  <SlidersHorizontal size={14} />
+                  <span>Filtros</span>
+                  <span className="w-4 h-4 rounded-full bg-white text-black text-[9px] font-bold flex items-center justify-center">
+                    {activeFilterCount}
+                  </span>
+                </button>
+              </div>
+            )}
+
             {/* Si no hay filtro, mostrar por secciones */}
             {!category && !search ? (
               sections.map(sec => {
@@ -1226,6 +1680,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                     </div>
                   </div>
                 )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-16 sm:gap-y-24 gap-x-6 sm:gap-x-8">
                   {filteredItems.map((item, idx) => <ProductCard key={item.id} item={item} idx={idx} onOpen={openQuickView} addedFeedback={addedFeedback} onAddToCart={addToCart} discount={getDiscount(item)} isFavorited={isFavorited(item.id)} onToggleFavorite={handleToggleFavorite}/>)}
                 </div>
@@ -1238,9 +1693,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       {/* ══════ PRODUCT MODAL ══════ */}
       {selectedProduct && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setSelectedProduct(null)} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" onClick={closeQuickView} />
           <div className="relative bg-white w-full max-w-4xl h-full sm:h-[85vh] flex flex-col sm:flex-row overflow-hidden transition-all rounded-none shadow-2xl border border-black/10">
-            <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 z-10 opacity-60 hover:opacity-100 p-2 bg-white/90 rounded-none border border-black/10"><X size={16} strokeWidth={1.2} /></button>
+            <button onClick={closeQuickView} className="absolute top-4 right-4 z-10 opacity-60 hover:opacity-100 p-2 bg-white/90 rounded-none border border-black/10"><X size={16} strokeWidth={1.2} /></button>
 
             {/* Left: Gallery */}
             <div className="w-full sm:w-[55%] h-[40vh] sm:h-full bg-neutral-50 relative group">

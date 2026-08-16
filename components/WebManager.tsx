@@ -138,11 +138,54 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
     }
   };
 
+  const [stockLevelFilter, setStockLevelFilter] = React.useState<'todos' | 'bajo' | 'agotados' | 'visibles'>('todos');
+  const [showBulkPriceModal, setShowBulkPriceModal] = React.useState(false);
+  const [bulkCategory, setBulkCategory] = React.useState('');
+  const [bulkPercentage, setBulkPercentage] = React.useState(10);
+  const [bulkTarget, setBulkTarget] = React.useState<'both' | 'efectivo' | 'tarjeta'>('both');
+
+  const handleApplyBulkPriceChange = async () => {
+    if (bulkPercentage === 0) return;
+    const itemsToUpdate = inventory.filter(i => !bulkCategory || i.categoria === bulkCategory);
+    if (itemsToUpdate.length === 0) {
+      showAlert('No hay productos en la categoría seleccionada.', 'Sin Productos', 'info');
+      return;
+    }
+
+    const factor = 1 + (bulkPercentage / 100);
+    const updatedInventory = inventory.map(item => {
+      if (bulkCategory && item.categoria !== bulkCategory) return item;
+      
+      const newEfectivo = (bulkTarget === 'both' || bulkTarget === 'efectivo')
+        ? Math.round(item.ventaEfectivo * factor)
+        : item.ventaEfectivo;
+      const newTarjeta = (bulkTarget === 'both' || bulkTarget === 'tarjeta')
+        ? Math.round(item.ventaTarjeta * factor)
+        : item.ventaTarjeta;
+
+      return {
+        ...item,
+        ventaEfectivo: newEfectivo,
+        ventaTarjeta: newTarjeta
+      };
+    });
+
+    onUpdateInventory(updatedInventory);
+    setShowBulkPriceModal(false);
+    showAlert(`Se actualizó el precio de ${itemsToUpdate.length} productos en un ${bulkPercentage}%.`, 'Actualización Exitosa', 'success');
+  };
+
   const filteredItems = inventory.filter(i => {
     const matchesSearch = i.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) || 
       i.sku.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !activeCategory || i.categoria === activeCategory;
-    return matchesSearch && matchesCategory;
+
+    let matchesStockLevel = true;
+    if (stockLevelFilter === 'bajo') matchesStockLevel = i.cantidad > 0 && i.cantidad <= 3;
+    else if (stockLevelFilter === 'agotados') matchesStockLevel = i.cantidad <= 0;
+    else if (stockLevelFilter === 'visibles') matchesStockLevel = i.visible === true;
+
+    return matchesSearch && matchesCategory && matchesStockLevel;
   });
 
   const categoriasSet = new Set<string>(webSettings?.categoriesOrder || []);
@@ -412,6 +455,54 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
               })}
             </div>
           )}
+
+          {/* Stock Level Filters & Bulk Actions Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 bg-[#F5F1EB]/40 border border-[#C9B8A8]/30 rounded-xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-[2px] text-[#1A1A1A]/40 mr-1">
+                Filtrar por Stock:
+              </span>
+              <button
+                onClick={() => setStockLevelFilter('todos')}
+                className={`px-3 py-1 rounded-lg text-[9px] tracking-[1.5px] uppercase font-bold transition-all ${
+                  stockLevelFilter === 'todos' ? 'bg-[#1A1A1A] text-white' : 'bg-white text-stone-600 border border-stone-200'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setStockLevelFilter('bajo')}
+                className={`px-3 py-1 rounded-lg text-[9px] tracking-[1.5px] uppercase font-bold transition-all ${
+                  stockLevelFilter === 'bajo' ? 'bg-amber-600 text-white' : 'bg-white text-amber-700 border border-amber-200'
+                }`}
+              >
+                Stock Crítico (≤ 3)
+              </button>
+              <button
+                onClick={() => setStockLevelFilter('agotados')}
+                className={`px-3 py-1 rounded-lg text-[9px] tracking-[1.5px] uppercase font-bold transition-all ${
+                  stockLevelFilter === 'agotados' ? 'bg-red-600 text-white' : 'bg-white text-red-700 border border-red-200'
+                }`}
+              >
+                Agotados (0)
+              </button>
+              <button
+                onClick={() => setStockLevelFilter('visibles')}
+                className={`px-3 py-1 rounded-lg text-[9px] tracking-[1.5px] uppercase font-bold transition-all ${
+                  stockLevelFilter === 'visibles' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-700 border border-emerald-200'
+                }`}
+              >
+                Visibles Web
+              </button>
+            </div>
+
+            <button
+              onClick={() => setShowBulkPriceModal(true)}
+              className="px-3.5 py-1.5 bg-[#C9B8A8] text-[#1A1A1A] text-[9px] font-black tracking-[1.5px] uppercase rounded-lg hover:bg-stone-400 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer ml-auto"
+            >
+              <Percent size={12} /> Actualización Masiva Precios
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredItems.length === 0 ? (
@@ -1083,6 +1174,76 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                 className="w-full mt-10 py-5 bg-[#C9B8A8] text-[#1A1A1A] rounded-2xl text-[12px] tracking-[6px] font-black uppercase hover:bg-[#B8A696] transition-all shadow-xl"
               >
                 Guardar Cambios Web
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Actualización Masiva de Precios */}
+      {showBulkPriceModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#C9B8A8] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4 text-left animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center border-b border-stone-200 pb-3">
+              <div>
+                <h3 className="font-serif text-xl italic font-normal text-stone-900">Aumento / Descuento Masivo</h3>
+                <p className="text-[9px] tracking-[0.18em] uppercase font-light text-stone-400">Actualizar precios por porcentaje</p>
+              </div>
+              <button onClick={() => setShowBulkPriceModal(false)} className="p-1 hover:bg-stone-100 rounded-full cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-wider text-stone-500 block mb-1">Categoría Objetivo</label>
+                <select 
+                  value={bulkCategory} 
+                  onChange={e => setBulkCategory(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 p-2 rounded-xl text-xs uppercase font-medium focus:outline-none"
+                >
+                  <option value="">Todas las Categorías</option>
+                  {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-wider text-stone-500 block mb-1">Porcentaje (+10% aumento / -10% descuento)</label>
+                <input 
+                  type="number" 
+                  value={bulkPercentage} 
+                  onChange={e => setBulkPercentage(Number(e.target.value))}
+                  className="w-full bg-stone-50 border border-stone-200 p-2 rounded-xl text-xs font-mono font-bold focus:outline-none"
+                  placeholder="Ej: 15"
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-bold uppercase tracking-wider text-stone-500 block mb-1">Aplicar a</label>
+                <select 
+                  value={bulkTarget} 
+                  onChange={e => setBulkTarget(e.target.value as any)}
+                  className="w-full bg-stone-50 border border-stone-200 p-2 rounded-xl text-xs uppercase font-medium focus:outline-none"
+                >
+                  <option value="both">Ambos (Efectivo y Tarjeta)</option>
+                  <option value="efectivo">Solo Venta Efectivo / Transferencia</option>
+                  <option value="tarjeta">Solo Venta Tarjeta</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-stone-100">
+              <button 
+                onClick={() => setShowBulkPriceModal(false)}
+                className="flex-1 py-2.5 bg-stone-100 text-stone-700 text-[10px] tracking-widest uppercase font-bold rounded-xl hover:bg-stone-200 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleApplyBulkPriceChange}
+                className="flex-1 py-2.5 bg-stone-900 text-white text-[10px] tracking-widest uppercase font-bold rounded-xl hover:bg-black cursor-pointer"
+              >
+                Aplicar Precios
               </button>
             </div>
           </div>
