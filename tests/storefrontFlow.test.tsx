@@ -135,7 +135,7 @@ describe('Flujos Detallados del Storefront (Página Web)', () => {
     renderStorefront();
     
     // Click en "Ver Detalles" del Accesorio Único (que es el segundo producto visible, índice 1)
-    const verDetallesBtns = screen.getAllByText(/Ver Detalles/i);
+    const verDetallesBtns = screen.getAllByText(/Ver Detalle/i);
     fireEvent.click(verDetallesBtns[1]);
 
     // Esperar a que se abra el modal
@@ -162,7 +162,7 @@ describe('Flujos Detallados del Storefront (Página Web)', () => {
     renderStorefront();
     
     // Agregamos el "Accesorio Único" al carrito (precio tarjeta 700, efectivo 600)
-    const verDetallesBtns = screen.getAllByText(/Ver Detalles/i);
+    const verDetallesBtns = screen.getAllByText(/Ver Detalle/i);
     fireEvent.click(verDetallesBtns[1]);
     
     const btnAdd = await screen.findByText('Añadir al carrito');

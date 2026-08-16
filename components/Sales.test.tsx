@@ -12,6 +12,7 @@ vi.mock('lucide-react', () => ({
   Plus: () => <span>Plus</span>,
   Minus: () => <span>Minus</span>,
   Percent: () => <span>Percent</span>,
+  CheckCircle: () => <span>CheckCircle</span>,
   CheckCircle2: () => <span>CheckCircle2</span>,
   Receipt: () => <span>Receipt</span>,
   CreditCard: () => <span>CreditCard</span>,

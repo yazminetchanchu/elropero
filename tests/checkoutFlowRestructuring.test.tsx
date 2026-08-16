@@ -180,7 +180,7 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
     );
 
     // Seleccionar Retiro en Showroom (no requiere cotizar envío)
-    fireEvent.click(screen.getByText('Retiro en Showroom / Pick Up Point'));
+    fireEvent.click(screen.getByText('Retiro en Showroom'));
 
     // Avanzar a confirmación
     const btnSiguiente = screen.getByText('Continuar');
@@ -195,7 +195,7 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
     expect(screen.getByText('Transferencia Bancaria')).toBeInTheDocument();
 
     // Muestra la Gift Card aplicada en carrito en modo solo lectura
-    expect(screen.getByText('GIFT-1000 (Para: Juan)')).toBeInTheDocument();
+    expect(screen.getByText('GIFT-1000')).toBeInTheDocument();
 
     // No debe haber campo de texto ni botón para ingresar otra gift card
     expect(screen.queryByPlaceholderText(/CÓDIGO DE GIFT CARD/i)).not.toBeInTheDocument();
@@ -249,7 +249,7 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
     );
 
     // Seleccionar Retiro en Showroom
-    fireEvent.click(screen.getByText('Retiro en Showroom / Pick Up Point'));
+    fireEvent.click(screen.getByText('Retiro en Showroom'));
 
     // Ir a Confirmación
     fireEvent.click(screen.getByText('Continuar'));

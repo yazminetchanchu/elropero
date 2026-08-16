@@ -269,14 +269,14 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
           {activeTab === 'compras' && (
             <div className="space-y-6">
               {/* Selector de sub-tabs */}
-              <div className="flex border border-black/10 rounded-xl p-1 bg-neutral-50/50 mb-6">
+              <div className="flex border border-neutral-200 p-1 bg-white mb-6 rounded-none">
                 <button
                   type="button"
                   onClick={() => setComprasSubTab('actuales')}
-                  className={`flex-1 py-2.5 text-center text-[10px] tracking-[2px] uppercase font-bold transition-all rounded-lg ${
+                  className={`flex-1 py-2 text-center text-[9px] tracking-[0.2em] uppercase font-light transition-all rounded-none ${
                     comprasSubTab === 'actuales'
-                      ? 'bg-white text-black shadow-sm'
-                      : 'opacity-40 hover:opacity-100 text-black'
+                      ? 'bg-black text-white'
+                      : 'text-neutral-400 hover:text-black'
                   }`}
                 >
                   Pedidos Actuales ({currentOrders.length})
@@ -284,10 +284,10 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setComprasSubTab('historial')}
-                  className={`flex-1 py-2.5 text-center text-[10px] tracking-[2px] uppercase font-bold transition-all rounded-lg ${
+                  className={`flex-1 py-2 text-center text-[9px] tracking-[0.2em] uppercase font-light transition-all rounded-none ${
                     comprasSubTab === 'historial'
-                      ? 'bg-white text-black shadow-sm'
-                      : 'opacity-40 hover:opacity-100 text-black'
+                      ? 'bg-black text-white'
+                      : 'text-neutral-400 hover:text-black'
                   }`}
                 >
                   Historial ({pastOrders.length})
@@ -299,9 +299,9 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
 
                 if (activeOrders.length === 0) {
                   return (
-                    <div className="py-24 text-center text-black/30 space-y-4">
-                      <Package size={40} className="mx-auto opacity-35" strokeWidth={1.2} />
-                      <p className="text-[11px] tracking-[3px] uppercase font-medium">
+                    <div className="py-20 text-center text-neutral-400 space-y-3">
+                      <Package size={36} className="mx-auto text-neutral-300" strokeWidth={1} />
+                      <p className="text-[10px] tracking-[0.2em] uppercase font-light">
                         {comprasSubTab === 'actuales' ? 'No tenés pedidos en curso' : 'Aún no realizaste compras'}
                       </p>
                     </div>
@@ -309,15 +309,12 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                 }
 
                 return activeOrders.map(order => (
-                  <div key={order.id} className="border border-black/10 p-5 space-y-5 rounded bg-neutral-50/40 animate-in fade-in duration-300">
-                    <div className="flex justify-between items-baseline pb-3 border-b border-black/5">
-                      <span className="text-[9px] tracking-[1px] uppercase text-black/40 font-medium">
+                  <div key={order.id} className="border border-neutral-200 p-4 space-y-4 rounded-none bg-white animate-in fade-in duration-200">
+                    <div className="flex justify-between items-baseline pb-2.5 border-b border-neutral-100">
+                      <span className="text-[8px] tracking-[0.15em] uppercase text-neutral-400 font-light">
                         {new Date(order.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                       </span>
-                      <span className={`text-[9px] tracking-[2px] uppercase px-2.5 py-1 font-bold rounded ${
-                        order.estado === 'Entregado' ? 'bg-green-100 text-green-800' :
-                        order.estado === 'Enviado' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
-                      }`}>
+                      <span className="text-[8px] tracking-[0.2em] uppercase px-2 py-0.5 font-light border border-black/20 text-black">
                         {order.estado}
                       </span>
                     </div>

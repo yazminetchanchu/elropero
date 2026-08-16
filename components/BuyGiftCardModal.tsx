@@ -164,48 +164,48 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 font-['Inter'] select-none">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in duration-300">
+      <div className="relative bg-white w-full max-w-lg rounded-none shadow-2xl overflow-hidden flex flex-col animate-in fade-in duration-200 border border-black/10">
         
-        <div className="flex items-center justify-between p-6 border-b border-black/5">
-          <div className="flex items-center gap-3">
-            <Gift size={20} className="text-[#C9B8A8]" />
-            <span className="text-[14px] tracking-[3px] uppercase font-bold">Regalar Gift Card</span>
+        <div className="flex items-center justify-between p-5 border-b border-neutral-100">
+          <div className="flex items-center gap-2.5">
+            <Gift size={16} strokeWidth={1.2} className="text-black" />
+            <span className="text-[11px] tracking-[0.25em] uppercase font-light text-black">Regalar Gift Card</span>
           </div>
           <button onClick={onClose} className="opacity-40 hover:opacity-100 transition-opacity">
-            <X size={20} />
+            <X size={16} strokeWidth={1.2} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 max-h-[80vh]">
           {step === 'form' && (
-            <div className="space-y-6">
+            <div className="space-y-5">
               <div>
-                <label className="block text-[10px] tracking-[2px] uppercase font-semibold text-black/60 mb-3">Monto del Regalo</label>
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <label className="block text-[9px] tracking-[0.25em] uppercase font-light text-neutral-500 mb-2.5">Monto del Regalo</label>
+                <div className="grid grid-cols-2 gap-2 mb-2.5">
                   {PRESET_AMOUNTS.map(amt => (
                     <button
                       key={amt}
                       onClick={() => { setMonto(amt); setCustomMonto(''); }}
-                      className={`py-3 border rounded-xl text-[14px] font-bold transition-all ${!customMonto && monto === amt ? 'bg-[#111111] text-white border-[#111111] shadow-md' : 'bg-white text-black border-black/10 hover:border-black/30'}`}
+                      className={`py-2.5 border rounded-none text-xs tracking-wider font-light transition-all ${!customMonto && monto === amt ? 'bg-black text-white border-black' : 'bg-white text-black border-neutral-300 hover:border-black'}`}
                     >
                       ${amt.toLocaleString('es-AR')}
                     </button>
                   ))}
                 </div>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 font-bold">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-xs">$</span>
                   <input
                     type="number"
                     value={customMonto}
                     onChange={(e) => { setCustomMonto(e.target.value); setMonto(0); }}
                     placeholder="Otro monto..."
-                    className="w-full bg-[#f8f9fa] border border-black/10 rounded-xl py-3 pl-8 pr-4 text-[14px] font-bold focus:outline-none focus:border-[#C9B8A8] transition-all placeholder:font-normal"
+                    className="w-full bg-white border border-neutral-300 rounded-none py-2 pl-7 pr-3 text-xs tracking-wide focus:outline-none focus:border-black transition-all placeholder:text-neutral-300 font-light"
                   />
                 </div>
               </div>
 
-              <div className="space-y-4 pt-4 border-t border-black/5">
-                <label className="block text-[10px] tracking-[2px] uppercase font-semibold text-black/60">Datos del Afortunado</label>
+              <div className="space-y-3 pt-3 border-t border-neutral-100">
+                <label className="block text-[9px] tracking-[0.25em] uppercase font-light text-neutral-500">Datos del Destinatario</label>
                 
                 <div>
                   <input
@@ -213,7 +213,7 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
                     value={destinatario}
                     onChange={(e) => setDestinatario(e.target.value)}
                     placeholder="Nombre y Apellido de quien recibe"
-                    className="w-full bg-transparent border-b border-black/10 py-2.5 text-[13px] focus:outline-none focus:border-black transition-all"
+                    className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black uppercase tracking-wider transition-all placeholder:text-neutral-300"
                   />
                 </div>
                 <div>
@@ -221,8 +221,8 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
                     type="email"
                     value={emailDestinatario}
                     onChange={(e) => setEmailDestinatario(e.target.value)}
-                    placeholder="Email de quien recibe (A donde le llegará la tarjeta)"
-                    className="w-full bg-transparent border-b border-black/10 py-2.5 text-[13px] focus:outline-none focus:border-black transition-all"
+                    placeholder="Email de quien recibe"
+                    className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-wider transition-all placeholder:text-neutral-300"
                   />
                 </div>
                 <div>
@@ -231,19 +231,19 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
                     value={deParteDe}
                     onChange={(e) => setDeParteDe(e.target.value)}
                     placeholder="Tu Nombre (De parte de...)"
-                    className="w-full bg-transparent border-b border-black/10 py-2.5 text-[13px] focus:outline-none focus:border-black transition-all"
+                    className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black uppercase tracking-wider transition-all placeholder:text-neutral-300"
                   />
                 </div>
               </div>
 
-              <div className="space-y-3 pt-4 border-t border-black/5">
-                <label className="block text-[10px] tracking-[2px] uppercase font-semibold text-black/60">Frase / Mensaje</label>
-                <div className="flex flex-wrap gap-2">
+              <div className="space-y-2 pt-3 border-t border-neutral-100">
+                <label className="block text-[9px] tracking-[0.25em] uppercase font-light text-neutral-500">Mensaje Personalizado</label>
+                <div className="flex flex-wrap gap-1.5">
                   {PRESET_MESSAGES.map((msg, i) => (
                     <button
                       key={i}
                       onClick={() => setMensaje(msg)}
-                      className={`px-3 py-1.5 rounded-full text-[11px] border transition-all ${mensaje === msg ? 'bg-[#F5F1EB] border-[#C9B8A8] text-[#111111] font-semibold' : 'bg-white border-black/10 text-black/60 hover:border-black/30'}`}
+                      className={`px-2.5 py-1 rounded-none text-[9px] tracking-wider uppercase border transition-all ${mensaje === msg ? 'bg-black border-black text-white font-light' : 'bg-white border-neutral-200 text-neutral-500 hover:border-black'}`}
                     >
                       {msg}
                     </button>
@@ -252,93 +252,93 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
                 <textarea
                   value={mensaje}
                   onChange={(e) => setMensaje(e.target.value)}
-                  placeholder="Escribí un mensaje personalizado..."
+                  placeholder="Escribí un mensaje..."
                   rows={2}
-                  className="w-full bg-[#f8f9fa] border border-black/10 rounded-xl p-3 text-[13px] focus:outline-none focus:border-[#C9B8A8] transition-all resize-none mt-2"
+                  className="w-full bg-white border border-neutral-200 rounded-none p-2.5 text-[11px] font-light focus:outline-none focus:border-black transition-all resize-none mt-1.5 placeholder:text-neutral-300"
                 />
               </div>
 
               <button
                 onClick={handleNext}
-                className="w-full bg-[#111111] text-white py-4 rounded-xl text-[12px] tracking-[2px] uppercase font-bold flex items-center justify-center gap-2 hover:bg-black/80 transition-all shadow-lg mt-6"
+                className="w-full bg-black text-white py-3 rounded-none text-[10px] tracking-[0.25em] uppercase font-light flex items-center justify-center gap-2 hover:bg-neutral-800 transition-all mt-4"
               >
-                Continuar al Pago <Send size={16} />
+                Continuar al Pago <Send size={13} strokeWidth={1.2} />
               </button>
             </div>
           )}
 
           {step === 'payment' && (
-            <div className="space-y-6">
-              <div className="bg-[#F5F1EB] rounded-xl p-6 text-center border border-[#C9B8A8]/30">
-                <p className="text-[10px] tracking-[2px] uppercase text-black/50 mb-1">Valor de la Gift Card</p>
-                <p className="text-[32px] font-bold text-[#111111]">${finalMonto.toLocaleString('es-AR')}</p>
-                <p className="text-[12px] text-black/60 mt-2">Para: <strong>{destinatario}</strong></p>
+            <div className="space-y-5">
+              <div className="bg-neutral-50 rounded-none p-5 text-center border border-neutral-200">
+                <p className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 mb-1">Valor de la Gift Card</p>
+                <p className="text-2xl font-light text-black tracking-wide">${finalMonto.toLocaleString('es-AR')}</p>
+                <p className="text-[11px] text-neutral-600 mt-1 uppercase font-light">Para: <strong className="font-normal">{destinatario}</strong></p>
               </div>
 
-              <div className="space-y-3">
-                <label className="block text-[10px] tracking-[2px] uppercase font-semibold text-black/60">Método de Pago</label>
+              <div className="space-y-2">
+                <label className="block text-[9px] tracking-[0.25em] uppercase font-light text-neutral-400">Método de Pago</label>
                 
                 <button
                   onClick={() => setPaymentMethod('transferencia')}
-                  className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${paymentMethod === 'transferencia' ? 'border-[#111111] bg-[#111111]/5' : 'border-black/10 hover:border-black/30'}`}
+                  className={`w-full flex items-center justify-between p-3.5 rounded-none border transition-all ${paymentMethod === 'transferencia' ? 'border-black bg-black text-white' : 'border-neutral-200 bg-white hover:border-black text-black'}`}
                 >
                   <div className="flex items-center gap-3">
-                    <Landmark size={20} className={paymentMethod === 'transferencia' ? 'text-[#111111]' : 'text-black/40'} />
+                    <Landmark size={18} strokeWidth={1.2} className={paymentMethod === 'transferencia' ? 'text-white' : 'text-neutral-500'} />
                     <div className="text-left">
-                      <p className="text-[13px] font-bold text-[#111111]">Ualá Bis (Transferencia / Dinero en cuenta)</p>
-                      <p className="text-[11px] text-[#2e7d32] font-semibold">Precio Efectivo</p>
+                      <p className="text-[10px] tracking-[0.2em] uppercase font-light">Transferencia / Dinero en cuenta</p>
+                      <p className={`text-[9px] uppercase tracking-wider ${paymentMethod === 'transferencia' ? 'text-white/70' : 'text-neutral-400'}`}>Precio Efectivo</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-[14px] font-bold text-[#111111]">${finalMonto.toLocaleString('es-AR')}</p>
+                    <p className="text-xs font-light tracking-wide">${finalMonto.toLocaleString('es-AR')}</p>
                   </div>
                 </button>
 
                 <button
                   onClick={() => setPaymentMethod('tarjeta')}
-                  className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${paymentMethod === 'tarjeta' ? 'border-[#111111] bg-[#111111]/5' : 'border-black/10 hover:border-black/30'}`}
+                  className={`w-full flex items-center justify-between p-3.5 rounded-none border transition-all ${paymentMethod === 'tarjeta' ? 'border-black bg-black text-white' : 'border-neutral-200 bg-white hover:border-black text-black'}`}
                 >
                   <div className="flex items-center gap-3">
-                    <CreditCard size={20} className={paymentMethod === 'tarjeta' ? 'text-[#111111]' : 'text-black/40'} />
+                    <CreditCard size={18} strokeWidth={1.2} className={paymentMethod === 'tarjeta' ? 'text-white' : 'text-neutral-500'} />
                     <div className="text-left">
-                      <p className="text-[13px] font-bold text-[#111111]">Tarjetas de Crédito / Débito</p>
-                      <p className="text-[11px] text-black/40">Precio de Lista</p>
+                      <p className="text-[10px] tracking-[0.2em] uppercase font-light">Tarjetas de Crédito / Débito</p>
+                      <p className={`text-[9px] uppercase tracking-wider ${paymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Precio de Lista</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-[14px] font-bold text-[#111111]">${Math.round(finalMonto / (1 - (DESCUENTO_BASE_TRANSFERENCIA / 100))).toLocaleString('es-AR')}</p>
+                    <p className="text-xs font-light tracking-wide">${Math.round(finalMonto / (1 - (DESCUENTO_BASE_TRANSFERENCIA / 100))).toLocaleString('es-AR')}</p>
                   </div>
                 </button>
               </div>
 
-              <div className="flex gap-3 pt-4 border-t border-black/5">
+              <div className="flex gap-2 pt-3 border-t border-neutral-100">
                 <button
                   onClick={() => setStep('form')}
-                  className="px-6 py-4 rounded-xl text-[12px] tracking-[2px] uppercase font-bold text-black border border-black/10 hover:bg-black/5 transition-all"
+                  className="px-5 py-3 rounded-none text-[10px] tracking-[0.2em] uppercase font-light text-black border border-neutral-300 hover:border-black transition-all"
                 >
                   Volver
                 </button>
                 <button
                   onClick={handlePay}
                   disabled={isLoading}
-                  className="flex-1 bg-[#111111] text-white py-4 rounded-xl text-[12px] tracking-[2px] uppercase font-bold flex items-center justify-center gap-2 hover:bg-black/80 transition-all shadow-lg disabled:opacity-50"
+                  className="flex-1 bg-black text-white py-3 rounded-none text-[10px] tracking-[0.25em] uppercase font-light flex items-center justify-center gap-2 hover:bg-neutral-800 transition-all disabled:opacity-50"
                 >
-                  {isLoading ? <Loader2 size={16} className="animate-spin" /> : 'Pagar y Enviar'}
+                  {isLoading ? <Loader2 size={14} className="animate-spin" /> : 'Pagar y Enviar'}
                 </button>
               </div>
             </div>
           )}
 
           {step === 'success' && (
-            <div className="py-10 text-center space-y-4">
-              <Gift size={64} className="mx-auto text-[#C9B8A8]" />
-              <h3 className="text-[20px] font-bold uppercase tracking-[2px]">¡Redirigiendo al Pago!</h3>
-              <p className="text-[14px] text-black/60 max-w-sm mx-auto">
-                Se abrirá la ventana de Ualá Bis para que completes tu pago. Una vez que se confirme, <strong>{destinatario}</strong> recibirá su Gift Card por email automáticamente.
+            <div className="py-8 text-center space-y-3">
+              <Gift size={48} strokeWidth={1} className="mx-auto text-black" />
+              <h3 className="text-base font-light uppercase tracking-[0.2em]">¡Redirigiendo al Pago!</h3>
+              <p className="text-[11px] font-light text-neutral-500 max-w-xs mx-auto leading-relaxed">
+                Se abrirá la ventana de Ualá Bis para completar el pago. Al confirmarse, <strong>{destinatario}</strong> recibirá su Gift Card digital por email.
               </p>
               <button
                 onClick={() => { onClose(); onSuccess(); }}
-                className="mt-8 px-8 py-3 bg-[#111111] text-white rounded-xl text-[12px] tracking-[2px] uppercase font-bold hover:bg-black/80 transition-all shadow-lg"
+                className="mt-6 px-6 py-2.5 bg-black text-white rounded-none text-[10px] tracking-[0.2em] uppercase font-light hover:bg-neutral-800 transition-all"
               >
                 Cerrar
               </button>

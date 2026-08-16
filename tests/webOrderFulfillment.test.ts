@@ -7,6 +7,8 @@ import {
   WebOrderForFulfillment,
 } from '../services/webOrderFulfillment';
 import { InventoryItem, DatabaseState, GiftCard } from '../types';
+import { isOrderEligibleForExchange } from '../services/webOrderToSale';
+import { CustomerOrder } from '../contexts/AuthContext';
 
 // Mock Firebase Firestore functions used by webOrderFulfillment
 const mockRunTransaction = vi.fn();
@@ -377,6 +379,37 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
       const prod1 = updatedInventory.find((i) => i.id === 'prod-1');
       expect(prod1?.stockPorVariante?.['S-Negro']).toBe(5);
       expect(prod1?.cantidad).toBe(7);
+    });
+  });
+
+  describe('Elegibilidad de cambios (Plazo de 15 días)', () => {
+    const baseOrder: CustomerOrder = {
+      id: 'ORD-15',
+      customerUid: 'user-1',
+      items: [],
+      total: 5000,
+      subtotal: 5000,
+      descuentoGlobal: 0,
+      metodoPago: 'Efectivo',
+      tipoEnvio: 'retiro',
+      estado: 'Entregado',
+      fecha: new Date().toISOString(),
+    };
+
+    it('permite cambios si la compra fue realizada hace 15 días o menos', () => {
+      const tenDaysAgo = new Date(Date.now() - 10 * 86400000).toISOString();
+      const fifteenDaysAgo = new Date(Date.now() - 15 * 86400000).toISOString();
+
+      expect(isOrderEligibleForExchange({ ...baseOrder, fecha: tenDaysAgo })).toBe(true);
+      expect(isOrderEligibleForExchange({ ...baseOrder, fecha: fifteenDaysAgo })).toBe(true);
+    });
+
+    it('rechaza cambios si la compra fue realizada hace más de 15 días', () => {
+      const sixteenDaysAgo = new Date(Date.now() - 16 * 86400000).toISOString();
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+
+      expect(isOrderEligibleForExchange({ ...baseOrder, fecha: sixteenDaysAgo })).toBe(false);
+      expect(isOrderEligibleForExchange({ ...baseOrder, fecha: thirtyDaysAgo })).toBe(false);
     });
   });
 });

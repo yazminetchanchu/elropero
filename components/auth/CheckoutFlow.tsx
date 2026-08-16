@@ -760,45 +760,44 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       />
 
       {/* Container */}
-      <div className="relative bg-white w-full max-w-2xl h-full sm:h-auto sm:max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in duration-300">
+      <div className="relative bg-white w-full max-w-2xl h-full sm:h-auto sm:max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in duration-200 border border-black/10 rounded-none">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-8 h-20 border-b border-black/5 flex-shrink-0">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between px-6 h-16 border-b border-neutral-100 flex-shrink-0">
+          <div className="flex items-center gap-3">
             {step !== 'identification' && step !== 'success' && (
               <button onClick={handleBackStep} disabled={isLoading} className="opacity-40 hover:opacity-100 transition-opacity">
-                <ArrowLeft size={20} strokeWidth={1.5} />
+                <ArrowLeft size={16} strokeWidth={1.2} />
               </button>
             )}
-            <span className="text-[12px] tracking-[4px] uppercase font-semibold">Checkout</span>
+            <span className="text-[11px] tracking-[0.25em] uppercase font-light text-black">Checkout</span>
           </div>
           {step !== 'success' && (
             <button onClick={onClose} disabled={isLoading} className="opacity-40 hover:opacity-100 transition-opacity">
-              <X size={20} strokeWidth={1.5} />
+              <X size={16} strokeWidth={1.2} />
             </button>
           )}
         </div>
 
-        {/* Banner Modo Pruebas Ualá Bis - SOLO visible si el usuario activo es yazminetchanchu@gmail.com */}
+        {/* Banner Modo Pruebas Ualá Bis */}
         {user?.email?.toLowerCase() === 'yazminetchanchu@gmail.com' && (webSettings?.ualaEnvironment === 'stage' || getUalaEnvironment() === 'stage') && (
-          <div className="bg-amber-100 border-b border-amber-300 px-6 py-2.5 flex items-center justify-center gap-2 text-[10px] tracking-[1.5px] uppercase font-black text-amber-900 text-center shadow-inner">
-            <span className="w-2 h-2 rounded-full bg-amber-600 inline-block animate-ping" />
+          <div className="bg-neutral-100 border-b border-neutral-200 px-6 py-2 flex items-center justify-center gap-2 text-[9px] tracking-[0.2em] uppercase font-light text-neutral-800 text-center">
             Modo Pruebas Ualá Bis (Stage) Activo — No se realizarán cobros reales
           </div>
         )}
 
         {/* Errors */}
         {errorMsg && (
-          <div className="bg-red-50 text-red-700 px-8 py-3.5 border-b border-red-100 flex items-start gap-3 animate-in fade-in duration-200">
-            <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+          <div className="bg-neutral-50 text-neutral-900 px-6 py-3 border-b border-neutral-200 flex items-start gap-2.5 animate-in fade-in duration-200">
+            <AlertCircle size={13} className="mt-0.5 flex-shrink-0 text-black" />
             <div className="flex flex-col">
-              <span className="text-[10px] tracking-[1px] uppercase leading-relaxed">{errorMsg}</span>
+              <span className="text-[9px] tracking-[0.1em] uppercase leading-relaxed font-light">{errorMsg}</span>
               {errorMsg.includes('Ualá') && (
                 <button 
                   onClick={triggerWhatsAppMessage} 
-                  className="mt-2 text-[10px] tracking-[1px] font-bold underline flex items-center gap-1 hover:text-red-900 w-fit"
+                  className="mt-1.5 text-[9px] tracking-[0.15em] font-normal underline flex items-center gap-1 hover:text-black w-fit uppercase"
                 >
-                  <Send size={12} /> COMPLETAR PEDIDO POR WHATSAPP
+                  <Send size={11} /> COMPLETAR PEDIDO POR WHATSAPP
                 </button>
               )}
             </div>
@@ -806,41 +805,41 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         )}
 
         {/* Content Box */}
-        <div className="flex-1 overflow-y-auto p-8 sm:p-10 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-6 sm:p-8 no-scrollbar bg-white">
 
           {/* STEP 1: IDENTIFICATION */}
           {step === 'identification' && (
-            <div className="space-y-8">
+            <div className="space-y-6">
               <div className="space-y-1">
-                <h3 className="text-[11px] tracking-[3px] uppercase font-bold text-black">Datos del Comprador</h3>
-                <p className="text-[10px] tracking-[1px] text-black/40 uppercase">Completá tus datos para comunicarnos sobre tu pedido.</p>
+                <h3 className="text-xs tracking-[0.2em] uppercase font-light text-black">Datos del Comprador</h3>
+                <p className="text-[9px] tracking-[0.15em] text-neutral-400 uppercase font-light">Completá tus datos para comunicarnos sobre tu pedido.</p>
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-5">
                 <div className="group">
-                  <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Nombre Completo *</label>
+                  <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Nombre Completo *</label>
                   <input
                     type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} required
-                    className="w-full bg-transparent border-b border-black/10 py-2.5 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] uppercase placeholder:text-black/10"
+                    className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] uppercase text-black placeholder:text-neutral-300"
                     placeholder="EJ. SOFÍA PÉREZ"
                   />
                 </div>
 
                 <div className="group">
-                  <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Correo Electrónico *</label>
+                  <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Correo Electrónico *</label>
                   <input
                     type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-                    disabled={!!user} // Bloqueado si está autenticado
-                    className="w-full bg-transparent border-b border-black/10 py-2.5 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] placeholder:text-black/10 disabled:opacity-40"
+                    disabled={!!user}
+                    className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] text-black placeholder:text-neutral-300 disabled:opacity-40"
                     placeholder="SOFIA@CORREO.COM"
                   />
                 </div>
 
                 <div className="group">
-                  <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Teléfono de Contacto (WhatsApp) *</label>
+                  <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Teléfono de Contacto (WhatsApp) *</label>
                   <input
                     type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} required
-                    className="w-full bg-transparent border-b border-black/10 py-2.5 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] placeholder:text-black/10"
+                    className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] text-black placeholder:text-neutral-300"
                     placeholder="EJ. 11 1234 5678"
                   />
                 </div>
@@ -850,43 +849,42 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
           {/* STEP 2: DELIVERY */}
           {step === 'delivery' && (
-            <div className="space-y-8">
+            <div className="space-y-6">
               <div className="space-y-1">
-                <h3 className="text-[11px] tracking-[3px] uppercase font-bold text-black">Método de Entrega</h3>
-                <p className="text-[10px] tracking-[1px] text-black/40 uppercase">Elegí cómo querés obtener tus prendas.</p>
+                <h3 className="text-xs tracking-[0.2em] uppercase font-light text-black">Método de Entrega</h3>
+                <p className="text-[9px] tracking-[0.15em] text-neutral-400 uppercase font-light">Elegí cómo querés obtener tus prendas.</p>
               </div>
 
               {/* Selector de modo */}
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex flex-col sm:flex-row gap-3">
                 {[
-                  { id: 'retiro', label: 'Retiro en Showroom / Pick Up Point' },
+                  { id: 'retiro', label: 'Retiro en Showroom' },
                   { id: 'envio', label: 'Envío a Domicilio' },
-                  { id: 'envio_sucursal', label: 'Envío a Sucursal Correo Argentino' }
+                  { id: 'envio_sucursal', label: 'Sucursal Correo' }
                 ].map(m => (
                   <button
                     key={m.id} type="button" onClick={() => setTipoEnvio(m.id as 'retiro' | 'envio')}
-                    className={`w-full sm:w-1/3 p-5 border text-left flex flex-col justify-between h-28 transition-all ${
-                      tipoEnvio === m.id ? 'border-black bg-neutral-50/20' : 'border-black/10 opacity-60 hover:opacity-100'
+                    className={`w-full sm:w-1/3 p-4 border text-left flex flex-col justify-between h-24 rounded-none transition-all ${
+                      tipoEnvio === m.id ? 'border-black bg-black text-white' : 'border-neutral-200 bg-white hover:border-black text-black'
                     }`}
                   >
-                    <span className="text-[10px] tracking-[2px] uppercase font-semibold text-black">{m.label}</span>
-                    <span className="text-[12px] font-bold text-black/80">{m.id === 'retiro' ? 'GRATIS' : 'A CONVENIR'}</span>
+                    <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${tipoEnvio === m.id ? 'text-white' : 'text-black'}`}>{m.label}</span>
+                    <span className={`text-[10px] font-light uppercase tracking-wider ${tipoEnvio === m.id ? 'text-white/80' : 'text-neutral-500'}`}>{m.id === 'retiro' ? 'GRATIS' : 'A CONVENIR'}</span>
                   </button>
                 ))}
               </div>
 
-              
               {tipoEnvio === 'envio_sucursal' && (
-                <div className="space-y-6 pt-4 border-t border-black/5 animate-in fade-in duration-200">
+                <div className="space-y-5 pt-3 border-t border-neutral-100 animate-in fade-in duration-200">
                   <div className="group">
-                    <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Elegí tu Provincia *</label>
+                    <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Elegí tu Provincia *</label>
                     <select 
                       value={sucursalProvince} 
                       onChange={(e) => setSucursalProvince(e.target.value)} 
                       required
-                      className="w-full bg-transparent border-b border-black/10 py-2 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] uppercase cursor-pointer text-black"
+                      className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] uppercase cursor-pointer text-black"
                     >
-                      <option value="" disabled className="text-black/20">SELECCIONÁ TU PROVINCIA</option>
+                      <option value="" disabled className="text-neutral-300">SELECCIONÁ TU PROVINCIA</option>
                       {Object.entries(CORREO_PROVINCES).map(([code, name]) => (
                         <option key={code} value={code} className="text-black bg-white">{name}</option>
                       ))}
@@ -894,34 +892,33 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                   </div>
 
                   {sucursalLoading && (
-                    <div className="flex justify-center p-4">
-                      <Loader2 size={24} className="animate-spin text-black/40" />
+                    <div className="flex justify-center p-3">
+                      <Loader2 size={18} className="animate-spin text-neutral-400" />
                     </div>
                   )}
 
                   {!sucursalLoading && sucursales.length > 0 && (
-                    <div className="space-y-3">
-                      <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Sucursales Disponibles *</label>
-                      <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                    <div className="space-y-2">
+                      <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Sucursales Disponibles *</label>
+                      <div className="max-h-52 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                         {sucursales.map(suc => (
                           <label
                             key={suc.code}
-                            className={`flex p-4 border rounded cursor-pointer justify-between items-center transition-all ${
-                              selectedSucursal?.code === suc.code ? 'border-black bg-neutral-50/10' : 'border-black/10 opacity-70 hover:opacity-100'
+                            className={`flex p-3 border rounded-none cursor-pointer justify-between items-center transition-all ${
+                              selectedSucursal?.code === suc.code ? 'border-black bg-black text-white' : 'border-neutral-200 bg-white hover:border-black text-black'
                             }`}
                           >
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5">
                               <input
                                 type="radio" name="sucursal-radio" value={suc.code}
                                 checked={selectedSucursal?.code === suc.code}
                                 onChange={() => setSelectedSucursal(suc)}
                                 className="accent-black"
                               />
-                              <div className="text-[11px] tracking-[1px] uppercase">
-                                <p className="font-bold text-black">{suc.name} ({suc.code})</p>
-                                <p className="text-black/60 text-[9px] font-medium">
-                                  {suc.location?.address?.streetName} {suc.location?.address?.streetNumber} 
-                                  - {suc.location?.address?.locality}
+                              <div className="text-[10px] tracking-[0.15em] uppercase font-light">
+                                <p className="font-normal">{suc.name} ({suc.code})</p>
+                                <p className={`text-[8px] ${selectedSucursal?.code === suc.code ? 'text-white/70' : 'text-neutral-400'}`}>
+                                  {suc.location?.address?.streetName} {suc.location?.address?.streetNumber} - {suc.location?.address?.locality}
                                 </p>
                               </div>
                             </div>
@@ -932,123 +929,121 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                   )}
                   
                   {!sucursalLoading && sucursalProvince && sucursales.length === 0 && (
-                    <p className="text-[10px] text-red-500 uppercase tracking-[1px] font-semibold">No se encontraron sucursales para esta provincia.</p>
+                    <p className="text-[9px] text-neutral-800 uppercase tracking-[0.1em] font-light">No se encontraron sucursales para esta provincia.</p>
                   )}
                 </div>
               )}
 
-              {/* Formulario / Selector de Dirección si es Envío */}
+              {/* Formulario / Selector de Dirección */}
               {tipoEnvio === 'envio' && (
-                <div className="space-y-6 pt-4 border-t border-black/5 animate-in fade-in duration-200">
+                <div className="space-y-5 pt-3 border-t border-neutral-100 animate-in fade-in duration-200">
                   {user && customerProfile && customerProfile.direcciones?.length > 0 && !addNewAddress ? (
-                    // Seleccionar Dirección Existente
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-baseline mb-2">
-                        <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40">Tus Direcciones Guardadas</label>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-baseline mb-1">
+                        <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400">Tus Direcciones Guardadas</label>
                         <button
                           type="button" onClick={() => setAddNewAddress(true)}
-                          className="text-[9px] tracking-[2px] uppercase text-black/60 hover:text-black border-b border-black pb-0.5"
+                          className="text-[8px] tracking-[0.2em] uppercase text-neutral-500 hover:text-black underline font-light"
                         >
                           + Usar Otra Dirección
                         </button>
                       </div>
 
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         {customerProfile.direcciones.map(addr => (
                           <label
                             key={addr.id}
-                            className={`flex p-4 border rounded cursor-pointer justify-between items-center transition-all ${
-                              selectedAddressId === addr.id ? 'border-black bg-neutral-50/10' : 'border-black/10 opacity-70 hover:opacity-100'
+                            className={`flex p-3 border rounded-none cursor-pointer justify-between items-center transition-all ${
+                              selectedAddressId === addr.id ? 'border-black bg-black text-white' : 'border-neutral-200 bg-white hover:border-black text-black'
                             }`}
                           >
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5">
                               <input
                                 type="radio" name="checkout-addr" value={addr.id}
                                 checked={selectedAddressId === addr.id}
                                 onChange={() => setSelectedAddressId(addr.id)}
                                 className="accent-black"
                               />
-                              <div className="text-[11px] tracking-[1px] uppercase">
-                                <p className="font-bold text-black">{addr.calle} {addr.numero} {addr.pisoDepto && `(P/D: ${addr.pisoDepto})`}</p>
-                                <p className="text-black/60 text-[9px] font-medium">{addr.localidad}, {addr.provincia}</p>
+                              <div className="text-[10px] tracking-[0.15em] uppercase font-light">
+                                <p className="font-normal">{addr.calle} {addr.numero} {addr.pisoDepto && `(P/D: ${addr.pisoDepto})`}</p>
+                                <p className={`text-[8px] ${selectedAddressId === addr.id ? 'text-white/70' : 'text-neutral-400'}`}>{addr.localidad}, {addr.provincia}</p>
                               </div>
                             </div>
-                            {addr.esPrincipal && <span className="text-[8px] tracking-[1px] uppercase bg-black text-white px-2 py-0.5 font-bold">Principal</span>}
+                            {addr.esPrincipal && <span className="text-[8px] tracking-[0.15em] uppercase bg-white text-black px-1.5 py-0.5 font-light border border-black">Principal</span>}
                           </label>
                         ))}
                       </div>
                     </div>
                   ) : (
-                    // Crear / Agregar Dirección Nueva (Guest o Logged In)
-                    <div className="space-y-6">
-                      <div className="flex justify-between items-baseline mb-2">
-                        <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40">Datos de Envío</label>
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-baseline mb-1">
+                        <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400">Datos de Envío</label>
                         {user && customerProfile && customerProfile.direcciones?.length > 0 && (
                           <button
                             type="button" onClick={() => setAddNewAddress(false)}
-                            className="text-[9px] tracking-[2px] uppercase text-black/60 hover:text-black border-b border-black pb-0.5"
+                            className="text-[8px] tracking-[0.2em] uppercase text-neutral-500 hover:text-black underline font-light"
                           >
                             Volver a Mis Direcciones
                           </button>
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="sm:col-span-2 group">
-                          <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Calle *</label>
+                          <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Calle *</label>
                           <input 
                             type="text" value={calle} onChange={(e) => setCalle(e.target.value)} required
-                            className="w-full bg-transparent border-b border-black/10 py-2 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] uppercase placeholder:text-black/10"
+                            className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] uppercase placeholder:text-neutral-300"
                             placeholder="AV. SANTA FE"
                           />
                         </div>
                         <div className="sm:col-span-1 group">
-                          <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Número *</label>
+                          <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Número *</label>
                           <input 
                             type="text" value={numero} onChange={(e) => setNumero(e.target.value)} required
-                            className="w-full bg-transparent border-b border-black/10 py-2 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] placeholder:text-black/10"
+                            className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] placeholder:text-neutral-300"
                             placeholder="1500"
                           />
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="group sm:col-span-1">
-                          <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Piso/Depto</label>
+                          <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Piso/Depto</label>
                           <input 
                             type="text" value={pisoDepto} onChange={(e) => setPisoDepto(e.target.value)}
-                            className="w-full bg-transparent border-b border-black/10 py-2 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] uppercase placeholder:text-black/10"
+                            className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] uppercase placeholder:text-neutral-300"
                             placeholder="4A"
                           />
                         </div>
                         <div className="group sm:col-span-2">
-                          <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Código Postal *</label>
+                          <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Código Postal *</label>
                           <input 
                             type="text" value={codigoPostal} onChange={(e) => setCodigoPostal(e.target.value)} required
-                            className="w-full bg-transparent border-b border-black/10 py-2 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] placeholder:text-black/10"
+                            className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] placeholder:text-neutral-300"
                             placeholder="1425"
                           />
                         </div>
                       </div>
 
                       <div className="group">
-                        <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Localidad *</label>
+                        <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Localidad *</label>
                         <input 
                           type="text" value={localidad} onChange={(e) => setLocalidad(e.target.value)} required
-                          className="w-full bg-transparent border-b border-black/10 py-2 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] uppercase placeholder:text-black/10"
+                          className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] uppercase placeholder:text-neutral-300"
                           placeholder="PALERMO / CABA"
                         />
                       </div>
 
                       <div className="group">
-                        <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Provincia *</label>
+                        <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Provincia *</label>
                         <select 
                           value={provincia} 
                           onChange={(e) => setProvincia(e.target.value)} 
                           required
-                          className="w-full bg-transparent border-b border-black/10 py-2 text-[12px] focus:outline-none focus:border-black tracking-[1.5px] uppercase cursor-pointer text-black"
+                          className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] font-light focus:outline-none focus:border-black tracking-[0.15em] uppercase cursor-pointer text-black"
                         >
-                          <option value="" disabled className="text-black/20">SELECCIONÁ TU PROVINCIA</option>
+                          <option value="" disabled className="text-neutral-300">SELECCIONÁ TU PROVINCIA</option>
                           {ARGENTINA_PROVINCES.map(p => (
                             <option key={p} value={p} className="text-black bg-white">{p}</option>
                           ))}
@@ -1056,29 +1051,29 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                       </div>
 
                       <div className="group">
-                        <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1">Indicaciones (Opcional)</label>
+                        <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">Indicaciones (Opcional)</label>
                         <input 
                           type="text" value={indicaciones} onChange={(e) => setIndicaciones(e.target.value)}
-                          className="w-full bg-transparent border-b border-black/10 py-2 text-[11px] focus:outline-none focus:border-black tracking-[1px] uppercase placeholder:text-black/10"
+                          className="w-full bg-transparent border-b border-neutral-200 py-2 text-[10px] font-light focus:outline-none focus:border-black tracking-[0.1em] uppercase placeholder:text-neutral-300"
                           placeholder="FRENTE A LA PLAZA / TIMBRE GRIS"
                         />
                       </div>
 
                       {user && (
-                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
                           <input
                             type="checkbox"
                             checked={saveAddressToAccount}
                             onChange={(e) => setSaveAddressToAccount(e.target.checked)}
-                            className="accent-black w-4.5 h-4.5"
+                            className="accent-black w-3.5 h-3.5"
                           />
-                          <span className="text-[10px] tracking-[1px] uppercase text-black/60 font-semibold">Guardar dirección en mi cuenta</span>
+                          <span className="text-[9px] tracking-[0.15em] uppercase text-neutral-500 font-light">Guardar dirección en mi cuenta</span>
                         </label>
                       )}
 
                       {isCalculatingShipping && (
-                        <div className="flex items-center gap-2 text-[10px] tracking-[1.5px] uppercase font-semibold text-black/60 pt-2 animate-in fade-in">
-                          <Loader2 size={12} className="animate-spin text-black" />
+                        <div className="flex items-center gap-2 text-[9px] tracking-[0.15em] uppercase font-light text-neutral-500 pt-1 animate-in fade-in">
+                          <Loader2 size={11} className="animate-spin text-black" />
                           <span>Calculando costo de envío...</span>
                         </div>
                       )}
@@ -1086,94 +1081,92 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                   )}
                 </div>
               )}
-
-
             </div>
           )}
 
           {/* STEP 3: REVIEW */}
           {step === 'review' && (
-            <div className="space-y-8 font-['Inter'] animate-in fade-in duration-300">
+            <div className="space-y-6 font-['Inter'] animate-in fade-in duration-200">
               <div className="space-y-1">
-                <h3 className="text-[11px] tracking-[3px] uppercase font-bold text-black">Confirmación de Pedido</h3>
-                <p className="text-[10px] tracking-[1px] text-black/40 uppercase">Revisá que toda la información sea correcta antes de enviar.</p>
+                <h3 className="text-xs tracking-[0.2em] uppercase font-light text-black">Confirmación de Pedido</h3>
+                <p className="text-[9px] tracking-[0.15em] text-neutral-400 uppercase font-light">Revisá la información antes de finalizar.</p>
               </div>
 
               {/* Items Desglose */}
-              <div className="divide-y divide-black/5 border-t border-b border-black/5 py-2">
+              <div className="divide-y divide-neutral-100 border-t border-b border-neutral-100 py-1">
                 {cart.map((c, idx) => {
                   const disc = getDiscount(c.product);
                   const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
                   const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
                   return (
-                    <div key={idx} className="py-4 flex justify-between items-center text-[11px] tracking-[0.5px] uppercase">
+                    <div key={idx} className="py-3 flex justify-between items-center text-[10px] tracking-[0.15em] uppercase font-light">
                       <div className="flex flex-col">
-                        <span className="font-bold text-black">{c.product.descripcion}</span>
-                        <span className="text-black/40 text-[9px] font-medium mt-0.5">
+                        <span className="font-normal text-black">{c.product.descripcion}</span>
+                        <span className="text-neutral-400 text-[8px] font-light mt-0.5">
                           {c.selectedTalle && `Talle ${c.selectedTalle}`} {c.selectedColor && `— ${c.selectedColor}`}
-                          {` · Cant: ${c.quantity}`} · {paymentMethod === 'transferencia' ? `Transferencia (${DESCUENTO_BASE_TRANSFERENCIA}% OFF)` : 'Tarjeta (Precio Lista)'}
+                          {` · Cant: ${c.quantity}`}
                         </span>
                       </div>
-                      <span className="font-bold text-black">${(price * c.quantity).toLocaleString('es-AR')}</span>
+                      <span className="font-normal text-black">${(price * c.quantity).toLocaleString('es-AR')}</span>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Resumen del Medio de Pago (elegido únicamente en el Carrito) */}
-              <div className="space-y-2">
-                <p className="text-[9px] tracking-[2px] font-bold text-black/40 uppercase">Medio de Pago Seleccionado</p>
+              {/* Resumen del Medio de Pago */}
+              <div className="space-y-1.5">
+                <p className="text-[8px] tracking-[0.25em] font-light text-neutral-400 uppercase">Medio de Pago Seleccionado</p>
                 {paymentMethod === 'transferencia' ? (
-                  <div className="p-4 border border-sky-200 bg-sky-50/50 rounded-xl space-y-1">
+                  <div className="p-3 border border-neutral-200 bg-white space-y-0.5">
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] tracking-[2px] font-bold text-sky-900 uppercase">Transferencia Bancaria</p>
-                      <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100/70 px-2 py-0.5 rounded uppercase">-{DESCUENTO_BASE_TRANSFERENCIA}% OFF Aplicado</span>
+                      <p className="text-[9px] tracking-[0.2em] font-light text-black uppercase">Transferencia Bancaria</p>
+                      <span className="text-[8px] font-light text-black bg-neutral-100 px-1.5 py-0.5 uppercase border border-black/10">-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
                     </div>
-                    <p className="text-[9.5px] tracking-[0.5px] text-black/60 uppercase">
-                      Al confirmar se abrirá la pasarela segura de Ualá Bis para abonar por transferencia.
+                    <p className="text-[8px] tracking-[0.1em] text-neutral-400 uppercase font-light">
+                      Pasarela segura Ualá Bis por transferencia.
                     </p>
                   </div>
                 ) : (
-                  <div className="p-4 border border-[#C9B8A8] bg-[#F5F1EB]/30 rounded-xl space-y-1">
-                    <p className="text-[10px] tracking-[2px] font-bold text-[#A38A70] uppercase">Tarjeta de Crédito / Débito</p>
-                    <p className="text-[9.5px] tracking-[0.5px] text-black/60 uppercase">
-                      Precio de lista. Al confirmar se abrirá la pasarela segura de Ualá Bis para abonar con tarjeta.
+                  <div className="p-3 border border-neutral-200 bg-white space-y-0.5">
+                    <p className="text-[9px] tracking-[0.2em] font-light text-black uppercase">Tarjeta de Crédito / Débito</p>
+                    <p className="text-[8px] tracking-[0.1em] text-neutral-400 uppercase font-light">
+                      Precio de lista. Pasarela segura Ualá Bis.
                     </p>
                   </div>
                 )}
               </div>
 
-              {/* Gift Card Aplicada (Read-only si fue aplicada en el Carrito) */}
+              {/* Gift Card Aplicada */}
               {appliedGiftCard && (
-                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-center justify-between">
+                <div className="bg-white border border-neutral-200 p-3 flex items-center justify-between">
                   <div className="space-y-0.5 text-left">
-                    <div className="flex items-center gap-1.5 text-emerald-800">
-                      <Gift size={13} />
-                      <span className="text-[9px] font-bold tracking-[1.5px] uppercase">Gift Card Aplicada</span>
+                    <div className="flex items-center gap-1 text-black">
+                      <Gift size={11} strokeWidth={1.2} />
+                      <span className="text-[8px] font-light tracking-[0.2em] uppercase">Gift Card Aplicada</span>
                     </div>
-                    <p className="text-[11px] font-mono font-bold text-emerald-950">
-                      {appliedGiftCard.codigo} {appliedGiftCard.destinatario && `(Para: ${appliedGiftCard.destinatario})`}
+                    <p className="text-[9px] font-mono text-black">
+                      {appliedGiftCard.codigo}
                     </p>
-                    <p className="text-[9.5px] text-emerald-700 font-medium">
-                      Descuento aplicado: -${giftCardDiscountAmount.toLocaleString('es-AR')}
+                    <p className="text-[8px] text-neutral-500 font-light">
+                      Descuento: -${giftCardDiscountAmount.toLocaleString('es-AR')}
                     </p>
                   </div>
                 </div>
               )}
 
               {/* Resumen de Datos */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 text-[11px] tracking-[1.5px] uppercase pt-4 border-t border-black/5">
-                <div className="space-y-2">
-                  <p className="text-[9px] tracking-[2px] font-bold text-black/40">Datos del Comprador</p>
-                  <p className="font-bold text-black">{nombre}</p>
-                  <p className="text-black/60">{email}</p>
-                  <p className="text-black/60">{telefono}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-[10px] tracking-[0.15em] uppercase font-light pt-3 border-t border-neutral-100">
+                <div className="space-y-1">
+                  <p className="text-[8px] tracking-[0.25em] font-light text-neutral-400">Comprador</p>
+                  <p className="font-normal text-black">{nombre}</p>
+                  <p className="text-neutral-500">{email}</p>
+                  <p className="text-neutral-500">{telefono}</p>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-[9px] tracking-[2px] font-bold text-black/40">Método de Entrega</p>
-                  <p className="font-bold text-black">{tipoEnvio === 'envio' ? 'Envío a domicilio' : tipoEnvio === 'envio_sucursal' ? 'Envío a sucursal' : 'Retiro por local'}</p>
+                <div className="space-y-1">
+                  <p className="text-[8px] tracking-[0.25em] font-light text-neutral-400">Entrega</p>
+                  <p className="font-normal text-black">{tipoEnvio === 'envio' ? 'Envío a domicilio' : tipoEnvio === 'envio_sucursal' ? 'Envío a sucursal' : 'Retiro por local'}</p>
                   {tipoEnvio === 'envio' && activeAddress && (
-                    <p className="text-black/60 leading-relaxed">
+                    <p className="text-neutral-500 leading-relaxed">
                       {activeAddress.calle} {activeAddress.numero} {activeAddress.pisoDepto && `- ${activeAddress.pisoDepto}`} <br/>
                       {activeAddress.localidad}, {activeAddress.provincia}
                     </p>
@@ -1182,19 +1175,19 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
               </div>
 
               {/* Desglose de Totales */}
-              <div className="space-y-2 pt-6 border-t border-black/5 text-[11px] tracking-[1px] uppercase">
-                <div className="flex justify-between text-black/60 font-medium">
+              <div className="space-y-1 pt-4 border-t border-neutral-100 text-[9px] tracking-[0.18em] uppercase font-light">
+                <div className="flex justify-between text-neutral-500">
                   <span>Subtotal prendas</span>
                   <span>${calculatedCartSubtotal.toLocaleString('es-AR')}</span>
                 </div>
                 {(tipoEnvio === 'envio' || tipoEnvio === 'envio_sucursal') && (
-                  <div className="flex justify-between text-black/60 font-medium">
+                  <div className="flex justify-between text-neutral-500">
                     <span>Costo de envío ({tipoEnvio === 'envio' ? activeAddress?.provincia : selectedSucursal?.location?.address?.province})</span>
                     <span>${calculatedCostoEnvio.toLocaleString('es-AR')}</span>
                   </div>
                 )}
                 {appliedGiftCard && (
-                  <div className="flex justify-between text-emerald-600 font-bold">
+                  <div className="flex justify-between text-black font-normal">
                     <span>Descuento Gift Card ({appliedGiftCard.codigo})</span>
                     <span>-${giftCardDiscountAmount.toLocaleString('es-AR')}</span>
                   </div>
@@ -1202,75 +1195,75 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
               </div>
 
               {/* Total final */}
-              <div className="pt-4 border-t border-black/5 flex justify-between items-baseline">
-                <span className="text-[12px] tracking-[3px] uppercase font-bold text-black/50">Total Final</span>
-                <span className="text-[32px] font-bold tracking-tight text-black">${Math.round(finalTotal).toLocaleString('es-AR')}</span>
+              <div className="pt-3 border-t border-black/10 flex justify-between items-baseline">
+                <span className="text-[9px] tracking-[0.25em] uppercase font-light text-neutral-400">Total Final</span>
+                <span className="text-2xl font-normal tracking-wide text-black">${Math.round(finalTotal).toLocaleString('es-AR')}</span>
               </div>
             </div>
           )}
 
           {/* STEP 4: SUCCESS & CONVERSION */}
           {step === 'success' && (
-            <div className="space-y-10 text-center py-10 animate-in fade-in duration-300">
+            <div className="space-y-8 text-center py-6 animate-in fade-in duration-200">
               
-              <div className="space-y-4">
-                <CheckCircle size={56} className="mx-auto text-black" strokeWidth={1} />
-                <h3 className="text-[18px] tracking-[4px] uppercase font-bold text-black">¡Pedido Registrado!</h3>
-                <p className="text-[11px] tracking-[1px] leading-relaxed uppercase text-black/60 max-w-[420px] mx-auto">
+              <div className="space-y-3">
+                <CheckCircle size={44} className="mx-auto text-black" strokeWidth={1} />
+                <h3 className="text-base tracking-[0.25em] uppercase font-light text-black">¡Pedido Registrado!</h3>
+                <p className="text-[10px] tracking-[0.1em] leading-relaxed uppercase text-neutral-500 max-w-xs mx-auto font-light">
                   Tu pedido ha sido registrado. 
                   {paymentRedirectUrl
-                    ? ' Tenés 15 minutos para completar el pago seguro en Ualá Bis (se abrió en una nueva pestaña), de lo contrario la reserva se cancelará automáticamente.'
+                    ? ' Tenés 15 minutos para completar el pago seguro en Ualá Bis (se abrió en una nueva pestaña).'
                     : ' Podés coordinar el pago por WhatsApp con el showroom.'}
                 </p>
               </div>
 
               {paymentRedirectUrl && (
-                <div className="max-w-md mx-auto">
+                <div className="max-w-xs mx-auto">
                   <button
                     type="button"
                     onClick={() => window.open(paymentRedirectUrl, '_blank', 'noopener,noreferrer')}
-                    className="w-full bg-black hover:bg-neutral-900 text-white py-4 text-[11px] tracking-[3px] uppercase font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                    className="w-full bg-black text-white py-3 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-all rounded-none"
                   >
                     Pagar con Ualá Bis
                   </button>
                 </div>
               )}
 
-              <div className="pt-6 border-t border-black/5 max-w-md mx-auto space-y-3">
-                <p className="text-[11px] tracking-[1px] uppercase font-semibold text-black/70">
-                  ¿Tuviste problemas para realizar el pago?
+              <div className="pt-4 border-t border-neutral-100 max-w-xs mx-auto space-y-2">
+                <p className="text-[9px] tracking-[0.15em] uppercase font-light text-neutral-500">
+                  ¿Dudas sobre tu pago?
                 </p>
                 <button
                   onClick={triggerWhatsAppMessage}
-                  className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white py-3.5 rounded-xl text-[10px] font-bold tracking-[2.5px] uppercase transition-all shadow-sm flex items-center justify-center gap-2"
+                  className="w-full bg-black text-white py-2.5 text-[9px] font-light tracking-[0.2em] uppercase transition-all flex items-center justify-center gap-2 rounded-none"
                 >
-                  <Send size={12} /> Contactar por WhatsApp
+                  <Send size={11} strokeWidth={1.2} /> Contactar por WhatsApp
                 </button>
               </div>
 
               {/* GUEST ACCOUNT CONVERSION BOX */}
               {!user && (
-                <div className="pt-10 border-t border-black/5 max-w-md mx-auto space-y-8">
-                  <div className="space-y-2">
-                    <div className="flex justify-center gap-2 items-center text-black/80">
-                      <Lock size={12} strokeWidth={2} />
-                      <span className="text-[11px] tracking-[3px] uppercase font-bold">Creá tu Cuenta en 1 Clic</span>
+                <div className="pt-6 border-t border-neutral-100 max-w-xs mx-auto space-y-6">
+                  <div className="space-y-1">
+                    <div className="flex justify-center gap-1.5 items-center text-black">
+                      <Lock size={11} strokeWidth={1.2} />
+                      <span className="text-[10px] tracking-[0.2em] uppercase font-light">Creá tu Cuenta</span>
                     </div>
-                    <p className="text-[10px] tracking-[1px] leading-relaxed uppercase text-black/40">
-                      Escribí una contraseña y guardaremos tu historial de compras y dirección de envío para agilizar tus próximas visitas.
+                    <p className="text-[9px] tracking-[0.1em] leading-relaxed uppercase text-neutral-400 font-light">
+                      Escribí una contraseña para guardar tu historial de compras y dirección.
                     </p>
                   </div>
 
                   {conversionSuccess ? (
-                    <div className="flex flex-col items-center gap-3 bg-neutral-50 p-6 border border-black text-black">
-                      <CheckCircle size={18} strokeWidth={1.5} />
-                      <p className="text-[10px] tracking-[2px] uppercase font-bold">¡Cuenta creada con éxito! Sincronizando sesión...</p>
+                    <div className="flex flex-col items-center gap-2 bg-neutral-50 p-4 border border-black text-black">
+                      <CheckCircle size={16} strokeWidth={1.2} />
+                      <p className="text-[9px] tracking-[0.2em] uppercase font-light">¡Cuenta creada con éxito!</p>
                     </div>
                   ) : (
-                    <form onSubmit={handleGuestConversion} className="space-y-4">
+                    <form onSubmit={handleGuestConversion} className="space-y-3">
                       <div className="relative group text-left">
-                        <label className="block text-[8px] font-medium uppercase tracking-[2px] text-black/40 mb-1 group-focus-within:text-black">
-                          Elegí una Contraseña *
+                        <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">
+                          Contraseña *
                         </label>
                         <input
                           type="password"
@@ -1279,16 +1272,16 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                           required
                           disabled={conversionLoading}
                           placeholder="MÍNIMO 6 CARACTERES"
-                          className="w-full bg-transparent border-b border-black/10 py-2.5 text-[12px] focus:outline-none focus:border-black tracking-[3px] text-black text-center"
+                          className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] focus:outline-none focus:border-black tracking-[0.2em] text-black text-center font-light"
                         />
                       </div>
 
                       <button
                         type="submit"
                         disabled={conversionLoading}
-                        className="w-full bg-black text-white py-4.5 text-[10px] tracking-[3px] uppercase font-semibold hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2"
+                        className="w-full bg-black text-white py-3 text-[9px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2 rounded-none"
                       >
-                        {conversionLoading ? <Loader2 className="animate-spin" size={12} /> : 'Guardar y Registrarse'}
+                        {conversionLoading ? <Loader2 className="animate-spin" size={11} /> : 'Guardar y Registrarse'}
                       </button>
                     </form>
                   )}
@@ -1296,13 +1289,13 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
               )}
 
               {/* Volver a la Tienda */}
-              <div className="pt-8 flex justify-center">
+              <div className="pt-6 flex justify-center">
                 <button
                   onClick={() => {
-                    onSuccess(); // Limpia carro local
-                    onClose();   // Cierra modal
+                    onSuccess();
+                    onClose();
                   }}
-                  className="border border-black px-12 py-4 text-[10px] tracking-[4px] uppercase font-bold hover:bg-black hover:text-white transition-all duration-300"
+                  className="border border-black px-8 py-3 text-[9px] tracking-[0.25em] uppercase font-light hover:bg-black hover:text-white transition-all rounded-none"
                 >
                   Volver a la Tienda
                 </button>
@@ -1315,18 +1308,18 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
         {/* Footer Actions (Steps 1, 2, 3) */}
         {step !== 'success' && (
-          <div className="p-8 border-t border-black/5 bg-neutral-50/50 flex gap-4 flex-shrink-0">
+          <div className="p-6 border-t border-neutral-100 bg-white flex gap-3 flex-shrink-0">
             {step === 'review' ? (
               <button
                 onClick={handlePlaceOrder}
                 disabled={isLoading}
-                className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-3 disabled:opacity-30"
+                className="w-full bg-black text-white py-3.5 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-all flex items-center justify-center gap-2 rounded-none disabled:opacity-30"
               >
                 {isLoading ? (
-                  <Loader2 className="animate-spin" size={14} strokeWidth={1.5} />
+                  <Loader2 className="animate-spin" size={13} strokeWidth={1.2} />
                 ) : (
                   <>
-                    <Send size={13} /> Finalizar y Enviar Pedido
+                    <Send size={12} strokeWidth={1.2} /> Finalizar y Enviar Pedido
                   </>
                 )}
               </button>
@@ -1334,16 +1327,16 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
               <button
                 onClick={handleNextStep}
                 disabled={isCalculatingShipping || (step === 'delivery' && tipoEnvio === 'envio_sucursal' && sucursalLoading)}
-                className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-3 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-full bg-black text-white py-3.5 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-all flex items-center justify-center gap-2 rounded-none disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 {isCalculatingShipping ? (
                   <>
-                    <Loader2 className="animate-spin" size={14} strokeWidth={1.5} />
+                    <Loader2 className="animate-spin" size={13} strokeWidth={1.2} />
                     Cargando costo de envío...
                   </>
                 ) : (
                   <>
-                    Continuar <ArrowRight size={13} />
+                    Continuar <ArrowRight size={12} strokeWidth={1.2} />
                   </>
                 )}
               </button>

@@ -954,20 +954,20 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       `}</style>
 
       {/* ══════ HEADER ══════ */}
-      <header className="sticky top-0 z-[60] bg-white border-b border-black/5">
-        <div className="flex items-center justify-between px-3 sm:px-6 h-16 sm:h-20">
+      <header className="sticky top-0 z-[60] bg-white border-b border-black/10">
+        <div className="flex items-center justify-between px-4 sm:px-8 h-14 sm:h-16">
           <div className="flex items-center gap-4 sm:gap-6 shrink-0">
             <button onClick={() => setShowNav(true)} className="flex items-center gap-2 hover:opacity-60 transition-opacity">
-              <Menu size={20} strokeWidth={1.5} />
-              <span className="hidden sm:inline text-[11px] tracking-[3px] uppercase font-light">Menú</span>
+              <Menu size={18} strokeWidth={1.2} />
+              <span className="hidden sm:inline text-[10px] tracking-[0.25em] uppercase font-light">Menú</span>
             </button>
             <button onClick={() => setShowSearch(!showSearch)} className="hover:opacity-60 transition-opacity">
-              <Search size={19} strokeWidth={1.5} />
+              <Search size={17} strokeWidth={1.2} />
             </button>
           </div>
 
-          <Link to="/" className="flex-1 min-w-0 flex items-center justify-center text-center px-1 sm:px-2" onClick={() => { setCategory(''); setSearch(''); }}>
-            <h1 className="text-[clamp(13px,3.8vw,20px)] tracking-[clamp(3px,2vw,16px)] uppercase font-medium leading-none whitespace-nowrap transition-all duration-300 select-none">
+          <Link to="/" className="flex-1 min-w-0 flex items-center justify-center text-center px-2" onClick={() => { setCategory(''); setSearch(''); }}>
+            <h1 className="text-[13px] sm:text-[16px] md:text-[18px] tracking-[0.28em] uppercase font-light leading-none whitespace-nowrap transition-all duration-300 select-none text-black">
               {webSettings.storeName || 'EL ROPERO'}
             </h1>
           </Link>
@@ -978,9 +978,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               onClick={() => user ? setShowDashboard(true) : setShowAuthModal(true)} 
               className="hover:opacity-60 transition-opacity flex items-center gap-1.5"
             >
-              <User size={20} strokeWidth={1.5} />
+              <User size={18} strokeWidth={1.2} />
               {user && customerProfile?.nombre && (
-                <span className="hidden md:inline text-[9px] tracking-[2px] uppercase font-light truncate max-w-[100px]">
+                <span className="hidden md:inline text-[9px] tracking-[0.2em] uppercase font-light truncate max-w-[90px]">
                   {customerProfile.nombre.split(' ')[0]}
                 </span>
               )}
@@ -990,27 +990,27 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             <button 
               onClick={() => setShowBuyGiftCard(true)}
               className="hover:opacity-60 transition-opacity flex items-center gap-1.5"
+              title="Regalar Gift Card"
             >
-              <Gift size={20} strokeWidth={1.5} />
+              <Gift size={18} strokeWidth={1.2} />
             </button>
 
-            <button onClick={() => setShowCart(true)} className="relative hover:opacity-60 transition-opacity flex items-center gap-2">
-              <ShoppingBag size={20} strokeWidth={1.5} />
-              {cartCount > 0 && <span className="text-[11px] font-light">({cartCount})</span>}
+            <button onClick={() => setShowCart(true)} className="relative hover:opacity-60 transition-opacity flex items-center gap-1.5">
+              <ShoppingBag size={18} strokeWidth={1.2} />
+              {cartCount > 0 && <span className="text-[10px] font-light tracking-widest">({cartCount})</span>}
             </button>
           </div>
         </div>
 
         {/* Infinite Announcement Marquee */}
         {webSettings.announcementText && (
-          <div className="marquee-container">
-            <div className="marquee-content">
+          <div className="marquee-container bg-black text-white border-none py-1.5">
+            <div className="marquee-content text-[9px] tracking-[0.25em] font-light uppercase">
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
               
-              {/* Duplicate to ensure seamless looping */}
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
@@ -1020,15 +1020,15 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         )}
 
         {showSearch && (
-          <div className="absolute top-full left-0 w-full bg-white border-b border-black/5 px-6 py-4 animate-in slide-in-from-top-2 duration-200">
-            <div className="max-w-xl mx-auto relative">
+          <div className="absolute top-full left-0 w-full bg-white border-b border-black/10 px-6 py-3.5 animate-in slide-in-from-top-2 duration-200">
+            <div className="max-w-md mx-auto relative">
               <input
                 autoFocus type="text" value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="BUSCAR PRENDA..."
-                className="w-full text-[14px] tracking-[4px] uppercase bg-transparent border-b border-black/10 py-2 outline-none placeholder:text-black/20"
+                className="w-full text-[11px] tracking-[0.25em] uppercase bg-transparent border-b border-black/20 py-2 outline-none placeholder:text-neutral-400 font-light"
               />
-              <button onClick={() => { setShowSearch(false); setSearch(''); }} className="absolute right-0 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"><X size={18} /></button>
+              <button onClick={() => { setShowSearch(false); setSearch(''); }} className="absolute right-0 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"><X size={16} strokeWidth={1.2} /></button>
             </div>
           </div>
         )}
@@ -1052,31 +1052,31 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       {showNav && (
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[70] transition-opacity duration-300" onClick={() => setShowNav(false)} />
-          <div className="fixed top-0 left-0 h-full w-[80vw] max-w-[320px] sm:w-[350px] sm:max-w-none bg-white z-[80] p-10 flex flex-col drawer-slide-in-left shadow-2xl">
-            <button onClick={() => setShowNav(false)} className="self-end mb-16 opacity-40 hover:opacity-100 p-1.5 hover:bg-neutral-50 rounded-full transition-all"><X size={20} strokeWidth={1.5} /></button>
-            <nav className="space-y-6 overflow-y-auto sidebar-scrollbar pb-10 pr-2">
-              <p className="text-[10px] tracking-[6px] uppercase text-black/40 font-semibold mb-8 border-b border-black/10 pb-4">Secciones</p>
+          <div className="fixed top-0 left-0 h-full w-[80vw] max-w-[300px] sm:w-[320px] bg-white z-[80] p-8 flex flex-col drawer-slide-in-left shadow-xl border-r border-black/10">
+            <button onClick={() => setShowNav(false)} className="self-end mb-12 opacity-40 hover:opacity-100 p-1 rounded-none transition-all"><X size={18} strokeWidth={1.2} /></button>
+            <nav className="space-y-5 overflow-y-auto sidebar-scrollbar pb-10 pr-2">
+              <p className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 font-light mb-6 border-b border-black/10 pb-3">Colección</p>
               
               <button onClick={() => { setCategory(''); setShowNav(false); }}
-                className={`block w-full text-left text-[18px] sm:text-[22px] tracking-[6px] uppercase transition-all duration-300 ${!category ? 'font-medium text-black translate-x-2' : 'font-light text-black/50 hover:text-black hover:translate-x-2'}`}>
+                className={`block w-full text-left text-[12px] sm:text-[14px] tracking-[0.22em] uppercase transition-all duration-200 ${!category ? 'font-normal text-black' : 'font-light text-neutral-500 hover:text-black'}`}>
                 Ver Todo
               </button>
 
               <button onClick={() => { setCategory('SALE'); setShowNav(false); }}
-                className={`block w-full text-left text-[18px] sm:text-[22px] tracking-[6px] uppercase transition-all duration-300 ${category === 'SALE' ? 'font-medium text-red-600 translate-x-2' : 'font-light text-red-500/70 hover:text-red-600 hover:translate-x-2'}`}>
+                className={`block w-full text-left text-[12px] sm:text-[14px] tracking-[0.22em] uppercase transition-all duration-200 ${category === 'SALE' ? 'font-normal text-black underline underline-offset-4' : 'font-light text-neutral-500 hover:text-black'}`}>
                 SALE
               </button>
 
               {sections.map(s => (
                 <button key={s} onClick={() => { setCategory(s); setShowNav(false); }}
-                  className={`block w-full text-left text-[18px] sm:text-[22px] tracking-[6px] uppercase transition-all duration-300 ${category === s ? 'font-medium text-black translate-x-2' : 'font-light text-black/50 hover:text-black hover:translate-x-2'}`}>
+                  className={`block w-full text-left text-[12px] sm:text-[14px] tracking-[0.22em] uppercase transition-all duration-200 ${category === s ? 'font-normal text-black' : 'font-light text-neutral-500 hover:text-black'}`}>
                   {s}
                 </button>
               ))}
 
               <button onClick={() => { setShowBuyGiftCard(true); setShowNav(false); }}
-                className={`block w-full text-left text-[18px] sm:text-[22px] tracking-[6px] uppercase transition-all duration-300 font-light text-black/50 hover:text-black hover:translate-x-2 mt-6 border-t border-black/10 pt-6 flex items-center gap-2`}>
-                Regalar Gift Card <Gift size={18} />
+                className={`block w-full text-left text-[11px] tracking-[0.22em] uppercase transition-all duration-200 font-light text-neutral-500 hover:text-black mt-6 border-t border-black/10 pt-6 flex items-center gap-2`}>
+                Gift Card <Gift size={16} strokeWidth={1.2} />
               </button>
             </nav>
           </div>
@@ -1087,13 +1087,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       {webSettings.storeHidden ? (
         <section className="w-full h-[70vh] flex flex-col items-center justify-center text-center px-6">
           <div className="max-w-md mx-auto space-y-6">
-            <div className="w-16 h-16 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Loader2 size={24} className="text-black/30 animate-spin" />
+            <div className="w-12 h-12 border border-black/20 rounded-none flex items-center justify-center mx-auto mb-4">
+              <Loader2 size={20} className="text-black/40 animate-spin" />
             </div>
-            <h2 className="text-[20px] sm:text-[24px] tracking-[10px] uppercase font-medium leading-tight">
+            <h2 className="text-base sm:text-lg tracking-[0.25em] uppercase font-light leading-tight">
               TIENDA EN MANTENIMIENTO
             </h2>
-            <p className="text-[12px] sm:text-[14px] font-light leading-relaxed text-black/60">
+            <p className="text-[11px] font-light leading-relaxed text-neutral-500">
               Estamos actualizando nuestro catálogo o realizando tareas de mantenimiento. Por favor, vuelve más tarde.
             </p>
             {(webSettings.contactWhatsapp || '5492346685836') && (
@@ -1101,7 +1101,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 href={`https://wa.me/${(webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '')}?text=${encodeURIComponent('Hola El Ropero! Desde la pagina web me surgio una consulta sobre ...')}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block mt-8 text-[11px] tracking-[3px] uppercase font-medium border-b border-black pb-1 hover:opacity-50 transition-opacity"
+                className="inline-block mt-6 text-[10px] tracking-[0.25em] uppercase font-light border-b border-black pb-0.5 hover:opacity-50 transition-opacity"
               >
                 CONTACTANOS POR WHATSAPP
               </a>
@@ -1112,12 +1112,12 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         <>
           {!category && !search && (
             <section className="w-full">
-              <div className="relative w-full h-[70vh] sm:h-[85vh] overflow-hidden bg-neutral-100">
+              <div className="relative w-full h-[65vh] sm:h-[80vh] overflow-hidden bg-neutral-100">
             <img src={webSettings.heroImageUrl || '/assets/hero.png'} alt={webSettings.heroTitle || 'Portada'} className="w-full h-full object-cover grayscale brightness-95 contrast-105"/>
-            <div className="absolute inset-0 flex flex-col items-center justify-end pb-20 sm:pb-32 px-6 text-center text-white">
-              <p className="text-[11px] tracking-[6px] uppercase font-light mb-4 drop-shadow-md">{webSettings.heroSubtitle || 'Nuevo Ingreso'}</p>
-              <h2 className="text-[32px] sm:text-[52px] tracking-[12px] sm:tracking-[24px] uppercase font-light leading-none drop-shadow-lg mb-8">{webSettings.heroTitle || ''}</h2>
-              <button onClick={() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' })} className="bg-white text-black px-10 py-4 text-[11px] tracking-[4px] uppercase font-medium hover:bg-black hover:text-white transition-all duration-500">Explorar</button>
+            <div className="absolute inset-0 flex flex-col items-center justify-end pb-16 sm:pb-24 px-6 text-center text-white bg-gradient-to-t from-black/40 via-transparent to-transparent">
+              <p className="text-[10px] tracking-[0.3em] uppercase font-light mb-3">{webSettings.heroSubtitle || 'Nuevo Ingreso'}</p>
+              <h2 className="text-xl sm:text-3xl tracking-[0.25em] uppercase font-light leading-none mb-6">{webSettings.heroTitle || ''}</h2>
+              <button onClick={() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' })} className="bg-white text-black px-8 py-3 text-[10px] tracking-[0.25em] uppercase font-light rounded-none hover:bg-black hover:text-white transition-all duration-300">Explorar</button>
             </div>
           </div>
         </section>
@@ -1125,17 +1125,17 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
       {/* ══════ GIFT CARD BANNER ══════ */}
       {!category && !search && !webSettings.storeHidden && (
-        <section className="w-full bg-[#111111] text-[#F5F1EB] py-16 px-6 flex flex-col items-center justify-center text-center">
-          <Gift size={40} strokeWidth={1} className="text-[#C9B8A8] mb-6" />
-          <h3 className="text-[20px] sm:text-[28px] tracking-[8px] uppercase font-light mb-4">
+        <section className="w-full bg-neutral-950 text-white py-14 px-6 flex flex-col items-center justify-center text-center">
+          <Gift size={28} strokeWidth={1} className="text-neutral-400 mb-4" />
+          <h3 className="text-base sm:text-xl tracking-[0.25em] uppercase font-light mb-3">
             El Regalo Perfecto
           </h3>
-          <p className="text-[13px] sm:text-[15px] font-light text-[#F5F1EB]/70 max-w-lg mb-10 leading-relaxed">
+          <p className="text-[11px] font-light text-neutral-400 max-w-md mb-8 leading-relaxed">
             Sorprendé a quien quieras con una Gift Card digital. Elegí el monto, escribí una dedicatoria y se la enviamos por mail al instante.
           </p>
           <button 
             onClick={() => setShowBuyGiftCard(true)}
-            className="border border-[#C9B8A8] text-[#C9B8A8] px-10 py-4 text-[12px] tracking-[4px] uppercase font-semibold hover:bg-[#C9B8A8] hover:text-[#111111] transition-all"
+            className="border border-white text-white px-8 py-2.5 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-white hover:text-black transition-all rounded-none"
           >
             Regalar Gift Card
           </button>
@@ -1143,12 +1143,12 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       )}
 
       {/* ══════ COLLECTION ══════ */}
-      <div id="catalogo" className="pt-16 sm:pt-24 px-6 sm:px-12 lg:px-16 flex flex-col items-center w-full">
+      <div id="catalogo" className="pt-12 sm:pt-20 px-4 sm:px-10 lg:px-14 flex flex-col items-center w-full">
         {isLoading ? (
-          <div className="flex items-center justify-center py-40"><div className="w-8 h-8 rounded-full border border-black/15 border-t-black animate-spin"></div></div>
+          <div className="flex items-center justify-center py-32"><div className="w-6 h-6 border border-black/20 border-t-black animate-spin"></div></div>
         ) : filteredItems.length === 0 ? (
-          <div className="text-center py-40">
-            <p className="text-[14px] tracking-[3px] uppercase text-black/50 font-medium">
+          <div className="text-center py-32">
+            <p className="text-[11px] tracking-[0.25em] uppercase text-neutral-400 font-light">
               {category ? `Sin stock disponible por el momento en ${category}` : 'No se han encontrado prendas'}
             </p>
           </div>
@@ -1163,16 +1163,16 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 if (secItems.length === 0) return null;
                 const secDisc = webSettings.discountBySection?.[sec] || 0;
                 return (
-                  <section key={sec} className="mb-32">
-                    <div className="px-6 mb-16 flex flex-col items-center text-center">
-                      <div className="flex items-center justify-center gap-6 w-full max-w-md mx-auto">
+                  <section key={sec} className="mb-24 sm:mb-32">
+                    <div className="px-4 mb-10 flex flex-col items-center text-center">
+                      <div className="flex items-center justify-center gap-6 w-full max-w-xs mx-auto">
                         <div className="h-[1px] bg-black/10 flex-1"></div>
-                        <h2 className="text-[20px] sm:text-[28px] tracking-[10px] uppercase font-light text-black/90">{sec}</h2>
+                        <h2 className="text-xs sm:text-sm tracking-[0.25em] uppercase font-light text-neutral-900">{sec}</h2>
                         <div className="h-[1px] bg-black/10 flex-1"></div>
                       </div>
-                      {secDisc > 0 && <span className="mt-6 inline-block bg-black text-white px-4 py-1.5 text-[10px] tracking-[4px] uppercase">-{secDisc}% OFF</span>}
+                      {secDisc > 0 && <span className="mt-3 inline-block bg-black text-white px-3 py-1 text-[9px] tracking-[0.2em] uppercase font-light rounded-none">-{secDisc}% OFF</span>}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-16 sm:gap-y-24 gap-x-6 sm:gap-x-8">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-10 sm:gap-y-16 gap-x-3 sm:gap-x-6">
                       {secItems.map((item, idx) => <ProductCard key={item.id} item={item} idx={idx} onOpen={openQuickView} addedFeedback={addedFeedback} onAddToCart={addToCart} discount={getDiscount(item)} isFavorited={isFavorited(item.id)} onToggleFavorite={handleToggleFavorite}/>)}
                     </div>
                   </section>
@@ -1226,39 +1226,38 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
       {/* ══════ PRODUCT MODAL ══════ */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-10 animate-in fade-in duration-300">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSelectedProduct(null)} />
-          <div className="relative bg-white w-full max-w-5xl h-full sm:h-[90vh] flex flex-col sm:flex-row overflow-hidden transition-all sm:rounded-2xl shadow-2xl">
-            <button onClick={() => setSelectedProduct(null)} className="absolute top-6 right-6 z-10 opacity-40 hover:opacity-100 p-2 bg-white/80 rounded-full shadow-md"><X size={20} strokeWidth={1.5} /></button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setSelectedProduct(null)} />
+          <div className="relative bg-white w-full max-w-4xl h-full sm:h-[85vh] flex flex-col sm:flex-row overflow-hidden transition-all rounded-none shadow-2xl border border-black/10">
+            <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 z-10 opacity-60 hover:opacity-100 p-2 bg-white/90 rounded-none border border-black/10"><X size={16} strokeWidth={1.2} /></button>
 
             {/* Left: Gallery */}
-            <div className="w-full sm:w-[60%] h-[40vh] sm:h-full bg-neutral-50 relative group">
+            <div className="w-full sm:w-[55%] h-[40vh] sm:h-full bg-neutral-50 relative group">
               {selectedProduct.imagenes && selectedProduct.imagenes.length > 0 ? (
                 <>
-                  <img src={selectedProduct.imagenes[modalImgIdx]} alt="" className="w-full h-full object-cover transition-all duration-500"/>
+                  <img src={selectedProduct.imagenes[modalImgIdx]} alt="" className="w-full h-full object-cover transition-all duration-300"/>
                   {selectedProduct.imagenes.length > 1 && (
-                    <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setModalImgIdx(prev => (prev - 1 + selectedProduct.imagenes.length) % selectedProduct.imagenes.length)} className="bg-white/80 p-2 rounded-full shadow-lg"><ChevronLeft size={20}/></button>
-                      <button onClick={() => setModalImgIdx(prev => (prev + 1) % selectedProduct.imagenes.length)} className="bg-white/80 p-2 rounded-full shadow-lg"><ChevronRight size={20}/></button>
+                    <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => setModalImgIdx(prev => (prev - 1 + selectedProduct.imagenes.length) % selectedProduct.imagenes.length)} className="bg-white/90 p-1.5 rounded-none border border-black/10"><ChevronLeft size={16}/></button>
+                      <button onClick={() => setModalImgIdx(prev => (prev + 1) % selectedProduct.imagenes.length)} className="bg-white/90 p-1.5 rounded-none border border-black/10"><ChevronRight size={16}/></button>
                     </div>
                   )}
-                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2">
-                    {Array.isArray(selectedProduct.imagenes) && selectedProduct.imagenes.map((img, i) => <div key={`img-${i}`} className={`w-1.5 h-1.5 rounded-full transition-all ${i === modalImgIdx ? 'bg-black w-4' : 'bg-black/20'}`}/>)}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
+                    {Array.isArray(selectedProduct.imagenes) && selectedProduct.imagenes.map((img, i) => <div key={`img-${i}`} className={`w-1.5 h-1.5 transition-all ${i === modalImgIdx ? 'bg-black w-3' : 'bg-black/20'}`}/>)}
                   </div>
                 </>
               ) : (
-                <div className="w-full h-full flex items-center justify-center p-12 text-center">
-                  <p className="text-[40px] sm:text-[64px] font-extralight tracking-tighter uppercase text-black/[0.05] leading-none">{selectedProduct.descripcion}</p>
+                <div className="w-full h-full flex items-center justify-center p-8 text-center">
+                  <p className="text-xl sm:text-2xl font-light tracking-[0.2em] uppercase text-neutral-300 leading-none">{selectedProduct.descripcion}</p>
                 </div>
               )}
             </div>
 
             {/* Right: Info */}
-            <div className="w-full sm:w-[40%] flex-1 p-6 sm:p-12 flex flex-col overflow-y-auto no-scrollbar">
-              <p className="text-[11px] tracking-[3px] uppercase text-black/50 font-medium mb-2">{selectedProduct.categoria}</p>
-              <h2 className="text-[20px] sm:text-[28px] tracking-[3px] uppercase font-semibold mb-6 leading-tight text-black">{selectedProduct.descripcion}</h2>
+            <div className="w-full sm:w-[45%] flex-1 p-6 sm:p-8 flex flex-col overflow-y-auto no-scrollbar bg-white">
+              <p className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 font-light mb-1.5">{selectedProduct.categoria}</p>
+              <h2 className="text-xs sm:text-sm tracking-[0.2em] uppercase font-normal mb-4 leading-relaxed text-black">{selectedProduct.descripcion}</h2>
 
-              
               {(() => {
                 const disc = getDiscount(selectedProduct);
                 const efDisc = getDiscountedPrice(selectedProduct.ventaEfectivo, disc, true);
@@ -1266,51 +1265,35 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 const cuotas3 = Math.round(tarDisc / 3);
                 const cuotas6 = Math.round(tarDisc / 6);
                 return (
-                  <div className="space-y-3 mb-8 fade-in">
+                  <div className="space-y-2 mb-6">
                     {disc > 0 && (
-                      <div className="inline-flex items-center gap-1.5 bg-rose-50 border border-rose-200 text-rose-600 px-2.5 py-1 rounded-full mb-1 shadow-sm">
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                        <span className="text-[9px] tracking-[2px] uppercase font-bold">-{disc}% OFF SALE</span>
+                      <div className="inline-flex items-center gap-1.5 bg-black text-white px-2 py-0.5 text-[8px] tracking-[0.2em] uppercase font-light rounded-none">
+                        <span>-{disc}% OFF SALE</span>
                       </div>
                     )}
                     
                     {/* PRECIO EFECTIVO */}
-                    <div className="rounded-xl bg-white border border-black/10 p-3.5 transition-all hover:border-black/20 shadow-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex-1 min-w-[140px]">
-                          <p className="text-[9px] sm:text-[10px] tracking-[2px] uppercase text-black/50 font-bold mb-2">Transferencia</p>
-                          <div className="flex flex-wrap gap-2">
-                            <div className="flex items-center bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1">
-                              <span className="text-[10px] uppercase tracking-[1px] font-bold text-emerald-600">{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
-                            </div>
-                          </div>
+                    <div className="border border-neutral-200 p-3 bg-white">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light">Transferencia (-{DESCUENTO_BASE_TRANSFERENCIA}%)</p>
                         </div>
                         <div className="text-right">
-                          {efDisc < selectedProduct.ventaEfectivo && <span className="text-[11px] font-medium line-through text-black/30 block mb-0.5">${selectedProduct.ventaEfectivo.toLocaleString()}</span>}
-                          <span className={`text-[18px] sm:text-[22px] font-bold tracking-tight ${efDisc < selectedProduct.ventaEfectivo ? 'text-rose-600' : 'text-black/80'}`}>${efDisc.toLocaleString()}</span>
+                          {efDisc < selectedProduct.ventaEfectivo && <span className="text-[10px] font-light line-through text-neutral-400 block">${selectedProduct.ventaEfectivo.toLocaleString()}</span>}
+                          <span className="text-sm font-normal tracking-wide text-black">${efDisc.toLocaleString()}</span>
                         </div>
                       </div>
                     </div>
 
                     {/* PRECIO TARJETA */}
-                    <div className="rounded-xl bg-white border border-black/10 p-3.5 transition-all hover:border-black/20 shadow-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex-1 min-w-[140px]">
-                          <p className="text-[9px] sm:text-[10px] tracking-[2px] uppercase text-black/50 font-bold mb-2">Tarjetas / Otros</p>
-                          <div className="flex flex-wrap gap-2">
-                            <div className="flex items-center gap-1.5 bg-neutral-50 border border-black/5 rounded-lg pr-2 pl-1 py-1">
-                              <span className="text-[9px] uppercase tracking-[1px] font-bold bg-black text-white px-1.5 py-0.5 rounded-md">3x</span>
-                              <span className="text-[11px] font-semibold text-black">${cuotas3.toLocaleString()}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 bg-neutral-50 border border-black/5 rounded-lg pr-2 pl-1 py-1">
-                              <span className="text-[9px] uppercase tracking-[1px] font-bold bg-black text-white px-1.5 py-0.5 rounded-md">6x</span>
-                              <span className="text-[11px] font-semibold text-black">${cuotas6.toLocaleString()}</span>
-                            </div>
-                          </div>
+                    <div className="border border-neutral-200 p-3 bg-white">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light">Tarjeta (3x ${cuotas3.toLocaleString()} ó 6x ${cuotas6.toLocaleString()})</p>
                         </div>
                         <div className="text-right">
-                          {tarDisc < selectedProduct.ventaTarjeta && <span className="text-[11px] font-medium line-through text-black/30 block mb-0.5">${selectedProduct.ventaTarjeta.toLocaleString()}</span>}
-                          <span className={`text-[18px] sm:text-[22px] font-bold tracking-tight ${tarDisc < selectedProduct.ventaTarjeta ? 'text-rose-600' : 'text-black/80'}`}>${tarDisc.toLocaleString()}</span>
+                          {tarDisc < selectedProduct.ventaTarjeta && <span className="text-[10px] font-light line-through text-neutral-400 block">${selectedProduct.ventaTarjeta.toLocaleString()}</span>}
+                          <span className="text-sm font-normal tracking-wide text-black">${tarDisc.toLocaleString()}</span>
                         </div>
                       </div>
                     </div>
@@ -1318,53 +1301,47 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 );
               })()}
 
-              {/* Talles (Zara Style) */}
+              {/* Talles */}
               {selectedProduct.talles && selectedProduct.talles.length > 0 && (
-                <div className="mb-7">
-                  <div className="flex items-center justify-between mb-3 border-b border-black/5 pb-2">
-                    <p className="text-[11px] tracking-[2.5px] uppercase text-black font-semibold">
-                      Talle <span className="font-light text-black/50 ml-1">— {modalTalle || 'Seleccionar'}</span>
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-2 border-b border-neutral-100 pb-1.5">
+                    <p className="text-[10px] tracking-[0.2em] uppercase text-black font-light">
+                      Talle <span className="text-neutral-400 ml-1">— {modalTalle || 'Seleccionar'}</span>
                     </p>
                     {selectedProduct.medidas && (
                       <button
                         type="button"
                         onClick={() => setShowSizeGuideModal(true)}
-                        className="text-[10px] tracking-[1.5px] uppercase text-black/60 hover:text-black underline underline-offset-4 flex items-center gap-1 font-medium transition-colors"
+                        className="text-[9px] tracking-[0.2em] uppercase text-neutral-500 hover:text-black underline underline-offset-4 flex items-center gap-1 font-light"
                       >
-                        <Ruler size={13} strokeWidth={1.5} />
+                        <Ruler size={11} strokeWidth={1.2} />
                         Guía de talles
                       </button>
                     )}
                   </div>
                   
-                  <div className="flex flex-wrap gap-2.5 justify-start">
+                  <div className="flex flex-wrap gap-2 justify-start">
                     {Array.isArray(selectedProduct.talles) && Array.from(new Set(selectedProduct.talles as string[])).map((t, idx) => {
-                      let isOutOfStock = false;
-                      if (selectedProduct.stockPorVariante && modalColor) {
-                        isOutOfStock = getVariantStock(selectedProduct, t, modalColor) <= 0;
-                      } else if (selectedProduct.stockPorVariante) {
-                        isOutOfStock = !selectedProduct.colores?.some(c => getVariantStock(selectedProduct, t, c) > 0);
-                      }
-                      
                       const isSelected = modalTalle === t;
                       
                       return (
                         <button 
                           key={`${t}-${idx}`} 
-                          disabled={isOutOfStock}
+                          disabled={false}
                           onClick={() => {
                             setModalTalle(t);
-                            if (selectedProduct.colores && modalColor && getVariantStock(selectedProduct, t, modalColor) <= 0) {
-                              const nextColor = selectedProduct.colores.find(c => getVariantStock(selectedProduct, t, c) > 0);
-                              if (nextColor) setModalColor(nextColor);
+                            if (selectedProduct.colores && selectedProduct.colores.length > 0) {
+                              const isCurrentColorAvailable = modalColor && getVariantStock(selectedProduct, t, modalColor) > 0;
+                              if (!isCurrentColorAvailable) {
+                                const nextColor = selectedProduct.colores.find(c => getVariantStock(selectedProduct, t, c) > 0);
+                                setModalColor(nextColor || '');
+                              }
                             }
                           }} 
-                          className={`min-w-[50px] h-11 px-3.5 text-[11px] tracking-[2px] uppercase font-semibold transition-all duration-200 flex items-center justify-center relative ${
+                          className={`w-9 h-9 text-[10px] tracking-[0.1em] uppercase font-light transition-all flex items-center justify-center rounded-none ${
                             isSelected 
-                              ? 'bg-black text-white border border-black shadow-sm scale-[1.02]' 
-                              : isOutOfStock
-                                ? 'bg-neutral-50 border border-neutral-200/60 text-neutral-300 opacity-40 cursor-not-allowed line-through'
-                                : 'bg-white border border-neutral-300 text-black hover:border-black hover:bg-neutral-50'
+                              ? 'bg-black text-white border border-black' 
+                              : 'bg-white border border-neutral-300 text-black hover:border-black'
                           }`}
                         >
                           {t}
@@ -1375,33 +1352,21 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 </div>
               )}
 
-              {/* Colores (Zara Style Swatches) */}
+              {/* Colores */}
               {selectedProduct.colores && selectedProduct.colores.length > 0 && (
-                <div className="mb-7">
-                  <div className="flex items-center justify-between mb-3 border-b border-black/5 pb-2">
-                    <p className="text-[11px] tracking-[2.5px] uppercase text-black font-semibold">
-                      Color <span className="font-light text-black/50 ml-1">— {modalColor || 'Seleccionar'}</span>
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-2 border-b border-neutral-100 pb-1.5">
+                    <p className="text-[10px] tracking-[0.2em] uppercase text-black font-light">
+                      Color <span className="text-neutral-400 ml-1">— {modalColor || 'Seleccionar'}</span>
                     </p>
-                    {(() => {
-                      const currentStock = modalColor ? (modalTalle ? getVariantStock(selectedProduct, modalTalle, modalColor) : getVariantStock(selectedProduct, undefined, modalColor)) : 0;
-                      if (currentStock > 0 && currentStock <= 2) {
-                        return (
-                          <span className="text-[9px] tracking-[1.5px] uppercase font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-sm">
-                            Pocas unidades
-                          </span>
-                        );
-                      }
-                      return null;
-                    })()}
                   </div>
 
-                  <div className="flex flex-wrap gap-2.5 justify-start">
+                  <div className="flex flex-wrap gap-2 justify-start">
                     {Array.isArray(selectedProduct.colores) && Array.from(new Set(selectedProduct.colores as string[])).map((c, idx) => {
                       const colorStock = modalTalle ? getVariantStock(selectedProduct, modalTalle, c) : getVariantStock(selectedProduct, undefined, c);
                       const hasStockTracking = selectedProduct.stockPorVariante !== undefined || selectedProduct.coloresStock !== undefined;
-                      const isOutOfStock = hasStockTracking && colorStock <= 0;
+                      const isOutOfStock = modalTalle ? (hasStockTracking && colorStock <= 0) : (hasStockTracking && colorStock <= 0);
                       const isSel = modalColor === c;
-                      const hex = getColorHex(c);
                       
                       return (
                         <button 
@@ -1409,24 +1374,16 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                           disabled={isOutOfStock}
                           onClick={() => {
                             setModalColor(c);
-                            if (selectedProduct.talles && modalTalle && getVariantStock(selectedProduct, modalTalle, c) <= 0) {
-                              const nextTalle = selectedProduct.talles.find(t => getVariantStock(selectedProduct, t, c) > 0);
-                              if (nextTalle) setModalTalle(nextTalle);
-                            }
                           }} 
-                          className={`px-4 py-2.5 text-[10px] tracking-[2px] uppercase transition-all duration-200 flex items-center gap-2.5 font-semibold ${
+                          className={`px-3 py-1.5 text-[9px] tracking-[0.18em] uppercase transition-all font-light rounded-none border ${
                             isSel 
-                              ? 'bg-black text-white border border-black shadow-sm ring-1 ring-black scale-[1.02]' 
+                              ? 'bg-black text-white border-black' 
                               : isOutOfStock
-                                ? 'bg-neutral-50 border border-neutral-200/60 text-neutral-300 opacity-40 cursor-not-allowed line-through'
-                                : 'bg-white border border-neutral-300 text-black hover:border-black hover:bg-neutral-50'
+                                ? 'bg-neutral-50 border-neutral-200 text-neutral-300 opacity-40 cursor-not-allowed line-through'
+                                : 'bg-white border-neutral-300 text-black hover:border-black'
                           }`}
                         >
-                          <span 
-                            className={`w-4 h-4 rounded-full flex-shrink-0 transition-transform ${isSel ? 'ring-2 ring-white/90 shadow-sm' : 'border border-black/15'}`}
-                            style={{ background: hex }}
-                          />
-                          <span>{c}</span>
+                          {c}
                         </button>
                       );
                     })}
@@ -1434,17 +1391,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 </div>
               )}
 
-              {/* Medidas y Calce (Si no hay botón de Guía de talles arriba) */}
-              {selectedProduct.medidas && !selectedProduct.talles?.length && (
-                <div className="mb-7 p-4 bg-neutral-50 border border-black/5 rounded-lg">
-                  <p className="text-[11px] tracking-[2px] uppercase text-black font-semibold mb-1 flex items-center gap-2">
-                    <Ruler size={13}/> Medidas y Calce
-                  </p>
-                  <p className="text-[12px] tracking-[1px] leading-relaxed text-black/70 uppercase whitespace-pre-line">{selectedProduct.medidas}</p>
-                </div>
-              )}
-
-              <div className="mt-auto space-y-3">
+              <div className="mt-auto space-y-2 pt-4">
                 {(() => {
                   const needsTalle = selectedProduct.talles && selectedProduct.talles.length > 0;
                   const needsColor = selectedProduct.colores && selectedProduct.colores.length > 0;
@@ -1453,13 +1400,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                     <button 
                       disabled={!canAdd}
                       onClick={() => { addToCart(selectedProduct, modalTalle, modalColor); setSelectedProduct(null); }} 
-                      className={`w-full py-5 text-[13px] tracking-[4px] uppercase font-semibold transition-colors ${canAdd ? 'bg-black text-white hover:bg-neutral-800' : 'bg-black/10 text-black/40 cursor-not-allowed'}`}
+                      className={`w-full py-3 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none ${canAdd ? 'bg-black text-white hover:bg-neutral-800' : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'}`}
                     >
                       {canAdd ? 'Añadir al carrito' : 'Selecciona opciones'}
                     </button>
                   );
                 })()}
-                <p className="text-[11px] tracking-[2px] uppercase text-black/40 font-medium text-center">Ref: {selectedProduct.sku}</p>
+                <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light text-center">Ref: {selectedProduct.sku}</p>
               </div>
             </div>
           </div>
@@ -1469,15 +1416,15 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       {/* ══════ CART ══════ */}
       {showCart && (
         <>
-          <div className="fixed inset-0 bg-black/20 z-[110]" onClick={() => setShowCart(false)} />
-          <div className="fixed top-0 right-0 h-full w-full sm:w-[450px] bg-white z-[120] shadow-2xl flex flex-col drawer-slide-in">
-            <div className="flex items-center justify-between px-8 h-20 border-b border-black/5">
-              <span className="text-[14px] tracking-[4px] uppercase font-semibold">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-xs z-[110]" onClick={() => setShowCart(false)} />
+          <div className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white z-[120] shadow-xl flex flex-col drawer-slide-in border-l border-black/10">
+            <div className="flex items-center justify-between px-6 h-16 border-b border-black/10">
+              <span className="text-[11px] tracking-[0.25em] uppercase font-light text-black">
                 {exchangeSession ? `Cambio — nuevas (${cartCount})` : `Carrito (${cartCount})`}
               </span>
-              <button onClick={() => setShowCart(false)} className="opacity-40 hover:opacity-100"><X size={20} strokeWidth={1} /></button>
+              <button onClick={() => setShowCart(false)} className="opacity-40 hover:opacity-100"><X size={18} strokeWidth={1.2} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto px-8 divide-y divide-black/5">
+            <div className="flex-1 overflow-y-auto px-6 divide-y divide-neutral-100">
               {cart.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center gap-4 text-black/30 px-4 text-center">
                   <ShoppingBag size={44} strokeWidth={1} />
@@ -1523,70 +1470,70 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               )}
             </div>
             {cart.length > 0 && !exchangeSession && (
-              <div className="p-6 border-t border-black/5 space-y-4 bg-white flex-shrink-0">
+              <div className="p-6 border-t border-black/10 space-y-4 bg-white flex-shrink-0">
                 {/* Selector de Medio de Pago */}
-                <div className="space-y-2">
-                  <p className="text-[9px] tracking-[2px] uppercase font-bold text-black/30">Medio de Pago</p>
+                <div className="space-y-1.5">
+                  <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-400">Medio de Pago</p>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('transferencia')}
-                      className={`relative p-3.5 border text-left flex flex-col gap-1 rounded-2xl transition-all duration-200 ${
+                      className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
                         paymentMethod === 'transferencia'
-                          ? 'border-black bg-black text-white shadow-lg scale-[1.02]'
-                          : 'border-black/10 bg-white hover:border-black/30 hover:shadow-sm'
+                          ? 'border-black bg-black text-white'
+                          : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                       }`}
                     >
-                      <span className={`text-[9px] tracking-[1.5px] uppercase font-bold ${paymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
-                      <span className={`text-[9px] font-bold ${paymentMethod === 'transferencia' ? 'text-emerald-300' : 'text-emerald-600'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
+                      <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${paymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
+                      <span className={`text-[8px] font-light uppercase tracking-wider ${paymentMethod === 'transferencia' ? 'text-white/80' : 'text-neutral-500'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('tarjeta')}
-                      className={`relative p-3.5 border text-left flex flex-col gap-1 rounded-2xl transition-all duration-200 ${
+                      className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
                         paymentMethod === 'tarjeta'
-                          ? 'border-black bg-black text-white shadow-lg scale-[1.02]'
-                          : 'border-black/10 bg-white hover:border-black/30 hover:shadow-sm'
+                          ? 'border-black bg-black text-white'
+                          : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                       }`}
                     >
-                      <span className={`text-[9px] tracking-[1.5px] uppercase font-bold ${paymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Tarjeta</span>
-                      <span className={`text-[9px] font-medium ${paymentMethod === 'tarjeta' ? 'text-white/50' : 'text-black/40'}`}>Precio lista</span>
+                      <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${paymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Tarjeta</span>
+                      <span className={`text-[8px] font-light uppercase tracking-wider ${paymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Precio lista</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Gift Card Coupon Accordion inside Cart */}
-                <div className="border border-black/8 rounded-2xl overflow-hidden bg-neutral-50/60">
+                <div className="border border-neutral-200 rounded-none overflow-hidden bg-white">
                   <button
                     type="button"
                     onClick={() => setShowCartGiftInput(!showCartGiftInput)}
-                    className="w-full px-4 py-3 flex items-center justify-between text-[9px] tracking-[2px] uppercase font-bold text-black/70 hover:bg-black/5 transition-all"
+                    className="w-full px-3 py-2.5 flex items-center justify-between text-[9px] tracking-[0.2em] uppercase font-light text-neutral-600 hover:bg-neutral-50 transition-all"
                   >
                     <span className="flex items-center gap-2">
-                      <Gift size={11} strokeWidth={1.5} /> ¿Tenés una Gift Card?
+                      <Gift size={11} strokeWidth={1.2} /> ¿Tenés una Gift Card?
                     </span>
-                    <ChevronDown size={12} strokeWidth={1.5} className={`text-black/30 transition-transform duration-200 ${showCartGiftInput ? 'rotate-180' : ''}`} />
+                    <ChevronDown size={12} strokeWidth={1.2} className={`text-neutral-400 transition-transform duration-200 ${showCartGiftInput ? 'rotate-180' : ''}`} />
                   </button>
 
                   {showCartGiftInput && (
-                    <div className="p-4 border-t border-black/5 space-y-3 bg-[#F5F1EB]/10 animate-in fade-in duration-300">
+                    <div className="p-3 border-t border-neutral-200 space-y-2 bg-neutral-50 animate-in fade-in duration-200">
                       {appliedGiftCard ? (
-                        <div className="flex items-center justify-between bg-emerald-50 border border-emerald-150 p-3 rounded-lg">
+                        <div className="flex items-center justify-between bg-white border border-black/10 p-2.5 rounded-none">
                           <div className="space-y-0.5 text-left">
-                            <p className="text-[8px] font-bold text-emerald-800 tracking-[1.5px] uppercase">
+                            <p className="text-[8px] font-light text-black tracking-[0.2em] uppercase">
                               Gift Card Aplicada
                             </p>
-                            <p className="text-[10px] font-mono font-bold text-emerald-950">
+                            <p className="text-[9px] font-mono text-black">
                               {appliedGiftCard.codigo}
                             </p>
-                            <p className="text-[9px] text-emerald-700/80 font-medium">
+                            <p className="text-[8px] text-neutral-500 font-light">
                               Descuento: ${cartGiftDiscountAmount.toLocaleString('es-AR')}
                             </p>
                           </div>
                           <button
                             type="button"
                             onClick={handleRemoveCartGift}
-                            className="text-[8px] tracking-[1.5px] uppercase font-bold text-red-600 hover:text-red-800 underline transition-all"
+                            className="text-[8px] tracking-[0.2em] uppercase font-light text-black underline transition-all"
                           >
                             Quitar
                           </button>
@@ -1598,15 +1545,15 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                               type="text"
                               value={cartGiftCode}
                               onChange={(e) => setCartGiftCode(e.target.value.toUpperCase())}
-                              placeholder="CÓDIGO DE GIFT CARD"
+                              placeholder="CÓDIGO GIFT CARD"
                               disabled={isValidatingCartGift}
-                              className="flex-1 bg-white border border-black/10 px-3 py-2 text-[10px] tracking-[1.5px] font-mono focus:outline-none focus:border-black uppercase placeholder:text-black/20"
+                              className="flex-1 bg-white border border-neutral-300 px-2.5 py-1.5 text-[9px] tracking-[0.15em] font-mono outline-none focus:border-black uppercase placeholder:text-neutral-300 rounded-none"
                             />
                             <button
                               type="button"
                               onClick={handleApplyCartGift}
                               disabled={isValidatingCartGift || !cartGiftCode.trim()}
-                              className="bg-black hover:bg-neutral-800 disabled:opacity-30 text-white px-4 text-[9px] tracking-[1.5px] uppercase font-bold transition-all flex items-center justify-center min-w-[70px]"
+                              className="bg-black hover:bg-neutral-800 disabled:opacity-30 text-white px-3 text-[8px] tracking-[0.2em] uppercase font-light transition-all flex items-center justify-center rounded-none"
                             >
                               {isValidatingCartGift ? (
                                 <Loader2 size={10} className="animate-spin" />
@@ -1616,7 +1563,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                             </button>
                           </div>
                           {cartGiftError && (
-                            <p className="text-[8px] uppercase tracking-[1px] text-red-600 font-semibold animate-pulse text-left">
+                            <p className="text-[8px] uppercase tracking-[0.1em] text-neutral-900 font-light animate-pulse text-left">
                               ⚠️ {cartGiftError}
                             </p>
                           )}
@@ -1627,22 +1574,22 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 </div>
 
                 {/* Desglose de Totales del Carrito */}
-                <div className="space-y-1.5 border-t border-black/5 pt-4 text-[10px] tracking-[1px] uppercase">
-                  <div className="flex justify-between text-black/50">
+                <div className="space-y-1 border-t border-neutral-100 pt-3 text-[9px] tracking-[0.18em] uppercase font-light">
+                  <div className="flex justify-between text-neutral-500">
                     <span>Subtotal prendas</span>
                     <span>${cartTotal.toLocaleString('es-AR')}</span>
                   </div>
                   {appliedGiftCard && (
-                    <div className="flex justify-between text-emerald-600 font-bold">
+                    <div className="flex justify-between text-black font-normal">
                       <span>Descuento Gift Card</span>
                       <span>-${cartGiftDiscountAmount.toLocaleString('es-AR')}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="flex justify-between items-baseline border-t border-black/5 pt-3">
-                  <span className="text-[9px] tracking-[3px] uppercase text-black/40 font-semibold">Total Final</span>
-                  <span className="text-[26px] font-bold text-black tracking-tight">${finalCartTotal.toLocaleString()}</span>
+                <div className="flex justify-between items-baseline border-t border-black/10 pt-2.5">
+                  <span className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 font-light">Total Final</span>
+                  <span className="text-xl font-normal text-black tracking-wide">${finalCartTotal.toLocaleString()}</span>
                 </div>
 
                 <button 
@@ -1655,10 +1602,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                       setShowAuthModal(true);
                     }
                   }} 
-                  className="group w-full bg-black text-white py-[14px] text-[10px] tracking-[5px] uppercase font-semibold hover:bg-neutral-900 transition-all duration-300 flex items-center justify-center gap-3 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.18)] hover:shadow-[0_6px_28px_rgba(0,0,0,0.28)] hover:scale-[1.01] active:scale-[0.99]"
+                  className="w-full bg-black text-white py-3.5 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-all rounded-none flex items-center justify-center gap-2"
                 >
                   Finalizar pedido
-                  <ArrowRight size={14} strokeWidth={1.5} className="transition-transform duration-300 group-hover:translate-x-1" />
+                  <ArrowRight size={13} strokeWidth={1.2} />
                 </button>
               </div>
             )}
@@ -1846,7 +1793,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             <div className="space-y-6 text-[11px] tracking-[1px] leading-relaxed uppercase opacity-70 max-h-[60vh] overflow-y-auto no-scrollbar">
               <section>
                 <p className="font-bold mb-2">Cambios</p>
-                <p>Las prendas tienen cambio dentro de los 30 días corridos de realizada la compra, presentándolas con su etiqueta original y en perfecto estado.</p>
+                <p>Las prendas tienen cambio dentro de los 15 días corridos de realizada la compra, presentándolas con su etiqueta original y en perfecto estado.</p>
               </section>
               <section>
                 <p className="font-bold mb-2">Devoluciones</p>
@@ -1979,8 +1926,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
       {/* ══════ NOTIFICACIÓN DE PRENDA AGREGADA AL CARRITO ══════ */}
       {cartToastNotification && (
-        <div 
-          className="fixed bottom-24 right-4 sm:bottom-8 sm:right-8 z-[200] max-w-sm w-[calc(100vw-2rem)] sm:w-[380px] bg-black text-white p-4 shadow-2xl rounded-lg border border-white/10 flex items-center gap-3.5 animate-in fade-in slide-in-from-bottom-5 duration-300"
+        <div
+          className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-[200] max-w-sm w-[calc(100vw-2rem)] sm:w-[380px] bg-black text-white p-3.5 shadow-xl rounded-none border border-white/20 flex items-center gap-3 animate-in fade-in duration-200"
           role="status"
           aria-live="polite"
         >
@@ -1988,23 +1935,23 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             <img
               src={cartToastNotification.item.imagenes[0]}
               alt=""
-              className="w-12 h-14 object-cover rounded bg-white/10 flex-shrink-0"
+              className="w-11 h-14 object-cover rounded-none bg-neutral-900 flex-shrink-0 aspect-[3/4]"
             />
           ) : (
-            <div className="w-12 h-14 bg-white/10 rounded flex items-center justify-center text-white/50 flex-shrink-0">
-              <ShoppingBag size={20} />
+            <div className="w-11 h-14 bg-neutral-900 rounded-none flex items-center justify-center text-white/40 flex-shrink-0">
+              <ShoppingBag size={16} strokeWidth={1.2} />
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] uppercase tracking-[2px] font-bold mb-0.5">
-              <CheckCircle size={13} className="flex-shrink-0" />
-              <span>Prenda agregada al carrito</span>
+            <div className="flex items-center gap-1.5 text-white text-[9px] uppercase tracking-[0.25em] font-light mb-0.5">
+              <CheckCircle size={12} strokeWidth={1.2} className="flex-shrink-0 text-white" />
+              <span>Prenda agregada</span>
             </div>
-            <p className="text-[11px] font-semibold tracking-[1px] uppercase truncate text-white">
+            <p className="text-[10px] font-light tracking-[0.18em] uppercase truncate text-white">
               {cartToastNotification.item.descripcion}
             </p>
             {(cartToastNotification.talle || cartToastNotification.color) && (
-              <p className="text-[9px] tracking-[1px] uppercase text-white/60 mt-0.5">
+              <p className="text-[8px] tracking-[0.15em] uppercase text-neutral-400 mt-0.5 font-light">
                 {[
                   cartToastNotification.talle && `Talle: ${cartToastNotification.talle}`,
                   cartToastNotification.color && `Color: ${cartToastNotification.color}`
@@ -2012,13 +1959,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               </p>
             )}
           </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => {
                 setShowCart(true);
                 setCartToastNotification(null);
               }}
-              className="bg-white text-black text-[9px] uppercase tracking-[2px] font-bold px-3 py-2 rounded hover:bg-neutral-200 transition-colors shadow-sm cursor-pointer"
+              className="bg-white text-black text-[9px] uppercase tracking-[0.2em] font-light px-3 py-1.5 rounded-none hover:bg-neutral-200 transition-all cursor-pointer border border-white"
             >
               Ver Carrito
             </button>
@@ -2183,51 +2130,51 @@ const ProductCard: React.FC<{
   const cuotas3 = Math.round(tarjetaPrice / 3);
   const cuotas6 = Math.round(tarjetaPrice / 6);
   return (
-    <article className="fade-in group flex flex-col relative" style={{ animationDelay: `${(idx % 8) * 100}ms` }}>
-      <div className="relative w-full aspect-[4/5] sm:aspect-[3/4] overflow-hidden bg-neutral-50/50 cursor-pointer flex items-center justify-center" onClick={() => onOpen(item)}>
+    <article className="fade-in group flex flex-col relative rounded-none" style={{ animationDelay: `${(idx % 8) * 60}ms` }}>
+      <div className="relative w-full aspect-[3/4] overflow-hidden bg-neutral-50 cursor-pointer flex items-center justify-center rounded-none" onClick={() => onOpen(item)}>
         {item.imagenes?.[0] ? (
-          <img src={item.imagenes[0]} alt="" className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-105"/>
+          <img src={item.imagenes[0]} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"/>
         ) : (
-          <div className="w-full h-full flex items-center justify-center p-4 transition-transform duration-700 group-hover:scale-110">
-            <p className="text-[14px] sm:text-[18px] md:text-[22px] font-extralight tracking-[4px] sm:tracking-[6px] uppercase text-black/[0.08] leading-normal select-none text-center break-words px-4">{item.descripcion}</p>
+          <div className="w-full h-full flex items-center justify-center p-4 transition-transform duration-500 group-hover:scale-105">
+            <p className="text-[11px] font-light tracking-[0.25em] uppercase text-neutral-300 leading-normal select-none text-center break-words px-4">{item.descripcion}</p>
           </div>
         )}
-        <button onClick={(e) => { e.stopPropagation(); onOpen(item); }} className={`absolute bottom-0 left-0 w-full py-4 text-[10px] tracking-[4px] uppercase font-medium transition-all duration-500 translate-y-full group-hover:translate-y-0 ${addedFeedback === item.id ? 'bg-black text-white' : 'bg-white/90 text-black'}`}>Ver Detalles</button>
+        <button onClick={(e) => { e.stopPropagation(); onOpen(item); }} className={`absolute bottom-0 left-0 w-full py-2.5 text-[9px] tracking-[0.2em] uppercase font-light transition-all duration-300 rounded-none ${addedFeedback === item.id ? 'bg-black text-white' : 'bg-white/95 text-black hover:bg-black hover:text-white'}`}>
+          Ver Detalle
+        </button>
         
         {/* Wishlist Heart Icon */}
         <button 
           onClick={(e) => { e.stopPropagation(); onToggleFavorite(item.id); }}
-          className="absolute top-4 right-4 z-10 bg-white/80 p-2 rounded-full shadow-md hover:bg-white transition-all scale-100 active:scale-95 flex items-center justify-center"
+          className="absolute top-3 right-3 z-10 bg-white/90 p-1.5 rounded-none border border-black/10 hover:bg-black hover:text-white transition-all flex items-center justify-center"
         >
           <Heart 
-            size={14} 
-            strokeWidth={1.5} 
-            className={`transition-colors duration-300 ${isFavorited ? 'fill-red-600 text-red-600' : 'text-black/60'}`} 
+            size={13} 
+            strokeWidth={1.2} 
+            className={`transition-colors duration-300 ${isFavorited ? 'fill-black text-black' : 'text-neutral-600'}`} 
           />
         </button>
 
-        <div className="absolute top-4 left-4 flex flex-col gap-1">
-          {item.cantidad <= 2 && <span className="text-[9px] tracking-[2px] uppercase bg-black text-white px-2 py-1">Últimas unidades</span>}
-          {discount > 0 && <span className="text-[9px] tracking-[2px] uppercase bg-red-500 text-white px-2 py-1 font-semibold">-{discount}% OFF</span>}
+        <div className="absolute top-3 left-3 flex flex-col gap-1">
+          {item.cantidad <= 2 && <span className="text-[8px] tracking-[0.2em] uppercase bg-black text-white px-2 py-0.5 font-light rounded-none">Últimas unidades</span>}
+          {discount > 0 && <span className="text-[8px] tracking-[0.2em] uppercase bg-black text-white border border-white/20 px-2 py-0.5 font-light rounded-none">-{discount}% OFF</span>}
         </div>
       </div>
+      
       {/* Info de precio */}
-      <div className="mt-3 px-1.5 flex flex-col gap-0.5 text-left">
-        <h4 className="text-[10px] sm:text-[13px] tracking-[1.5px] uppercase font-medium text-black truncate">{item.descripcion}</h4>
-        {/* Precio tarjeta — principal */}
-        <div className="flex items-baseline gap-1.5 mt-0.5 flex-wrap">
-          {discount > 0 && <span className="text-[9px] sm:text-[11px] font-light line-through text-black/30">${item.ventaTarjeta.toLocaleString()}</span>}
-          <span className={`text-[12px] sm:text-[16px] font-semibold tracking-tight ${discount > 0 ? 'text-red-600' : 'text-black'}`}>${tarjetaPrice.toLocaleString()}</span>
-          <span className="text-[9px] tracking-[1px] text-black/40 uppercase font-light">tarjeta</span>
+      <div className="mt-2.5 px-0.5 flex flex-col gap-0.5 text-left">
+        <h4 className="text-[10px] sm:text-[11px] tracking-[0.16em] uppercase font-light text-neutral-900 truncate">{item.descripcion}</h4>
+        
+        <div className="flex items-baseline gap-2 mt-0.5">
+          {discount > 0 && <span className="text-[10px] font-light line-through text-neutral-400">${item.ventaTarjeta.toLocaleString()}</span>}
+          <span className="text-[11px] sm:text-[12px] font-light tracking-[0.05em] text-black">${tarjetaPrice.toLocaleString()}</span>
         </div>
-        {/* Cuotas: Habilitado solo para desktop para mantener la grilla móvil sumamente sutil, fina y despejada */}
-        <div className="hidden sm:flex flex-col gap-0.5 mt-1 border-t border-black/[0.03] pt-1">
-          <p className="text-[10px] tracking-[0.5px] text-black/60 font-light">3 cuotas de <span className="font-semibold text-black">${cuotas3.toLocaleString()}</span></p>
-          <p className="text-[10px] tracking-[0.5px] text-black/60 font-light">6 cuotas de <span className="font-semibold text-black">${cuotas6.toLocaleString()}</span></p>
+
+        <div className="flex flex-col gap-0.5 mt-0.5">
+          <p className="text-[9px] tracking-[0.1em] text-neutral-400 font-light">3 cuotas de <span className="font-normal text-neutral-700">${cuotas3.toLocaleString()}</span> ó 6 de <span className="font-normal text-neutral-700">${cuotas6.toLocaleString()}</span></p>
         </div>
       </div>
     </article>
-
   );
 };
 

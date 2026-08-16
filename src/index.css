@@ -1,15 +1,17 @@
 @import "tailwindcss";
 
 body {
-  font-family: 'Inter', sans-serif;
-  background-color: #FAF8F5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: #ffffff;
   color: #000000;
   margin: 0;
   padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .font-serif {
-  font-family: 'Playfair Display', serif;
+  font-family: 'Playfair Display', Georgia, serif;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -20,3 +22,83 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Zara Esthetic Custom Utilities */
+.tracking-zara-wide {
+  letter-spacing: 0.25em;
+}
+
+.tracking-zara-nav {
+  letter-spacing: 0.22em;
+}
+
+.tracking-zara-card {
+  letter-spacing: 0.16em;
+}
+
+.btn-zara-primary {
+  background-color: #000000;
+  color: #ffffff;
+  border: 1px solid #000000;
+  border-radius: 0px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 300;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.btn-zara-primary:hover {
+  background-color: #222222;
+  border-color: #222222;
+}
+
+.btn-zara-outline {
+  background-color: transparent;
+  color: #000000;
+  border: 1px solid #000000;
+  border-radius: 0px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 300;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.btn-zara-outline:hover {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+.btn-zara-text {
+  background-color: transparent;
+  color: #000000;
+  border: none;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-weight: 300;
+  padding: 4px 0;
+  border-bottom: 1px solid #000000;
+  transition: opacity 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-zara-text:hover {
+  opacity: 0.6;
+}
+
+.border-hairline {
+  border-color: rgba(0, 0, 0, 0.12);
+}
+

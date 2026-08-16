@@ -73,7 +73,7 @@ const Sales: React.FC<SalesProps> = ({
   const [giftMensaje, setGiftMensaje] = React.useState('');
   const [giftDeParteDe, setGiftDeParteDe] = React.useState('');
 
-  // Modal de aviso 30 días
+  // Modal de aviso 15 días
   const [mostrarModalAntiguo, setMostrarModalAntiguo] = React.useState(false);
   const [ventaSeleccionadaPendiente, setVentaSeleccionadaPendiente] = React.useState<Sale | null>(null);
 
