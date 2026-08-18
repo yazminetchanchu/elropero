@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { transferLineTotal, sumTransferLines, DESCUENTO_BASE_TRANSFERENCIA } from './exchangePricing';
+import { transferLineTotal, sumTransferLines, calcExchangeLineTotal, sumExchangeLines } from './exchangePricing';
 import { SaleItem } from '../types';
 
 describe('exchangePricing service', () => {
@@ -38,4 +38,17 @@ describe('exchangePricing service', () => {
     const sum = sumTransferLines(items);
     expect(sum).toBe(460);
   });
+
+  it('calcExchangeLineTotal y sumExchangeLines: soporta tarjeta (isTransferencia = false)', () => {
+    const items: SaleItem[] = [
+      { id: '1', sku: 'A', descripcion: 'A', costo: 50, precioEfectivo: 1000, precioTarjeta: 1270, cantidad: 2, descuento: 10 },
+    ];
+    // Tarjeta: precioTarjeta * (1 - 10/100) * cant = 1270 * 0.9 * 2 = 2286
+    const lineTotal = calcExchangeLineTotal(items[0], false);
+    expect(lineTotal).toBe(2286);
+
+    const totalSum = sumExchangeLines(items, false);
+    expect(totalSum).toBe(2286);
+  });
 });
+

@@ -11,6 +11,13 @@ export interface WebCambioPayload {
   diferencia: number;
   giftDestinatario?: string;
   customerNombre?: string;
+  pago?: { efectivo: number; tarjeta: number };
+  costoEnvio?: number;
+  costoEnvioDevolucion?: number;
+  costoEnvioNuevo?: number;
+  tipoEnvioDevolucion?: 'S' | 'D' | 'local' | 'recoleta';
+  tipoEnvioNuevo?: 'S' | 'D' | 'local' | 'recoleta';
+  codigoPostalCliente?: string;
 }
 
 function adjustStockLine(
@@ -220,20 +227,28 @@ export async function fulfillWebCambio(
       items: [],
       total: Math.max(0, diferencia),
       diferencia,
-      pago: { efectivo: 100, tarjeta: 0 },
-      giftGeneradaId: giftGenerada?.id,
+      pago: payload.pago || { efectivo: 100, tarjeta: 0 },
       giftDestinatario: giftDestinatario?.trim() || 'Cambio web',
+      ...(giftGenerada?.id ? { giftGeneradaId: giftGenerada.id } : {}),
+      costoEnvio: payload.costoEnvio,
+      costoEnvioDevolucion: payload.costoEnvioDevolucion,
+      costoEnvioNuevo: payload.costoEnvioNuevo,
+      tipoEnvioDevolucion: payload.tipoEnvioDevolucion,
+      tipoEnvioNuevo: payload.tipoEnvioNuevo,
+      codigoPostalCliente: payload.codigoPostalCliente,
     };
 
     const nextInventory = applyCambioInventory(inventory, itemsDevueltos, itemsNuevos);
     const nextGiftCards = giftGenerada ? [...giftCards, giftGenerada] : giftCards;
 
-    transaction.update(showroomRef, {
+    const sanitizeForFirestore = <T>(obj: T): T => JSON.parse(JSON.stringify(obj));
+
+    transaction.update(showroomRef, sanitizeForFirestore({
       inventory: nextInventory,
       sales: [...sales, newSale],
       giftCards: nextGiftCards,
       lastSync: Date.now(),
-    });
+    }));
   });
 
   return { saleId, giftCodigo };

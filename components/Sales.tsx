@@ -741,7 +741,7 @@ const devolucionLabel = pagoOriginal
         </div>
 
         {/* CARRITO */}
-        <div className="max-h-[300px] overflow-y-auto">
+        <div className="max-h-[360px] overflow-y-auto visible-scrollbar">
           {cart.length === 0 && (
             <div className="p-8 text-center text-stone-400 text-xs tracking-wider uppercase font-light">
               No hay productos en el carrito

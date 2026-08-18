@@ -805,7 +805,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         )}
 
         {/* Content Box */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-8 no-scrollbar bg-white">
+        <div className="flex-1 overflow-y-auto p-6 sm:p-8 visible-scrollbar bg-white">
 
           {/* STEP 1: IDENTIFICATION */}
           {step === 'identification' && (

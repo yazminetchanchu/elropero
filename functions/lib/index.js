@@ -376,7 +376,7 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
  * Oculta completamente UALA_CLIENT_ID y UALA_CLIENT_SECRET del navegador del cliente.
  */
 exports.createUalaCheckout = functions.https.onRequest(async (req, res) => {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const safeOrigin = getSafeCorsOrigin(req);
     res.set("Access-Control-Allow-Origin", safeOrigin);
     res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -391,27 +391,34 @@ exports.createUalaCheckout = functions.https.onRequest(async (req, res) => {
     }
     try {
         const body = ((_a = req.body) === null || _a === void 0 ? void 0 : _a.data) || req.body || {};
-        const env = (body.env === 'stage' ? 'stage' : 'production');
         const order = body.order || {};
         const successUrl = body.successUrl || "https://elropero.ar";
         const failUrl = body.failUrl || "https://elropero.ar";
         // 1. Obtener credenciales del servidor (sin enviarlas jamás al cliente)
-        const clientId = (_b = (env === 'stage' ? process.env.UALA_CLIENT_ID_STAGE : process.env.UALA_CLIENT_ID)) === null || _b === void 0 ? void 0 : _b.trim();
-        const clientSecret = (_c = (env === 'stage' ? process.env.UALA_CLIENT_SECRET_STAGE : process.env.UALA_CLIENT_SECRET)) === null || _c === void 0 ? void 0 : _c.trim();
-        const username = (_d = (env === 'stage' ? process.env.UALA_USERNAME_STAGE : process.env.UALA_USERNAME)) === null || _d === void 0 ? void 0 : _d.trim();
+        let activeEnv = body.env === 'stage' ? 'stage' : 'production';
+        let clientId = (_b = (activeEnv === 'stage' ? process.env.UALA_CLIENT_ID_STAGE : process.env.UALA_CLIENT_ID)) === null || _b === void 0 ? void 0 : _b.trim();
+        let clientSecret = (_c = (activeEnv === 'stage' ? process.env.UALA_CLIENT_SECRET_STAGE : process.env.UALA_CLIENT_SECRET)) === null || _c === void 0 ? void 0 : _c.trim();
+        let username = (_d = (activeEnv === 'stage' ? process.env.UALA_USERNAME_STAGE : process.env.UALA_USERNAME)) === null || _d === void 0 ? void 0 : _d.trim();
+        if (activeEnv === 'stage' && (username === 'uapi_checkout_user' || !username || username.length < 3)) {
+            console.warn('[createUalaCheckout] Credenciales STAGE genéricas o incompletas. Fallback a PRODUCCIÓN.');
+            activeEnv = 'production';
+            clientId = (_e = process.env.UALA_CLIENT_ID) === null || _e === void 0 ? void 0 : _e.trim();
+            clientSecret = (_f = process.env.UALA_CLIENT_SECRET) === null || _f === void 0 ? void 0 : _f.trim();
+            username = (_g = process.env.UALA_USERNAME) === null || _g === void 0 ? void 0 : _g.trim();
+        }
         if (!clientId || !clientSecret || !username) {
-            console.error(`Faltan credenciales de Ualá Bis en el servidor para entorno: ${env}`);
-            res.status(500).json({ error: `Faltan credenciales del servidor de Ualá Bis (${env}).` });
+            console.error(`Faltan credenciales de Ualá Bis en el servidor para entorno: ${activeEnv}`);
+            res.status(500).json({ error: `Faltan credenciales del servidor de Ualá Bis (${activeEnv}).` });
             return;
         }
-        const authUrl = env === 'stage'
+        let authUrl = activeEnv === 'stage'
             ? 'https://auth.stage.developers.ar.ua.la/v2/api/auth/token'
             : 'https://auth.developers.ar.ua.la/v2/api/auth/token';
-        const checkoutUrl = env === 'stage'
+        let checkoutUrl = activeEnv === 'stage'
             ? 'https://checkout.stage.developers.ar.ua.la/v2/api/checkout'
             : 'https://checkout.developers.ar.ua.la/v2/api/checkout';
         // 2. Obtener Token de Acceso desde Ualá Bis
-        const authPayload = {
+        let authPayload = {
             user_name: username,
             username: username,
             client_id: clientId,
@@ -419,12 +426,35 @@ exports.createUalaCheckout = functions.https.onRequest(async (req, res) => {
             client_secret: clientSecret,
             grant_type: 'client_credentials',
         };
-        console.log(`[createUalaCheckout] Solicitando token a Ualá (${env})...`);
-        const authResp = await fetch(authUrl, {
+        console.log(`[createUalaCheckout] Solicitando token a Ualá (${activeEnv})...`);
+        let authResp = await fetch(authUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify(authPayload)
         });
+        if (!authResp.ok && activeEnv === 'stage') {
+            const errTextStr = await authResp.text();
+            console.warn(`[createUalaCheckout] STAGE devolvió error ${authResp.status} (${errTextStr}). Intentando con PRODUCCIÓN...`);
+            activeEnv = 'production';
+            clientId = (_h = process.env.UALA_CLIENT_ID) === null || _h === void 0 ? void 0 : _h.trim();
+            clientSecret = (_j = process.env.UALA_CLIENT_SECRET) === null || _j === void 0 ? void 0 : _j.trim();
+            username = (_k = process.env.UALA_USERNAME) === null || _k === void 0 ? void 0 : _k.trim();
+            authUrl = 'https://auth.developers.ar.ua.la/v2/api/auth/token';
+            checkoutUrl = 'https://checkout.developers.ar.ua.la/v2/api/checkout';
+            authPayload = {
+                user_name: username || '',
+                username: username || '',
+                client_id: clientId || '',
+                client_secret_id: clientSecret || '',
+                client_secret: clientSecret || '',
+                grant_type: 'client_credentials',
+            };
+            authResp = await fetch(authUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(authPayload)
+            });
+        }
         if (!authResp.ok) {
             const errText = await authResp.text();
             console.error(`[createUalaCheckout] Error al obtener token Ualá (${authResp.status}):`, errText);
@@ -471,11 +501,11 @@ exports.createUalaCheckout = functions.https.onRequest(async (req, res) => {
         }
         const checkoutData = await checkoutResp.json();
         const paymentId = (checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.uuid) || (checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.id);
-        const paymentUrl = ((_e = checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.links) === null || _e === void 0 ? void 0 : _e.checkoutLink) ||
-            ((_f = checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.links) === null || _f === void 0 ? void 0 : _f.checkout_link) ||
+        const paymentUrl = ((_l = checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.links) === null || _l === void 0 ? void 0 : _l.checkoutLink) ||
+            ((_m = checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.links) === null || _m === void 0 ? void 0 : _m.checkout_link) ||
             (checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.checkout_url) ||
             (checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.checkoutUrl) ||
-            ((_g = checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.links) === null || _g === void 0 ? void 0 : _g.checkout) ||
+            ((_o = checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.links) === null || _o === void 0 ? void 0 : _o.checkout) ||
             (checkoutData === null || checkoutData === void 0 ? void 0 : checkoutData.url);
         if (!paymentId || !paymentUrl) {
             console.error('[createUalaCheckout] Respuesta de Ualá sin enlace:', checkoutData);

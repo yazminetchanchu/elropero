@@ -4,7 +4,7 @@ import { InventoryItem, WebSettings, GiftCard, SaleItem } from '../types';
 import { db, functions } from '../services/firebase';
 import { doc, onSnapshot, getDoc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle, SlidersHorizontal } from 'lucide-react';
+import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle, SlidersHorizontal, MapPin, MessageCircle } from 'lucide-react';
 
 const getColorDotStyle = (colorName: string): React.CSSProperties => {
   const c = colorName.toLowerCase().trim();
@@ -29,16 +29,15 @@ import CheckoutFlow from './auth/CheckoutFlow';
 import SessionExpiryModal from './auth/SessionExpiryModal';
 import BuyGiftCardModal from './BuyGiftCardModal';
 import { CustomerOrder } from '../contexts/AuthContext';
-import { buildSaleItemsFromOrder, getOrderSaleId } from '../services/webOrderToSale';
-import { sumTransferLines, DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
+import { buildSaleItemsFromOrder, getOrderSaleId, isGiftCardOrder } from '../services/webOrderToSale';
+import { sumTransferLines, sumExchangeLines, DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
 import { fulfillWebCambio } from '../services/webCambioFulfillment';
 import { fulfillWebOrder } from '../services/webOrderFulfillment';
 import { sendNotificationEmail, sendSaleConfirmationEmail } from '../services/emailService';
 import { cartLinesToSaleItems } from '../services/cartToSale';
-import { calculateCartWeightGrams, calculateCartDimensions } from '../utils/shippingHelpers';
-import { setUalaEnvironment } from '../services/ualaApi';
+import { calculateCartWeightGrams, calculateCartDimensions, calculateSaleItemsWeightGrams, calculateSaleItemsDimensions } from '../utils/shippingHelpers';
+import { createUalaPayment, setUalaEnvironment } from '../services/ualaApi';
 import { useModal } from '../contexts/ModalContext';
-import InnovativeLoader from './InnovativeLoader';
 import { buildOrderWhatsAppMessage } from '../utils/whatsappHelpers';
 
 
@@ -181,11 +180,102 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [exchangeSession, setExchangeSession] = React.useState<ExchangeSession | null>(null);
   const [isConfirmingExchange, setIsConfirmingExchange] = React.useState(false);
   const [exchangeSuccessMsg, setExchangeSuccessMsg] = React.useState<string | null>(null);
+  const [exchangePaymentMethod, setExchangePaymentMethod] = React.useState<'transferencia' | 'tarjeta'>('transferencia');
+  const [exchangeTipoEnvio, setExchangeTipoEnvio] = React.useState<'retiro' | 'recoleta' | 'envio'>('retiro');
+  const [exchangeCpCliente, setExchangeCpCliente] = React.useState<string>('');
+  const [exchangeTipoDevolucion, setExchangeTipoDevolucion] = React.useState<'S' | 'D'>('S'); // S = sucursal, D = domicilio
+  const [exchangeTipoNuevo, setExchangeTipoNuevo] = React.useState<'S' | 'D'>('D'); // S = sucursal, D = domicilio
+  const [costoEnvioDevolucion, setCostoEnvioDevolucion] = React.useState<number>(0);
+  const [costoEnvioNuevo, setCostoEnvioNuevo] = React.useState<number>(0);
+  const [isCalculatingExchangeShipping, setIsCalculatingExchangeShipping] = React.useState<boolean>(false);
+  const [exchangeShippingError, setExchangeShippingError] = React.useState<string | null>(null);
+
   const [showExpiryModal, setShowExpiryModal] = React.useState(false);
   const [showTerms, setShowTerms] = React.useState(false);
   const [showLocation, setShowLocation] = React.useState(false);
   const [showBuyGiftCard, setShowBuyGiftCard] = React.useState(false);
   const [pendingPaymentOrder, setPendingPaymentOrder] = React.useState<any | null>(null);
+
+  React.useEffect(() => {
+    if (customerProfile?.direcciones?.[0]?.codigoPostal && !exchangeCpCliente) {
+      setExchangeCpCliente(customerProfile.direcciones[0].codigoPostal);
+    }
+  }, [customerProfile, exchangeCpCliente]);
+
+  React.useEffect(() => {
+    let active = true;
+    if (exchangeTipoEnvio !== 'envio' || !exchangeSession || exchangeSession.itemsDevueltos.length === 0) {
+      setCostoEnvioDevolucion(0);
+      setCostoEnvioNuevo(0);
+      setExchangeShippingError(null);
+      return;
+    }
+
+    const cleanCp = exchangeCpCliente.trim();
+    if (cleanCp.length < 4) {
+      setCostoEnvioDevolucion(0);
+      setCostoEnvioNuevo(0);
+      setExchangeShippingError('Ingresá tu código postal para cotizar los envíos.');
+      return;
+    }
+
+    const calculateShipping = async () => {
+      setIsCalculatingExchangeShipping(true);
+      setExchangeShippingError(null);
+      try {
+        const cotizarEnvio = httpsCallable(functions, 'cotizarEnvio');
+
+        // 1. Tramo Devolución (Cliente -> Chivilcoy CP 6620)
+        const weightDev = calculateSaleItemsWeightGrams(exchangeSession.itemsDevueltos);
+        const dimsDev = calculateSaleItemsDimensions(exchangeSession.itemsDevueltos);
+
+        const resDev = await cotizarEnvio({
+          codigoPostalOrigen: cleanCp,
+          codigoPostalDestino: '6620',
+          pesoGramos: weightDev,
+          dimensiones: dimsDev,
+          deliveredType: exchangeTipoDevolucion
+        });
+        const costDev = ((resDev.data as any)?.costoEnvio) || 0;
+
+        // 2. Tramo Nuevo Envío (Chivilcoy CP 6620 -> Cliente) si hay prendas en carrito
+        let costNuevo = 0;
+        if (cart.length > 0) {
+          const weightNuevo = calculateCartWeightGrams(cart);
+          const dimsNuevo = calculateCartDimensions(cart);
+
+          const resNuevo = await cotizarEnvio({
+            codigoPostalOrigen: '6620',
+            codigoPostalDestino: cleanCp,
+            pesoGramos: weightNuevo,
+            dimensiones: dimsNuevo,
+            deliveredType: exchangeTipoNuevo
+          });
+          costNuevo = ((resNuevo.data as any)?.costoEnvio) || 0;
+        }
+
+        if (active) {
+          setCostoEnvioDevolucion(costDev);
+          setCostoEnvioNuevo(costNuevo);
+        }
+      } catch (err: any) {
+        console.error('Error calculando envío de cambio:', err);
+        if (active) {
+          setCostoEnvioDevolucion(0);
+          setCostoEnvioNuevo(0);
+          setExchangeShippingError('No se pudo cotizar el envío para este código postal.');
+        }
+      } finally {
+        if (active) setIsCalculatingExchangeShipping(false);
+      }
+    };
+
+    const timer = setTimeout(calculateShipping, 400);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [exchangeTipoEnvio, exchangeCpCliente, exchangeTipoDevolucion, exchangeTipoNuevo, exchangeSession, cart]);
 
   const headerRef = React.useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = React.useState<number>(64);
@@ -276,9 +366,53 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     
     const pagoStatus = params.get('pago');
     const orderId = params.get('orderId');
+    const tipoParam = params.get('tipo');
+    const pendingCambioId = params.get('pendingCambioId');
 
-    // Retorno interceptado de Ualá
-    if (pagoStatus === 'ok' && orderId) {
+    // Retorno interceptado de Ualá para Cambios
+    if (pagoStatus === 'ok' && (tipoParam === 'cambio' || pendingCambioId)) {
+      const targetCambioId = pendingCambioId || localStorage.getItem('ropero_last_pending_cambio');
+      if (targetCambioId) {
+        localStorage.removeItem('ropero_last_pending_cambio');
+        const confirmCambio = async () => {
+          try {
+            const cambioRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'pending_cambios', targetCambioId);
+            const snap = await getDoc(cambioRef);
+            if (snap.exists()) {
+              const data = snap.data();
+              if (data.estado === 'Pendiente') {
+                const { saleId, giftCodigo } = await fulfillWebCambio(PUBLIC_SHOWROOM_ID, data.payload);
+                await updateDoc(cambioRef, { estado: 'Confirmado', saleId });
+
+                if (data.originalOrderId && data.customerId) {
+                  try {
+                    const customerOrderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', data.customerId, 'orders', data.originalOrderId);
+                    await updateDoc(customerOrderRef, { isExchanged: true });
+                  } catch (err) {
+                    console.error('Error al actualizar isExchanged:', err);
+                  }
+                }
+
+                showAlert('¡Tu pago de la diferencia fue acreditado correctamente! El cambio fue procesado exitosamente.', '¡Pago y Cambio Exitoso!', 'success');
+                await refreshOrders();
+              }
+            }
+          } catch (e) {
+            console.error('Error al confirmar cambio de Ualá:', e);
+            showAlert('Hubo un error al confirmar tu cambio. Si tu pago se debitó, contactanos por WhatsApp.', 'Atención con tu Cambio', 'error');
+          } finally {
+            const cleanUrl = window.location.origin + window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+          }
+        };
+        confirmCambio();
+      }
+    } else if (pagoStatus === 'error' && (tipoParam === 'cambio' || pendingCambioId)) {
+      localStorage.removeItem('ropero_last_pending_cambio');
+      showAlert('El pago de la diferencia con Ualá Bis no se completó. Tu pedido original no sufrió ninguna modificación.', 'Pago Cancelado', 'info');
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    } else if (pagoStatus === 'ok' && orderId) {
       localStorage.removeItem('ropero_last_pending_order');
       const confirmOrder = async () => {
         try {
@@ -565,6 +699,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   }, [webSettings.instagramHandle]);
 
   const startExchange = (order: CustomerOrder) => {
+    if (isGiftCardOrder(order)) {
+      showAlert('Las Gift Cards no admiten cambio.', 'Acción no permitida', 'warning');
+      return;
+    }
     const days = Math.floor((Date.now() - new Date(order.fecha).getTime()) / 86400000);
     if (days > 15) {
       showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
@@ -639,13 +777,32 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       return;
     }
 
-    const totalDev = sumTransferLines(exchangeSession.itemsDevueltos);
+    const isTransferencia = exchangePaymentMethod === 'transferencia';
+    const totalDev = sumExchangeLines(exchangeSession.itemsDevueltos, isTransferencia);
     const totalNuevo = cart.reduce((sum, c) => {
       const disc = getDiscount(c.product);
-      const price = getDiscountedPrice(c.product.ventaEfectivo, disc, true);
+      const basePrice = isTransferencia ? c.product.ventaEfectivo : c.product.ventaTarjeta;
+      const price = getDiscountedPrice(basePrice, disc, isTransferencia);
       return sum + price * c.quantity;
     }, 0);
-    const diferencia = totalNuevo - totalDev;
+
+    if (exchangeTipoEnvio === 'envio') {
+      if (exchangeCpCliente.trim().length < 4) {
+        showAlert('Por favor ingresá un Código Postal válido (mínimo 4 dígitos) para cotizar el envío.', 'Código Postal Faltante', 'warning');
+        return;
+      }
+      if (isCalculatingExchangeShipping) {
+        showAlert('Por favor aguardá un segundo a que finalice la cotización del envío.', 'Calculando Envío', 'info');
+        return;
+      }
+      if (exchangeShippingError) {
+        showAlert(exchangeShippingError, 'Error de Envíos', 'warning');
+        return;
+      }
+    }
+
+    const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
+    const diferencia = totalNuevo - totalDev + costoEnvioTotal;
 
     if (cart.length === 0 && diferencia >= 0) {
       const ok = await showConfirm(
@@ -661,15 +818,139 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       return;
     }
 
-    if (diferencia > 0 && !mercadoPagoUrl) {
-      showAlert('El local no configuró Mercado Pago para el pago de la diferencia.', 'Configuración Faltante', 'error');
-      return;
+    const ventaOriginalId = getOrderSaleId(exchangeSession.order)!;
+    const itemsNuevos = cartLinesToSaleItems(cart, getDiscount);
+
+    const shippingPayloadMeta = {
+      costoEnvio: exchangeTipoEnvio === 'envio' ? costoEnvioTotal : 0,
+      costoEnvioDevolucion: exchangeTipoEnvio === 'envio' ? costoEnvioDevolucion : 0,
+      costoEnvioNuevo: exchangeTipoEnvio === 'envio' ? costoEnvioNuevo : 0,
+      tipoEnvioDevolucion: exchangeTipoEnvio === 'envio' ? exchangeTipoDevolucion : exchangeTipoEnvio === 'recoleta' ? ('recoleta' as const) : ('local' as const),
+      tipoEnvioNuevo: exchangeTipoEnvio === 'envio' ? exchangeTipoNuevo : exchangeTipoEnvio === 'recoleta' ? ('recoleta' as const) : ('local' as const),
+      codigoPostalCliente: exchangeCpCliente.trim(),
+    };
+
+    // CASO 1: Diferencia > 0 y Pago con Tarjeta / Ualá Bis -> POSPONER fulfillment hasta retorno acreditado
+    if (diferencia > 0 && exchangePaymentMethod === 'tarjeta') {
+      setIsConfirmingExchange(true);
+      try {
+        const pendingCambioId = `cambio_${Date.now()}`;
+        const successUrl = `${window.location.origin}/?pago=ok&tipo=cambio&pendingCambioId=${pendingCambioId}`;
+        const failUrl = `${window.location.origin}/?pago=error&tipo=cambio&pendingCambioId=${pendingCambioId}`;
+
+        const payload = {
+          ventaOriginalId,
+          itemsDevueltos: exchangeSession.itemsDevueltos,
+          itemsNuevos,
+          diferencia,
+          giftDestinatario: exchangeSession.giftDestinatario,
+          customerNombre: customerProfile?.nombre || user?.displayName || 'Cliente',
+          pago: { efectivo: 0, tarjeta: 100 },
+          ...shippingPayloadMeta,
+        };
+
+        const pendingRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'pending_cambios', pendingCambioId);
+        await setDoc(pendingRef, {
+          id: pendingCambioId,
+          estado: 'Pendiente',
+          originalOrderId: exchangeSession.order.id,
+          customerId: user?.uid || 'GUEST',
+          payload,
+          fecha: new Date().toISOString(),
+          totalDiferencia: diferencia,
+        });
+
+        const orderForUala = {
+          id: pendingCambioId,
+          total: Math.round(diferencia),
+          customerEmail: customerProfile?.email || user?.email || 'cambio@elropero.ar',
+          customerNombre: customerProfile?.nombre || user?.displayName || 'Cliente',
+          customerTelefono: customerProfile?.telefono || '',
+        };
+
+        const ualaPayment = await createUalaPayment(orderForUala, successUrl, failUrl);
+        localStorage.setItem('ropero_last_pending_cambio', pendingCambioId);
+
+        showAlert('Serás redirigido a Ualá Bis para abonar la diferencia. Al finalizar el pago se acreditará tu cambio.', 'Pago con Ualá Bis', 'info');
+        window.location.href = ualaPayment.paymentUrl;
+        return;
+      } catch (ualaErr: any) {
+        console.error('Error al generar cobro Ualá en cambio:', ualaErr);
+        showAlert(
+          ualaErr?.message || 'Hubo un problema al generar el cobro de la diferencia con Ualá. Por favor reintentá.',
+          'Error de Pago Ualá',
+          'error'
+        );
+        return;
+      } finally {
+        setIsConfirmingExchange(false);
+      }
     }
 
+    // CASO 2: Diferencia > 0 y Pago por Transferencia Bancaria
+    if (diferencia > 0 && exchangePaymentMethod === 'transferencia') {
+      setIsConfirmingExchange(true);
+      try {
+        const { saleId } = await fulfillWebCambio(PUBLIC_SHOWROOM_ID, {
+          ventaOriginalId,
+          itemsDevueltos: exchangeSession.itemsDevueltos,
+          itemsNuevos,
+          diferencia,
+          giftDestinatario: exchangeSession.giftDestinatario,
+          customerNombre: customerProfile?.nombre,
+          pago: { efectivo: 100, tarjeta: 0 },
+          ...shippingPayloadMeta,
+        });
+
+        if (user) {
+          try {
+            const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', user.uid, 'orders', exchangeSession.order.id);
+            await updateDoc(orderRef, { isExchanged: true });
+          } catch (err) {
+            console.error('Error al marcar orden como cambiada:', err);
+          }
+        }
+
+        const aliasStr = webSettings.mercadoPagoAlias ? `Alias: ${webSettings.mercadoPagoAlias}` : '';
+        const cbuStr = webSettings.cbuData ? `CBU: ${webSettings.cbuData}` : '';
+        const bankInfo = [aliasStr, cbuStr].filter(Boolean).join(' | ');
+
+        showAlert(
+          `Cambio registrado en caja (${saleId}).\nPor favor realizá la transferencia por $${diferencia.toLocaleString('es-AR')}.\n${bankInfo}`,
+          'Cambio Registrado (Transferencia)',
+          'success'
+        );
+
+        const logisticaNotifStr = exchangeTipoEnvio === 'recoleta'
+          ? '\nLogística: Pick Up Recoleta (Coordinación por WhatsApp)'
+          : exchangeTipoEnvio === 'envio'
+          ? `\nCosto Envío Total: $${costoEnvioTotal}`
+          : '\nLogística: Local Chivilcoy';
+
+        sendNotificationEmail(
+          `Nuevo Cambio Web (Transferencia) - ${customerProfile?.nombre || 'Cliente'}`,
+          `Se ha registrado un cambio web por transferencia.\nID Venta: ${saleId}\nDiferencia: $${diferencia}${logisticaNotifStr}`
+        );
+
+        setExchangeSuccessMsg(`Cambio registrado (${saleId}). Transferencia pendiente de $${diferencia.toLocaleString('es-AR')}.${exchangeTipoEnvio === 'recoleta' ? ' Coordinar entrega/retiro en Recoleta por WhatsApp.' : ''}`);
+        setExchangeSession(null);
+        setCart([]);
+        updateCartStateAndSync([]);
+        setShowCart(false);
+        await refreshOrders();
+        return;
+      } catch (e: any) {
+        console.error(e);
+        showAlert(e.message || 'No se pudo confirmar el cambio.', 'Error en Cambio', 'error');
+        return;
+      } finally {
+        setIsConfirmingExchange(false);
+      }
+    }
+
+    // CASO 3: Diferencia <= 0 (Gift Card o Cambio Directo)
     setIsConfirmingExchange(true);
     try {
-      const ventaOriginalId = getOrderSaleId(exchangeSession.order)!;
-      const itemsNuevos = cartLinesToSaleItems(cart, getDiscount);
       const { saleId, giftCodigo } = await fulfillWebCambio(PUBLIC_SHOWROOM_ID, {
         ventaOriginalId,
         itemsDevueltos: exchangeSession.itemsDevueltos,
@@ -677,28 +958,30 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         diferencia,
         giftDestinatario: exchangeSession.giftDestinatario,
         customerNombre: customerProfile?.nombre,
+        pago: isTransferencia ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
+        ...shippingPayloadMeta,
       });
-
-      if (diferencia > 0 && mercadoPagoUrl) {
-        window.open(mercadoPagoUrl, '_blank', 'noopener,noreferrer');
-      }
 
       let msg = `Cambio registrado en caja (${saleId}).`;
       if (giftCodigo) {
         msg += ` Gift Card: ${giftCodigo}`;
         if (user) {
           await assignGiftCard(giftCodigo);
-          showAlert(`Se generó una Gift Card a tu favor con código ${giftCodigo}. Anotalo para futuras compras.`, '¡Gift Card Creada!', 'success');
-        } else {
-          showAlert(`Se generó una Gift Card a tu favor con código ${giftCodigo}. Anotalo para futuras compras.`, '¡Gift Card Creada!', 'success');
         }
+        showAlert(`Se generó una Gift Card a tu favor con código ${giftCodigo}. Anotalo para futuras compras.`, '¡Gift Card Creada!', 'success');
       } else {
         showAlert('El cambio ha sido registrado correctamente.', 'Cambio Exitoso', 'success');
       }
-      
+
+      const logisticaNotifStr = exchangeTipoEnvio === 'recoleta'
+        ? 'Pick Up Recoleta (Coordinación por WhatsApp)'
+        : exchangeTipoEnvio === 'envio'
+        ? 'Envío por Correo'
+        : 'Local Chivilcoy';
+
       sendNotificationEmail(
         `Nuevo Cambio Web - ${customerProfile?.nombre || 'Cliente'}`,
-        `Se ha registrado un nuevo cambio web.\nID de Venta (Caja): ${saleId}\nDiferencia: $${diferencia}\n${giftCodigo ? `Gift Card generada: ${giftCodigo}` : ''}`
+        `Se ha registrado un nuevo cambio web.\nID de Venta (Caja): ${saleId}\nDiferencia: $${diferencia}\nLogística: ${logisticaNotifStr}\n${giftCodigo ? `Gift Card generada: ${giftCodigo}` : ''}`
       );
 
       if (user) {
@@ -938,13 +1221,14 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   };
 
   const cartTotal = React.useMemo(() => {
+    const isTransferencia = (exchangeSession ? exchangePaymentMethod : paymentMethod) === 'transferencia';
     return cart.reduce((sum, c) => {
       const disc = getDiscount(c.product);
-      const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-      const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+      const basePrice = isTransferencia ? c.product.ventaEfectivo : c.product.ventaTarjeta;
+      const price = getDiscountedPrice(basePrice, disc, isTransferencia);
       return sum + price * c.quantity;
     }, 0);
-  }, [cart, getDiscount, getDiscountedPrice, paymentMethod]);
+  }, [cart, getDiscount, getDiscountedPrice, paymentMethod, exchangeSession, exchangePaymentMethod]);
 
   const cartGiftDiscountAmount = React.useMemo(() => {
     if (!appliedGiftCard) return 0;
@@ -957,8 +1241,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
   const totalDevueltoExchange = React.useMemo(() => {
     if (!exchangeSession) return 0;
-    return sumTransferLines(exchangeSession.itemsDevueltos);
-  }, [exchangeSession]);
+    const isTransferencia = exchangePaymentMethod === 'transferencia';
+    return sumExchangeLines(exchangeSession.itemsDevueltos, isTransferencia);
+  }, [exchangeSession, exchangePaymentMethod]);
 
   const diferenciaExchange = finalCartTotal - totalDevueltoExchange;
 
@@ -1013,10 +1298,6 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     window.history.replaceState({}, '', url.toString());
   };
 
-
-  if (isLoading && inventory.length === 0) {
-    return <InnovativeLoader storeName={webSettings.storeName || 'EL ROPERO'} />;
-  }
 
   return (
     <div className="min-h-screen bg-white flex flex-col text-black font-['Inter'] selection:bg-black selection:text-white overflow-x-clip w-full">
@@ -1879,18 +2160,18 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         </div>
       )}
 
-      {/* ══════ CART ══════ */}
+      {/* ══════ CART & CAMBIOS DRAWER ══════ */}
       {showCart && (
         <>
           <div className="fixed inset-0 bg-black/30 backdrop-blur-xs z-[110]" onClick={() => setShowCart(false)} />
-          <div className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white z-[120] shadow-xl flex flex-col drawer-slide-in border-l border-black/10">
-            <div className="flex items-center justify-between px-6 h-16 border-b border-black/10">
+          <div className="fixed top-0 right-0 h-[100dvh] max-h-[100dvh] w-full sm:w-[420px] max-w-full bg-white z-[120] shadow-xl flex flex-col drawer-slide-in border-l border-black/10 overflow-hidden">
+            <div className="flex items-center justify-between px-6 h-16 border-b border-black/10 flex-shrink-0 bg-white">
               <span className="text-[11px] tracking-[0.25em] uppercase font-light text-black">
                 {exchangeSession ? `Cambio — nuevas (${cartCount})` : `Carrito (${cartCount})`}
               </span>
               <button onClick={() => setShowCart(false)} className="opacity-40 hover:opacity-100"><X size={18} strokeWidth={1.2} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 divide-y divide-neutral-100">
+            <div className="flex-1 overflow-y-auto visible-scrollbar px-6 divide-y divide-neutral-100">
               {cart.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center gap-4 text-black/30 px-4 text-center">
                   <ShoppingBag size={44} strokeWidth={1} />
@@ -2076,18 +2357,21 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               </div>
             )}
             {exchangeSession && (
-              <div className="p-8 border-t border-black/5 space-y-5 bg-neutral-900/5">
-                <div className="space-y-3 mb-6 border-b border-black/10 pb-6">
-                  <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Seleccioná qué devolvés</p>
+              <div className="p-6 sm:p-8 border-t border-black/10 space-y-5 bg-neutral-900/5 overflow-y-auto visible-scrollbar max-h-[75vh] flex-shrink-0">
+                <div className="space-y-3 border-b border-black/10 pb-6">
+                  <div className="flex justify-between items-center">
+                    <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Seleccioná qué devolvés</p>
+                    <span className="text-[8px] uppercase tracking-wider text-black/40 bg-black/5 px-2 py-0.5 rounded">Deslizar para ver más</span>
+                  </div>
                   <p className="text-[9px] tracking-[1px] uppercase text-black/50">Pedido {new Date(exchangeSession.order.fecha).toLocaleDateString('es-AR')}</p>
-                  <div className="space-y-2 mt-3">
+                  <div className="space-y-2 mt-3 max-h-[220px] overflow-y-auto visible-scrollbar pr-1">
                     {exchangeSession.originalItems.map((item) => {
                       const sel = exchangeSession.itemsDevueltos.find((i) => i.id === item.id);
                       const qty = exchangeSession.cantDevueltasInput[item.id] ?? sel?.cantidad ?? 0;
                       return (
                         <label
                           key={item.id}
-                          className={`flex items-center gap-3 p-3 rounded border cursor-pointer text-[10px] uppercase tracking-[0.5px] ${
+                          className={`flex items-center gap-3 p-3 rounded border cursor-pointer text-[10px] uppercase tracking-[0.5px] transition-all ${
                             sel ? 'border-black bg-black/5' : 'border-black/10 hover:border-black/30'
                           }`}
                         >
@@ -2122,60 +2406,286 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                   </button>
                 </div>
                 <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Resumen del cambio</p>
-                {exchangeSession.itemsDevueltos.length > 0 ? (
-                  <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60">
-                    <p className="font-bold text-black/40">Devolvés</p>
-                    {exchangeSession.itemsDevueltos.map((i) => (
-                      <p key={i.id}>{i.descripcion} × {i.cantidad}</p>
-                    ))}
-                    <p className="text-right font-bold text-black">− ${totalDevueltoExchange.toLocaleString('es-AR')}</p>
-                  </div>
-                ) : (
-                  <p className="text-[10px] uppercase tracking-[1px] text-amber-700 font-semibold">
-                    Marcá las prendas a devolver en la sección superior.
-                  </p>
-                )}
-                {cart.length > 0 && (
-                  <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60 border-t border-black/5 pt-3">
-                    <p className="font-bold text-black/40">Prendas nuevas</p>
-                    {cart.map((c, i) => (
-                      <p key={i}>{c.product.descripcion} × {c.quantity}</p>
-                    ))}
-                    <p className="text-right font-bold text-black">+ ${cartTotal.toLocaleString('es-AR')}</p>
-                  </div>
-                )}
-                <div className="border-t border-black/10 pt-3 space-y-1 text-[11px] uppercase tracking-[1px]">
-                  <div className="flex justify-between font-bold">
-                    <span>{diferenciaExchange > 0 ? 'A pagar' : diferenciaExchange < 0 ? 'Gift Card' : 'Sin diferencia'}</span>
-                    <span>${Math.abs(diferenciaExchange).toLocaleString('es-AR')}</span>
-                  </div>
-                </div>
-                {diferenciaExchange < 0 && (
-                  <input
-                    type="text"
-                    value={exchangeSession.giftDestinatario}
-                    onChange={(e) =>
-                      setExchangeSession((prev) =>
-                        prev ? { ...prev, giftDestinatario: e.target.value } : prev
-                      )
-                    }
-                    placeholder="NOMBRE PARA GIFT CARD"
-                    className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px]"
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={confirmExchange}
-                  disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0}
-                  className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
-                >
-                  {isConfirmingExchange ? (
-                    <Loader2 className="animate-spin" size={14} />
+                <div className="max-h-[140px] overflow-y-auto visible-scrollbar pr-1 space-y-2">
+                  {exchangeSession.itemsDevueltos.length > 0 ? (
+                    <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60">
+                      <p className="font-bold text-black/40">Devolvés</p>
+                      {exchangeSession.itemsDevueltos.map((i) => (
+                        <p key={i.id}>{i.descripcion} × {i.cantidad}</p>
+                      ))}
+                      <p className="text-right font-bold text-black">− ${totalDevueltoExchange.toLocaleString('es-AR')}</p>
+                    </div>
                   ) : (
-                    <RefreshCw size={14} />
+                    <p className="text-[10px] uppercase tracking-[1px] text-amber-700 font-semibold">
+                      Marcá las prendas a devolver en la sección superior.
+                    </p>
                   )}
-                  Confirmar cambio en caja
-                </button>
+                  {cart.length > 0 && (
+                    <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60 border-t border-black/5 pt-3">
+                      <p className="font-bold text-black/40">Prendas nuevas</p>
+                      {cart.map((c, i) => (
+                        <p key={i}>{c.product.descripcion} × {c.quantity}</p>
+                      ))}
+                      <p className="text-right font-bold text-black">+ ${cartTotal.toLocaleString('es-AR')}</p>
+                    </div>
+                  )}
+                </div>
+                {(exchangeSession.itemsDevueltos.length > 0 || cart.length > 0) && (
+                  <div className="space-y-3 border-t border-black/10 pt-3">
+                    {/* Selector de Medio de Pago de la Diferencia */}
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Medio de Pago de Diferencia</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setExchangePaymentMethod('transferencia')}
+                          className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
+                            exchangePaymentMethod === 'transferencia'
+                              ? 'border-black bg-black text-white'
+                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                          }`}
+                        >
+                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
+                          <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'transferencia' ? 'text-white/80' : 'text-neutral-500'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExchangePaymentMethod('tarjeta')}
+                          className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
+                            exchangePaymentMethod === 'tarjeta'
+                              ? 'border-black bg-black text-white'
+                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                          }`}
+                        >
+                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Ualá Bis</span>
+                          <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Tarjeta / Cuotas</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Selector de Logística del Cambio */}
+                    <div className="space-y-2.5">
+                      <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Logística del Cambio</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setExchangeTipoEnvio('retiro')}
+                          className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
+                            exchangeTipoEnvio === 'retiro'
+                              ? 'border-black bg-black text-white'
+                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                          }`}
+                        >
+                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'retiro' ? 'text-white' : 'text-black'}`}>Chivilcoy</span>
+                          <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'retiro' ? 'text-white/80' : 'text-neutral-500'}`}>Presencial · Gratis</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExchangeTipoEnvio('recoleta')}
+                          className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
+                            exchangeTipoEnvio === 'recoleta'
+                              ? 'border-black bg-black text-white'
+                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                          }`}
+                        >
+                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'recoleta' ? 'text-white' : 'text-black'}`}>Pick Up Recoleta</span>
+                          <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'recoleta' ? 'text-white/80' : 'text-neutral-500'}`}>WhatsApp · Gratis</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExchangeTipoEnvio('envio')}
+                          className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
+                            exchangeTipoEnvio === 'envio'
+                              ? 'border-black bg-black text-white'
+                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                          }`}
+                        >
+                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'envio' ? 'text-white' : 'text-black'}`}>Envío por Correo</span>
+                          <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'envio' ? 'text-white/70' : 'text-neutral-400'}`}>Cotización Dinámica</span>
+                        </button>
+                      </div>
+
+                      {/* Panel Informativo Pick Up Recoleta */}
+                      {exchangeTipoEnvio === 'recoleta' && (
+                        <div className="p-3 bg-neutral-50 border border-neutral-200 space-y-2 mt-2 text-[10px] uppercase tracking-[0.5px]">
+                          <div className="flex items-center gap-1.5 font-bold text-black text-[10px]">
+                            <MapPin size={12} className="text-black shrink-0" />
+                            <span>Pick Up Recoleta (CABA) · Sin Costo</span>
+                          </div>
+                          <p className="text-[9px] text-neutral-600 font-normal normal-case leading-relaxed">
+                            Punto de entrega/retiro: <strong>{webSettings.locationPickupAddress || 'Recoleta, CABA'}</strong>.
+                            Entrega de la prenda a devolver y retiro del cambio se coordinan sin costo por WhatsApp.
+                          </p>
+                          <a
+                            href={`https://wa.me/${(webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                              'Hola El Ropero! Quisiera coordinar día y horario para realizar la entrega y retiro de mi cambio en el Pick Up de Recoleta.'
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-none hover:bg-emerald-100 transition-colors uppercase tracking-[0.1em]"
+                          >
+                            <MessageCircle size={12} />
+                            <span>Coordinar por WhatsApp</span>
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Configuración Dinámica de Envíos Correo Argentino */}
+                      {exchangeTipoEnvio === 'envio' && (
+                        <div className="p-3 bg-neutral-50 border border-neutral-200 space-y-3 mt-2 text-[10px] uppercase tracking-[0.5px]">
+                          <div>
+                            <label className="block text-[8px] tracking-[0.15em] font-semibold text-neutral-600 mb-1">
+                              Código Postal de tu Domicilio
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={6}
+                              value={exchangeCpCliente}
+                              onChange={(e) => setExchangeCpCliente(e.target.value.toUpperCase().trim())}
+                              placeholder="Ej: 1425"
+                              className="w-full bg-white border border-neutral-300 px-2.5 py-1.5 text-[11px] font-medium text-black focus:outline-none focus:border-black"
+                            />
+                          </div>
+
+                          {/* Tramo 1: Devolución */}
+                          <div className="space-y-1 border-t border-neutral-200 pt-2">
+                            <div className="flex justify-between items-center text-[9px] font-bold text-neutral-700">
+                              <span>1. Devolución (Tus prendas → Chivilcoy)</span>
+                              <span className="text-black font-semibold">
+                                {isCalculatingExchangeShipping ? '...' : `+$${costoEnvioDevolucion.toLocaleString('es-AR')}`}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setExchangeTipoDevolucion('S')}
+                                className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
+                                  exchangeTipoDevolucion === 'S'
+                                    ? 'border-black bg-neutral-900 text-white'
+                                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                }`}
+                              >
+                                Dejo en Sucursal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setExchangeTipoDevolucion('D')}
+                                className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
+                                  exchangeTipoDevolucion === 'D'
+                                    ? 'border-black bg-neutral-900 text-white'
+                                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                }`}
+                              >
+                                Retiro en Domicilio
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Tramo 2: Reenvío de prenda nueva */}
+                          {cart.length > 0 && (
+                            <div className="space-y-1 border-t border-neutral-200 pt-2">
+                              <div className="flex justify-between items-center text-[9px] font-bold text-neutral-700">
+                                <span>2. Reenvío (Chivilcoy → Tu dirección)</span>
+                                <span className="text-black font-semibold">
+                                  {isCalculatingExchangeShipping ? '...' : `+$${costoEnvioNuevo.toLocaleString('es-AR')}`}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setExchangeTipoNuevo('D')}
+                                  className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
+                                    exchangeTipoNuevo === 'D'
+                                      ? 'border-black bg-neutral-900 text-white'
+                                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                  }`}
+                                >
+                                  Envío a Domicilio
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setExchangeTipoNuevo('S')}
+                                  className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
+                                    exchangeTipoNuevo === 'S'
+                                      ? 'border-black bg-neutral-900 text-white'
+                                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                  }`}
+                                >
+                                  Retiro en Sucursal
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {isCalculatingExchangeShipping && (
+                            <div className="flex items-center gap-2 text-neutral-500 text-[9px] font-medium pt-1">
+                              <Loader2 size={12} className="animate-spin" />
+                              <span>Calculando tarifas con Correo Argentino...</span>
+                            </div>
+                          )}
+
+                          {exchangeShippingError && (
+                            <p className="text-red-600 text-[8px] font-medium normal-case tracking-normal">
+                              {exchangeShippingError}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {(() => {
+                  const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
+                  const difFinal = diferenciaExchange + costoEnvioTotal;
+                  return (
+                    <>
+                      <div className="border-t border-black/10 pt-3 space-y-1.5 text-[10px] uppercase tracking-[0.5px]">
+                        {exchangeTipoEnvio === 'envio' && costoEnvioTotal > 0 && (
+                          <div className="flex justify-between text-neutral-500">
+                            <span>Envío Total Correo Argentino</span>
+                            <span>+${costoEnvioTotal.toLocaleString('es-AR')}</span>
+                          </div>
+                        )}
+                        {exchangeTipoEnvio === 'recoleta' && (
+                          <div className="flex justify-between text-neutral-600 font-medium">
+                            <span>Logística Cambio</span>
+                            <span className="text-emerald-700 font-semibold">Pick Up Recoleta (Gratis)</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between font-bold text-[11px] text-black border-t border-black/5 pt-1.5">
+                          <span>{difFinal > 0 ? 'Diferencia a pagar' : difFinal < 0 ? 'Saldo Gift Card' : 'Sin diferencia'}</span>
+                          <span>${Math.abs(difFinal).toLocaleString('es-AR')}</span>
+                        </div>
+                      </div>
+                      {difFinal < 0 && (
+                        <input
+                          type="text"
+                          value={exchangeSession.giftDestinatario}
+                          onChange={(e) =>
+                            setExchangeSession((prev) =>
+                              prev ? { ...prev, giftDestinatario: e.target.value } : prev
+                            )
+                          }
+                          placeholder="NOMBRE PARA GIFT CARD"
+                          className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px]"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={confirmExchange}
+                        disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0 || (exchangeTipoEnvio === 'envio' && isCalculatingExchangeShipping)}
+                        className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
+                      >
+                        {isConfirmingExchange || isCalculatingExchangeShipping ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : (
+                          <RefreshCw size={14} />
+                        )}
+                        {difFinal > 0 && exchangePaymentMethod === 'tarjeta' ? 'Pagar diferencia en Ualá Bis' : 'Confirmar cambio'}
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>

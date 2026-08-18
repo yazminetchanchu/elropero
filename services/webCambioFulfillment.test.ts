@@ -208,6 +208,53 @@ describe('webCambioFulfillment Service - Gestión de Cambios Web', () => {
     expect(cambioSale).toBeDefined();
     expect(cambioSale.tipo).toBe('cambio');
     expect(cambioSale.diferencia).toBe(4000);
+    expect(cambioSale.pago).toEqual({ efectivo: 100, tarjeta: 0 });
+  });
+
+  it('guarda adecuadamente la estructura de pago recibida en el payload (ej. tarjeta)', async () => {
+    let updatedData: any = null;
+
+    mockRunTransaction.mockImplementation(async (_db, transactionCb) => {
+      const transaction = {
+        get: vi.fn().mockResolvedValue({
+          exists: () => true,
+          data: (): DatabaseState => ({
+            inventory: [JSON.parse(JSON.stringify(itemRemera)), JSON.parse(JSON.stringify(itemJean))],
+            sales: [originalSale],
+            giftCards: [],
+          }),
+        }),
+        update: vi.fn((_ref, data) => {
+          updatedData = data;
+        }),
+      };
+      return await transactionCb(transaction);
+    });
+
+    const newItem: SaleItem = {
+      id: 'prod-jean',
+      sku: 'SKU-JEAN',
+      descripcion: 'PANTALON JEAN AZUL (T:38 C:AZUL)',
+      cantidad: 1,
+      costo: 3000,
+      precioEfectivo: 6000,
+      precioTarjeta: 7000,
+      descuento: 0,
+      talle: '38',
+      color: 'AZUL',
+    };
+
+    const payload: WebCambioPayload = {
+      ventaOriginalId: originalSale.id,
+      itemsDevueltos: [originalSale.items[0]],
+      itemsNuevos: [newItem],
+      diferencia: 4000,
+      pago: { efectivo: 0, tarjeta: 100 },
+    };
+
+    const result = await fulfillWebCambio('ROPERO', payload);
+    const cambioSale = updatedData.sales.find((s: Sale) => s.id === result.saleId);
+    expect(cambioSale.pago).toEqual({ efectivo: 0, tarjeta: 100 });
   });
 
   it('genera una Gift Card automática si la diferencia es a favor del cliente (diferencia < 0)', async () => {
@@ -246,4 +293,207 @@ describe('webCambioFulfillment Service - Gestión de Cambios Web', () => {
     expect(updatedData.giftCards[0].saldo).toBe(2000);
     expect(updatedData.giftCards[0].destinatario).toBe('Lucía Fernández');
   });
+
+  it('registra correctamente la opción de logística Pick Up Recoleta en la venta de cambio', async () => {
+    let updatedData: any = null;
+
+    mockRunTransaction.mockImplementation(async (_db, transactionCb) => {
+      const transaction = {
+        get: vi.fn().mockResolvedValue({
+          exists: () => true,
+          data: (): DatabaseState => ({
+            inventory: [JSON.parse(JSON.stringify(itemRemera))],
+            sales: [originalSale],
+            giftCards: [],
+          }),
+        }),
+        update: vi.fn((_ref, data) => {
+          updatedData = data;
+        }),
+      };
+      return await transactionCb(transaction);
+    });
+
+    const payload: WebCambioPayload = {
+      ventaOriginalId: originalSale.id,
+      itemsDevueltos: [originalSale.items[0]],
+      itemsNuevos: [],
+      diferencia: -2000,
+      costoEnvio: 0,
+      tipoEnvioDevolucion: 'recoleta',
+      tipoEnvioNuevo: 'recoleta',
+    };
+
+    const result = await fulfillWebCambio('ROPERO', payload);
+    const cambioSale = updatedData.sales.find((s: Sale) => s.id === result.saleId);
+
+    expect(cambioSale.tipoEnvioDevolucion).toBe('recoleta');
+    expect(cambioSale.tipoEnvioNuevo).toBe('recoleta');
+    expect(cambioSale.costoEnvio).toBe(0);
+  });
+
+  it('lanza un error si la prenda devuelta no pertenece a la venta original', async () => {
+    mockRunTransaction.mockImplementation(async (_db, transactionCb) => {
+      const transaction = {
+        get: vi.fn().mockResolvedValue({
+          exists: () => true,
+          data: (): DatabaseState => ({
+            inventory: [itemRemera],
+            sales: [originalSale],
+          }),
+        }),
+      };
+      return await transactionCb(transaction);
+    });
+
+    const itemAjeno: SaleItem = {
+      id: 'prod-ajeno',
+      sku: 'SKU-AJENO',
+      descripcion: 'PRENDA DE OTRA COMPRA',
+      cantidad: 1,
+      costo: 500,
+      precioEfectivo: 1000,
+      precioTarjeta: 1500,
+      descuento: 0,
+    };
+
+    const payload: WebCambioPayload = {
+      ventaOriginalId: originalSale.id,
+      itemsDevueltos: [itemAjeno],
+      itemsNuevos: [],
+      diferencia: 0,
+    };
+
+    await expect(fulfillWebCambio('ROPERO', payload)).rejects.toThrow(
+      'no pertenece a la venta original'
+    );
+  });
+
+  it('lanza un error si se intenta devolver una cantidad mayor a la disponible tras cambios previos', async () => {
+    const cambioPrevio: Sale = {
+      id: 'sale-cambio-previo',
+      fecha: new Date().toISOString(),
+      tipo: 'cambio',
+      ventaOriginalId: originalSale.id,
+      itemsDevueltos: [{ ...originalSale.items[0], cantidad: 1 }],
+      itemsNuevos: [],
+      items: [],
+      total: 0,
+      pago: { efectivo: 0, tarjeta: 0 },
+    };
+
+    mockRunTransaction.mockImplementation(async (_db, transactionCb) => {
+      const transaction = {
+        get: vi.fn().mockResolvedValue({
+          exists: () => true,
+          data: (): DatabaseState => ({
+            inventory: [itemRemera],
+            sales: [originalSale, cambioPrevio],
+          }),
+        }),
+      };
+      return await transactionCb(transaction);
+    });
+
+    const payload: WebCambioPayload = {
+      ventaOriginalId: originalSale.id,
+      itemsDevueltos: [{ ...originalSale.items[0], cantidad: 1 }], // Ya devuelta en cambioPrevio
+      itemsNuevos: [],
+      diferencia: 0,
+    };
+
+    await expect(fulfillWebCambio('ROPERO', payload)).rejects.toThrow(
+      'solo podés devolver 0 unidad(es)'
+    );
+  });
+
+  it('lanza un error si no hay stock suficiente de la variante de prenda nueva seleccionada', async () => {
+    const itemSinStock: InventoryItem = {
+      ...itemJean,
+      stockPorVariante: { '38-AZUL': 0 },
+      cantidad: 0,
+    };
+
+    mockRunTransaction.mockImplementation(async (_db, transactionCb) => {
+      const transaction = {
+        get: vi.fn().mockResolvedValue({
+          exists: () => true,
+          data: (): DatabaseState => ({
+            inventory: [itemRemera, itemSinStock],
+            sales: [originalSale],
+          }),
+        }),
+      };
+      return await transactionCb(transaction);
+    });
+
+    const newItem: SaleItem = {
+      id: itemJean.id,
+      sku: itemJean.sku,
+      descripcion: 'PANTALON JEAN AZUL (T:38 C:AZUL)',
+      cantidad: 1,
+      costo: 3000,
+      precioEfectivo: 6000,
+      precioTarjeta: 7000,
+      descuento: 0,
+      talle: '38',
+      color: 'AZUL',
+    };
+
+    const payload: WebCambioPayload = {
+      ventaOriginalId: originalSale.id,
+      itemsDevueltos: [originalSale.items[0]],
+      itemsNuevos: [newItem],
+      diferencia: 4000,
+    };
+
+    await expect(fulfillWebCambio('ROPERO', payload)).rejects.toThrow(
+      'Stock insuficiente para variante 38-AZUL'
+    );
+  });
+
+  it('guarda correctamente el desglose de envíos (costoEnvioDevolucion, costoEnvioNuevo) y codigoPostalCliente', async () => {
+    let updatedData: any = null;
+
+    mockRunTransaction.mockImplementation(async (_db, transactionCb) => {
+      const transaction = {
+        get: vi.fn().mockResolvedValue({
+          exists: () => true,
+          data: (): DatabaseState => ({
+            inventory: [JSON.parse(JSON.stringify(itemRemera))],
+            sales: [originalSale],
+          }),
+        }),
+        update: vi.fn((_ref, data) => {
+          updatedData = data;
+        }),
+      };
+      return await transactionCb(transaction);
+    });
+
+    const payload: WebCambioPayload = {
+      ventaOriginalId: originalSale.id,
+      itemsDevueltos: [originalSale.items[0]],
+      itemsNuevos: [],
+      diferencia: 0,
+      costoEnvio: 9500,
+      costoEnvioDevolucion: 4500,
+      costoEnvioNuevo: 5000,
+      tipoEnvioDevolucion: 'D',
+      tipoEnvioNuevo: 'S',
+      codigoPostalCliente: '1425',
+    };
+
+    const result = await fulfillWebCambio('ROPERO', payload);
+    const cambioSale = updatedData.sales.find((s: Sale) => s.id === result.saleId);
+
+    expect(cambioSale.costoEnvio).toBe(9500);
+    expect(cambioSale.costoEnvioDevolucion).toBe(4500);
+    expect(cambioSale.costoEnvioNuevo).toBe(5000);
+    expect(cambioSale.tipoEnvioDevolucion).toBe('D');
+    expect(cambioSale.tipoEnvioNuevo).toBe('S');
+    expect(cambioSale.codigoPostalCliente).toBe('1425');
+  });
 });
+
+

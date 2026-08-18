@@ -37,14 +37,14 @@ const normalizeCategoryString = (category: string): string => {
 };
 
 /**
- * Gets the weight of an item based on its category
+ * Gets the weight of an item based on its category or description
  */
-export const getItemWeightGrams = (item: InventoryItem): number => {
+export const getItemWeightGrams = (item: { categoria?: string; pesoKg?: number; descripcion?: string }): number => {
   if (item.pesoKg && item.pesoKg > 0) {
     return item.pesoKg * 1000;
   }
   
-  const normalizedCat = normalizeCategoryString(item.categoria);
+  const normalizedCat = normalizeCategoryString(item.categoria || item.descripcion || '');
   return CATEGORY_WEIGHTS_GRAMS[normalizedCat] || DEFAULT_WEIGHT_GRAMS;
 };
 
@@ -97,3 +97,35 @@ export const calculateCartDimensions = (cart: { product: InventoryItem; quantity
     return { width: 20, length: 25, height: 5 };
   }
 };
+
+/**
+ * Calculates total weight in grams for a list of sale items (e.g. returned items in exchange).
+ */
+export const calculateSaleItemsWeightGrams = (items: { descripcion: string; cantidad: number; pesoKg?: number }[]): number => {
+  let totalGrams = 0;
+  for (const item of items) {
+    const weightPerUnit = getItemWeightGrams(item);
+    totalGrams += weightPerUnit * item.cantidad;
+  }
+  return totalGrams > 0 ? totalGrams : 1000;
+};
+
+/**
+ * Calculates dimensions for a list of sale items (e.g. returned items in exchange).
+ */
+export const calculateSaleItemsDimensions = (items: { descripcion: string; cantidad: number; pesoKg?: number }[]) => {
+  let heavyItemsCount = 0;
+  for (const item of items) {
+    const weightPerUnit = getItemWeightGrams(item);
+    if (weightPerUnit > 300) {
+      heavyItemsCount += item.cantidad;
+    }
+  }
+
+  if (heavyItemsCount > 3) {
+    return { width: 30, length: 35, height: 10 };
+  } else {
+    return { width: 20, length: 25, height: 5 };
+  }
+};
+

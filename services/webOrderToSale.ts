@@ -32,7 +32,19 @@ export function getOrderSaleId(order: CustomerOrder): string | null {
   return `sale_web_${order.id}`;
 }
 
+export function isGiftCardOrder(order: CustomerOrder): boolean {
+  return order.items.some(
+    (item) =>
+      (item as any).isVirtualGiftCard ||
+      item.sku === 'GIFT-CARD' ||
+      !!(item as any).giftCardData ||
+      item.productId.startsWith('virtual_gift_card_')
+  );
+}
+
 export function isOrderEligibleForExchange(order: CustomerOrder): boolean {
+  if (isGiftCardOrder(order)) return false;
+
   const registradoEnCaja =
     !!order.saleId || order.estado === 'Confirmado' || order.estado === 'Entregado';
   if (!registradoEnCaja) return false;
@@ -40,3 +52,4 @@ export function isOrderEligibleForExchange(order: CustomerOrder): boolean {
   const days = Math.floor((Date.now() - new Date(order.fecha).getTime()) / 86400000);
   return days <= 15;
 }
+

@@ -74,6 +74,12 @@ export interface Sale {
   giftEmail?: string;         // opcional: email para enviar la gift card
   giftMensaje?: string;       // opcional: mensaje de la gift card
   giftDeParteDe?: string;     // opcional: de parte de quién
+  costoEnvio?: number;
+  costoEnvioDevolucion?: number;
+  costoEnvioNuevo?: number;
+  tipoEnvioDevolucion?: 'S' | 'D' | 'local';
+  tipoEnvioNuevo?: 'S' | 'D' | 'local';
+  codigoPostalCliente?: string;
 }
 
 export interface Expense {

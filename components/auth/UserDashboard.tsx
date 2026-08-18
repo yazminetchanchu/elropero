@@ -2,7 +2,7 @@ import React from 'react';
 import { X, ShoppingBag, MapPin, Heart, User, Trash2, Edit3, Plus, ArrowRight, Loader2, LogOut, CheckCircle, Package, RefreshCw, Gift, ExternalLink } from 'lucide-react';
 import { useAuth, ShippingAddress, CustomerOrder } from '../../contexts/AuthContext';
 import { InventoryItem, GiftCard } from '../../types';
-import { isOrderEligibleForExchange } from '../../services/webOrderToSale';
+import { isOrderEligibleForExchange, isGiftCardOrder } from '../../services/webOrderToSale';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useModal } from '../../contexts/ModalContext';
@@ -39,6 +39,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
   
   const currentOrders = React.useMemo(() => {
     return (orders || []).filter(o => {
+      if (isGiftCardOrder(o)) return false;
       const days = Math.floor((Date.now() - new Date(o.fecha).getTime()) / 86400000);
       return o.estado !== 'Entregado' && days <= 15;
     });
@@ -46,6 +47,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
 
   const pastOrders = React.useMemo(() => {
     return (orders || []).filter(o => {
+      if (isGiftCardOrder(o)) return true;
       const days = Math.floor((Date.now() - new Date(o.fecha).getTime()) / 86400000);
       return o.estado === 'Entregado' || days > 15;
     });
@@ -263,7 +265,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
         )}
 
         {/* Main Panel Content */}
-        <div className="flex-1 overflow-y-auto p-8 no-scrollbar bg-white">
+        <div className="flex-1 overflow-y-auto p-8 visible-scrollbar bg-white">
 
           {/* TAB: MIS COMPRAS */}
           {activeTab === 'compras' && (
@@ -390,7 +392,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                           </a>
                         </div>
                       )}
-                      {(!!order.saleId || order.estado === 'Confirmado' || order.estado === 'Entregado') && (
+                      {!isGiftCardOrder(order) && (!!order.saleId || order.estado === 'Confirmado' || order.estado === 'Entregado') && (
                         <button
                           type="button"
                           disabled={!!order.isExchanged}

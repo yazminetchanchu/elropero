@@ -114,6 +114,27 @@ export async function createUalaPayment(
 
     return { paymentId: String(paymentId), paymentUrl: String(paymentUrl) };
   } catch (err: any) {
+    if (env === 'stage') {
+      console.warn('[Ualá Bis] Falló el cobro en STAGE. Reintentando automáticamente en PRODUCCIÓN...', err);
+      try {
+        const resp = await axios.post(endpointUrl, {
+          order,
+          successUrl: safeSuccessUrl,
+          failUrl: safeFailUrl,
+          env: 'production'
+        });
+        const paymentId = resp.data?.paymentId;
+        const paymentUrl = resp.data?.paymentUrl;
+        if (paymentId && paymentUrl) {
+          return { paymentId: String(paymentId), paymentUrl: String(paymentUrl) };
+        }
+      } catch (prodErr: any) {
+        if (prodErr.response?.data?.error) {
+          throw new Error(prodErr.response.data.error);
+        }
+        throw prodErr;
+      }
+    }
     if (err.response?.data?.error) {
       throw new Error(err.response.data.error);
     }

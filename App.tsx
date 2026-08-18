@@ -58,6 +58,7 @@ const App: React.FC = () => {
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
+  const [isDataLoaded, setIsDataLoaded] = React.useState(false);
   const [section, setSection] = React.useState<Section>('admin');
 
   // Countdown timer para el código 2FA
@@ -714,6 +715,7 @@ const App: React.FC = () => {
   React.useEffect(() => {
     const initFetch = async () => {
       setIsInitialLoading(true);
+      setIsDataLoaded(false);
       try {
         const id = database.getShowroomID();
         const remote = await database.fetchRemote(id);
@@ -725,8 +727,10 @@ const App: React.FC = () => {
         }
       } catch (e) {
         console.error("Initial fetch error:", e);
+        const local = database.getLocalBackup();
+        if (local.inventory?.length > 0) applyRemoteData(local);
       } finally {
-        setIsInitialLoading(false);
+        setIsDataLoaded(true);
         setIsLoading(false);
       }
     };
@@ -1238,7 +1242,13 @@ const handleCancelGiftCard = (id: string) => {
   // APP
   // =======================
   if (isInitialLoading) {
-    return <InnovativeLoader storeName={webSettings.storeName || 'EL ROPERO'} />;
+    return (
+      <InnovativeLoader 
+        storeName={webSettings.storeName || 'EL ROPERO'} 
+        isDataLoaded={isDataLoaded} 
+        onComplete={() => setIsInitialLoading(false)} 
+      />
+    );
   }
 
   return (

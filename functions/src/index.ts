@@ -436,32 +436,40 @@ export const createUalaCheckout = functions.https.onRequest(async (req, res) => 
 
   try {
     const body = req.body?.data || req.body || {};
-    const env = (body.env === 'stage' ? 'stage' : 'production');
     const order = body.order || {};
     const successUrl = body.successUrl || "https://elropero.ar";
     const failUrl = body.failUrl || "https://elropero.ar";
 
     // 1. Obtener credenciales del servidor (sin enviarlas jamás al cliente)
-    const clientId = (env === 'stage' ? process.env.UALA_CLIENT_ID_STAGE : process.env.UALA_CLIENT_ID)?.trim();
-    const clientSecret = (env === 'stage' ? process.env.UALA_CLIENT_SECRET_STAGE : process.env.UALA_CLIENT_SECRET)?.trim();
-    const username = (env === 'stage' ? process.env.UALA_USERNAME_STAGE : process.env.UALA_USERNAME)?.trim();
+    let activeEnv = body.env === 'stage' ? 'stage' : 'production';
+    let clientId = (activeEnv === 'stage' ? process.env.UALA_CLIENT_ID_STAGE : process.env.UALA_CLIENT_ID)?.trim();
+    let clientSecret = (activeEnv === 'stage' ? process.env.UALA_CLIENT_SECRET_STAGE : process.env.UALA_CLIENT_SECRET)?.trim();
+    let username = (activeEnv === 'stage' ? process.env.UALA_USERNAME_STAGE : process.env.UALA_USERNAME)?.trim();
+
+    if (activeEnv === 'stage' && (username === 'uapi_checkout_user' || !username || username.length < 3)) {
+      console.warn('[createUalaCheckout] Credenciales STAGE genéricas o incompletas. Fallback a PRODUCCIÓN.');
+      activeEnv = 'production';
+      clientId = process.env.UALA_CLIENT_ID?.trim();
+      clientSecret = process.env.UALA_CLIENT_SECRET?.trim();
+      username = process.env.UALA_USERNAME?.trim();
+    }
 
     if (!clientId || !clientSecret || !username) {
-      console.error(`Faltan credenciales de Ualá Bis en el servidor para entorno: ${env}`);
-      res.status(500).json({ error: `Faltan credenciales del servidor de Ualá Bis (${env}).` });
+      console.error(`Faltan credenciales de Ualá Bis en el servidor para entorno: ${activeEnv}`);
+      res.status(500).json({ error: `Faltan credenciales del servidor de Ualá Bis (${activeEnv}).` });
       return;
     }
 
-    const authUrl = env === 'stage'
+    let authUrl = activeEnv === 'stage'
       ? 'https://auth.stage.developers.ar.ua.la/v2/api/auth/token'
       : 'https://auth.developers.ar.ua.la/v2/api/auth/token';
 
-    const checkoutUrl = env === 'stage'
+    let checkoutUrl = activeEnv === 'stage'
       ? 'https://checkout.stage.developers.ar.ua.la/v2/api/checkout'
       : 'https://checkout.developers.ar.ua.la/v2/api/checkout';
 
     // 2. Obtener Token de Acceso desde Ualá Bis
-    const authPayload = {
+    let authPayload = {
       user_name: username,
       username: username,
       client_id: clientId,
@@ -470,12 +478,36 @@ export const createUalaCheckout = functions.https.onRequest(async (req, res) => 
       grant_type: 'client_credentials',
     };
 
-    console.log(`[createUalaCheckout] Solicitando token a Ualá (${env})...`);
-    const authResp = await fetch(authUrl, {
+    console.log(`[createUalaCheckout] Solicitando token a Ualá (${activeEnv})...`);
+    let authResp = await fetch(authUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(authPayload)
     });
+
+    if (!authResp.ok && activeEnv === 'stage') {
+      const errTextStr = await authResp.text();
+      console.warn(`[createUalaCheckout] STAGE devolvió error ${authResp.status} (${errTextStr}). Intentando con PRODUCCIÓN...`);
+      activeEnv = 'production';
+      clientId = process.env.UALA_CLIENT_ID?.trim();
+      clientSecret = process.env.UALA_CLIENT_SECRET?.trim();
+      username = process.env.UALA_USERNAME?.trim();
+      authUrl = 'https://auth.developers.ar.ua.la/v2/api/auth/token';
+      checkoutUrl = 'https://checkout.developers.ar.ua.la/v2/api/checkout';
+      authPayload = {
+        user_name: username || '',
+        username: username || '',
+        client_id: clientId || '',
+        client_secret_id: clientSecret || '',
+        client_secret: clientSecret || '',
+        grant_type: 'client_credentials',
+      };
+      authResp = await fetch(authUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(authPayload)
+      });
+    }
 
     if (!authResp.ok) {
       const errText = await authResp.text();

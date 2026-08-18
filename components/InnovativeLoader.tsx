@@ -3,39 +3,53 @@ import React, { useState, useEffect } from 'react';
 interface InnovativeLoaderProps {
   storeName?: string;
   message?: string;
+  isDataLoaded?: boolean;
+  onComplete?: () => void;
 }
 
 export const InnovativeLoader: React.FC<InnovativeLoaderProps> = ({
   storeName = 'EL ROPERO',
   message = '',
+  isDataLoaded,
+  onComplete,
 }) => {
   const [progress, setProgress] = useState(0);
   const [displayedText, setDisplayedText] = useState('');
   const [isTyping, setIsTyping] = useState(true);
 
-  // Simulate loading progress
+  // Sync progress with loading state
   useEffect(() => {
-    const duration = 2500; // 2.5 seconds total loading simulation
+    // If data is confirmed 100% loaded, complete immediately/smoothly
+    if (isDataLoaded === true) {
+      setProgress(100);
+      if (onComplete) {
+        const t = setTimeout(() => onComplete(), 200);
+        return () => clearTimeout(t);
+      }
+      return;
+    }
+
+    const duration = 2000;
     const intervalTime = 30;
     const steps = duration / intervalTime;
     let currentStep = 0;
 
     const timer = setInterval(() => {
       currentStep++;
-      // Easing out the progress for a more realistic feel
       const rawProgress = Math.min((currentStep / steps), 1);
-      const easedProgress = 1 - Math.pow(1 - rawProgress, 3); // Cubic ease-out
+      const easedProgress = 1 - Math.pow(1 - rawProgress, 3);
       const currentProgressValue = Math.min(easedProgress * 100, 100);
       
       setProgress(currentProgressValue);
 
       if (currentStep >= steps) {
         clearInterval(timer);
+        if (onComplete) onComplete();
       }
     }, intervalTime);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [isDataLoaded, onComplete]);
 
   // Sync typing with progress
   useEffect(() => {

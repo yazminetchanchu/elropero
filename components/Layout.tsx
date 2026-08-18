@@ -257,7 +257,7 @@ const Layout: React.FC<LayoutProps> = ({
           scrollbar-width: none;
         }
       `}</style>
-    <div className="min-h-screen flex flex-col md:flex-row bg-[#FAF9F5]">
+    <div className="min-h-[100dvh] w-full max-w-full flex flex-col md:flex-row bg-[#FAF9F5] overflow-x-hidden">
       {/* Contenedor fixed del sidebar */}
       <div
         className={`hidden md:flex fixed top-0 left-0 h-full z-30 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-[72px]' : 'w-64'}`}
@@ -282,12 +282,12 @@ const Layout: React.FC<LayoutProps> = ({
       </div>
 
       {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-40 bg-white/98 backdrop-blur-md pt-20 px-6 flex flex-col overflow-y-auto pb-6">
+        <div className="md:hidden fixed inset-0 z-40 bg-white/98 backdrop-blur-md pt-20 px-6 flex flex-col overflow-y-auto visible-scrollbar pb-6">
           <SidebarContent collapsed={false} />
         </div>
       )}
 
-      <main className={`flex-1 transition-all duration-300 ease-in-out p-4 md:p-8 overflow-auto ${isCollapsed ? 'md:ml-[72px]' : 'md:ml-64'}`}>
+      <main className={`flex-1 transition-all duration-300 ease-in-out p-4 md:p-8 overflow-auto visible-scrollbar ${isCollapsed ? 'md:ml-[72px]' : 'md:ml-64'}`}>
         <div className="max-w-7xl mx-auto h-full">{children}</div>
       </main>
     </div>

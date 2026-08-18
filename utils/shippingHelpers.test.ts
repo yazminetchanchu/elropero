@@ -4,6 +4,8 @@ import {
   calculateCartWeightKg,
   calculateCartWeightGrams,
   calculateCartDimensions,
+  calculateSaleItemsWeightGrams,
+  calculateSaleItemsDimensions,
 } from './shippingHelpers';
 import { InventoryItem } from '../types';
 
@@ -85,4 +87,24 @@ describe('shippingHelpers - Cálculo de Pesos y Dimensiones', () => {
       expect(dims).toEqual({ width: 30, length: 35, height: 10 });
     });
   });
+
+  describe('calculateSaleItemsWeightGrams y calculateSaleItemsDimensions', () => {
+    it('calcula peso en gramos para lista de SaleItem (prendas devueltas)', () => {
+      const saleItems = [
+        { descripcion: 'Jean Azul Talle 40', cantidad: 1 }, // 800g
+        { descripcion: 'Musculosa Blanca', cantidad: 2 },  // 150g * 2 = 300g
+      ];
+
+      expect(calculateSaleItemsWeightGrams(saleItems)).toBe(1100);
+    });
+
+    it('calcula dimensiones para lista de SaleItem devueltos', () => {
+      const saleItemsHeavy = [
+        { descripcion: 'Jean Azul Talle 40', cantidad: 4 } // 4 items > 300g
+      ];
+
+      expect(calculateSaleItemsDimensions(saleItemsHeavy)).toEqual({ width: 30, length: 35, height: 10 });
+    });
+  });
 });
+
