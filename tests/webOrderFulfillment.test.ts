@@ -4,6 +4,7 @@ import {
   reserveWebOrderStock,
   fulfillWebOrder,
   releaseExpiredReservations,
+  isOrderExpired,
   WebOrderForFulfillment,
 } from '../services/webOrderFulfillment';
 import { InventoryItem, DatabaseState, GiftCard } from '../types';
@@ -379,6 +380,76 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
       const prod1 = updatedInventory.find((i) => i.id === 'prod-1');
       expect(prod1?.stockPorVariante?.['S-Negro']).toBe(5);
       expect(prod1?.cantidad).toBe(7);
+    });
+
+    it('libera reservas en estado PENDING_PAYMENT o por fecha mayor a 15 minutos', async () => {
+      const pastFecha = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      const mockPendingPaymentDoc = {
+        id: 'ord-expired-2',
+        ref: 'showrooms/ROPERO/orders/ord-expired-2',
+        data: () => ({
+          estado: 'PENDING_PAYMENT',
+          fecha: pastFecha,
+          items: [
+            {
+              productId: 'prod-1',
+              cantidad: 1,
+              talle: 'S',
+              color: 'Negro',
+            },
+          ],
+        }),
+      };
+
+      mockGetDocs.mockResolvedValueOnce({
+        docs: [mockPendingPaymentDoc],
+      });
+
+      let updatedInventory: InventoryItem[] = [];
+
+      mockRunTransaction.mockImplementation(async (_db, transactionCallback) => {
+        const transaction = {
+          get: vi.fn().mockResolvedValue({
+            exists: () => true,
+            data: (): DatabaseState => ({
+              inventory: JSON.parse(JSON.stringify(sampleInventory)),
+              sales: [],
+            }),
+          }),
+          update: vi.fn((ref, data) => {
+            if (data.inventory) {
+              updatedInventory = data.inventory;
+            }
+          }),
+          set: vi.fn(),
+        };
+        return await transactionCallback(transaction);
+      });
+
+      await releaseExpiredReservations('ROPERO');
+
+      expect(mockRunTransaction).toHaveBeenCalled();
+      const prod1 = updatedInventory.find((i) => i.id === 'prod-1');
+      expect(prod1?.stockPorVariante?.['S-Negro']).toBe(4); // 3 + 1
+    });
+  });
+
+  describe('isOrderExpired', () => {
+    it('retorna true para órdenes PENDING_PAYMENT o Pendiente con expiresAt en el pasado', () => {
+      const pastExpiresAt = new Date(Date.now() - 1000).toISOString();
+      expect(isOrderExpired({ estado: 'PENDING_PAYMENT', expiresAt: pastExpiresAt })).toBe(true);
+      expect(isOrderExpired({ estado: 'Pendiente', expiresAt: pastExpiresAt })).toBe(true);
+    });
+
+    it('retorna true para órdenes sin expiresAt con fecha creada hace más de 15 minutos', () => {
+      const pastFecha = new Date(Date.now() - 16 * 60 * 1000).toISOString();
+      expect(isOrderExpired({ estado: 'PENDING_PAYMENT', fecha: pastFecha })).toBe(true);
+    });
+
+    it('retorna false para órdenes vigentes dentro de los 15 minutos o en otros estados', () => {
+      const recentExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      expect(isOrderExpired({ estado: 'PENDING_PAYMENT', expiresAt: recentExpiresAt })).toBe(false);
+      expect(isOrderExpired({ estado: 'Confirmado', expiresAt: new Date(Date.now() - 1000).toISOString() })).toBe(false);
     });
   });
 

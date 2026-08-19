@@ -84,6 +84,13 @@ service cloud.firestore {
       allow update, delete: if false; // Inmutabilidad absoluta
     }
 
+    // Cola de emails (extensión Trigger Email from Firestore)
+    // Cualquier usuario autenticado puede encolar un correo (solo creación).
+    match /mail/{mailId} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+
     // Bloquear acceso por defecto a cualquier otra colección o ruta no explícita
     match /{document=**} {
       allow read, write: if isAdmin();

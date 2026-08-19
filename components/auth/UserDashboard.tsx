@@ -3,6 +3,7 @@ import { X, ShoppingBag, MapPin, Heart, User, Trash2, Edit3, Plus, ArrowRight, L
 import { useAuth, ShippingAddress, CustomerOrder } from '../../contexts/AuthContext';
 import { InventoryItem, GiftCard } from '../../types';
 import { isOrderEligibleForExchange, isGiftCardOrder } from '../../services/webOrderToSale';
+import { isOrderExpired } from '../../services/webOrderFulfillment';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useModal } from '../../contexts/ModalContext';
@@ -36,10 +37,14 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
   
   const [activeTab, setActiveTab] = React.useState<ActiveTab>('compras');
   const [comprasSubTab, setComprasSubTab] = React.useState<'actuales' | 'historial'>('actuales');
+
+  const isCancelledOrder = (estado?: string) =>
+    ['Cancelado', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(estado || '');
   
   const currentOrders = React.useMemo(() => {
     return (orders || []).filter(o => {
       if (isGiftCardOrder(o)) return false;
+      if (isCancelledOrder(o.estado) || isOrderExpired(o)) return false;
       const days = Math.floor((Date.now() - new Date(o.fecha).getTime()) / 86400000);
       return o.estado !== 'Entregado' && days <= 15;
     });
@@ -48,6 +53,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
   const pastOrders = React.useMemo(() => {
     return (orders || []).filter(o => {
       if (isGiftCardOrder(o)) return true;
+      if (isCancelledOrder(o.estado) || isOrderExpired(o)) return true;
       const days = Math.floor((Date.now() - new Date(o.fecha).getTime()) / 86400000);
       return o.estado === 'Entregado' || days > 15;
     });
@@ -317,7 +323,13 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                         {new Date(order.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                       </span>
                       <span className="text-[8px] tracking-[0.2em] uppercase px-2 py-0.5 font-light border border-black/20 text-black">
-                        {order.estado}
+                        {isCancelledOrder(order.estado)
+                          ? 'CANCELADO'
+                          : order.estado === 'PENDING_PAYMENT' || order.estado === 'Pendiente'
+                          ? 'PENDIENTE'
+                          : order.estado === 'PAID'
+                          ? 'PAGADO'
+                          : order.estado}
                       </span>
                     </div>
 

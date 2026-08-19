@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import StorefrontPage from './StorefrontPage';
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
+import { getDoc } from 'firebase/firestore';
 
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -19,7 +20,8 @@ vi.mock('../services/firebase', () => ({
   db: {}
 }));
 
-vi.mock('../services/webOrderFulfillment', () => ({
+vi.mock('../services/webOrderFulfillment', async (importOriginal) => ({
+  ...(await importOriginal() as any),
   releaseExpiredReservations: vi.fn(),
   fulfillWebOrder: vi.fn()
 }));
@@ -205,6 +207,69 @@ describe('StorefrontPage', () => {
     // Verificar que aparece la pill/chip activa del filtro "Talle:"
     expect(screen.getByText('Talle:')).toBeInTheDocument();
   });
+
+  it('muestra la pantalla de tienda pausada con comunicación clara y oculta el catálogo cuando storeHidden es true', () => {
+    const mockInventory = [
+      {
+        id: '1',
+        sku: 'TEST1',
+        descripcion: 'Remera Oculta',
+        proveedor: 'Prov',
+        categoria: 'REMERAS',
+        cantidad: 10,
+        costo: 500,
+        ventaEfectivo: 1000,
+        ventaTarjeta: 1200,
+        talles: ['S'],
+        colores: ['NEGRO'],
+        imagenes: [],
+        visible: true
+      }
+    ];
+
+    const mockSettings = {
+      storeName: 'EL ROPERO PAUSADO',
+      storeHidden: true,
+      storePausedMessage: 'Pausado por mantenimiento de inventario. Volvemos a las 18 hs.',
+      contactWhatsapp: '5492346685836'
+    };
+
+    render(
+      <BrowserRouter>
+        <StorefrontPage inventoryProp={mockInventory as any} settingsProp={mockSettings as any} />
+      </BrowserRouter>
+    );
+
+    // Debe mostrar la cabecera de la tienda pausada y el mensaje personalizado
+    expect(screen.getByText('TIENDA EN MANTENIMIENTO')).toBeInTheDocument();
+    expect(screen.getByText('Pausado por mantenimiento de inventario. Volvemos a las 18 hs.')).toBeInTheDocument();
+    expect(screen.getByText('CONSULTAR POR WHATSAPP')).toBeInTheDocument();
+
+    // El catálogo de productos NO debe estar presente
+    expect(screen.queryByText('Remera Oculta')).not.toBeInTheDocument();
+  });
+
+  it('limpia localStorage y no muestra el modal de pago pendiente cuando la orden no existe en base de datos', async () => {
+    const mockInventory = [];
+    const mockSettings = { storeName: 'EL ROPERO STORE' };
+
+    (getDoc as any).mockResolvedValueOnce({ exists: () => false });
+    localStorage.setItem('ropero_last_pending_order', JSON.stringify({ orderId: 'FHEQVU' }));
+
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <StorefrontPage inventoryProp={mockInventory as any} settingsProp={mockSettings as any} />
+        </BrowserRouter>
+      );
+    });
+
+    // No debe mostrar el modal de Pago no completado
+    expect(screen.queryByText('Pago no completado')).not.toBeInTheDocument();
+    // Debe haber eliminado ropero_last_pending_order de localStorage
+    expect(localStorage.getItem('ropero_last_pending_order')).toBeNull();
+  });
 });
+
 
 

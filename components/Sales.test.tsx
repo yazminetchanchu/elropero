@@ -90,4 +90,52 @@ describe('Componente Sales', () => {
     const precioEfectivoSpan = screen.getByText('$2.000');
     expect(precioEfectivoSpan).not.toHaveClass('line-through');
   });
+
+  it('valúa la prenda devuelta según el medio de pago de la venta original (Tarjeta vs Efectivo)', () => {
+    const saleConTarjeta = {
+      id: 'sale-tarjeta-1',
+      fecha: new Date().toISOString(),
+      tipo: 'venta' as const,
+      total: 2500,
+      pago: { efectivo: 0, tarjeta: 100 },
+      items: [
+        {
+          id: 'prod-1',
+          sku: 'SKU1',
+          descripcion: 'Remera Negra',
+          cantidad: 1,
+          costo: 1000,
+          precioEfectivo: 2000,
+          precioTarjeta: 2500,
+          descuento: 0,
+        }
+      ]
+    };
+
+    render(
+      <Sales
+        inventory={mockInventory}
+        onAddSale={vi.fn()}
+        onDeleteSale={vi.fn()}
+        recentSales={[saleConTarjeta]}
+        giftCards={[]}
+      />
+    );
+
+    // Iniciar cambio
+    const cambioBtn = screen.getByRole('button', { name: /cambio/i });
+    fireEvent.click(cambioBtn);
+
+    // Verificar que estamos en modo cambio (muestra prendas a devolver)
+    expect(screen.getByText(/Prendas a devolver/i)).toBeInTheDocument();
+
+    // Seleccionar prenda para devolver (hacer clic en el checkbox)
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+
+    // El valor devuelto debe ser $ 2.500 (precio tarjeta), NO $ 2.000 (efectivo)
+    expect(screen.getByText(/Valor devuelto/i)).toBeInTheDocument();
+    const matches = screen.getAllByText(/\$ 2\.500/);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
 });

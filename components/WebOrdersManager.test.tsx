@@ -30,9 +30,14 @@ vi.mock('firebase/firestore', () => ({
   }),
 }));
 
-vi.mock('../services/webOrderFulfillment', () => ({
-  fulfillWebOrder: vi.fn().mockResolvedValue('SALE_123')
-}));
+vi.mock('../services/webOrderFulfillment', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    fulfillWebOrder: vi.fn().mockResolvedValue('SALE_123'),
+    releaseExpiredReservations: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 vi.mock('../services/emailService', () => ({
   sendNotificationEmail: vi.fn(),
@@ -64,7 +69,7 @@ describe('WebOrdersManager', () => {
     customerNombre: 'Juan Perez',
     customerEmail: 'juan@test.com',
     customerTelefono: '12345678',
-    fecha: '2026-06-01T10:00:00',
+    fecha: new Date().toISOString(),
     items: [
       { productId: 'p1', descripcion: 'Remera', sku: 'R1', cantidad: 1, precioUnitario: 100 }
     ],
@@ -197,4 +202,64 @@ describe('WebOrdersManager', () => {
     expect(miCorreoLinks[0]).toHaveAttribute('href', 'https://micorreo.correoargentino.com.ar/');
     expect(miCorreoLinks[0]).toHaveAttribute('target', '_blank');
   });
+
+  it('muestra la etiqueta Pendiente y la incluye en el filtro "Pendientes" para órdenes en estado PENDING_PAYMENT', async () => {
+    const pendingPaymentOrder = {
+      ...mockOrder,
+      id: 'order-pending-pay',
+      customerNombre: 'Carlos Gomez',
+      estado: 'PENDING_PAYMENT',
+      fecha: new Date().toISOString()
+    };
+
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'order-pending-pay', data: () => pendingPaymentOrder }
+      ]
+    });
+
+    render(<WebOrdersManager />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Carlos Gomez/i)).toBeInTheDocument();
+      expect(screen.getByText(/^Pendiente$/i)).toBeInTheDocument();
+    });
+
+    // Filtrar por Pendientes
+    const pendientesBtn = screen.getByRole('button', { name: /Pendientes/i });
+    fireEvent.click(pendientesBtn);
+
+    // Debe seguir mostrándose
+    expect(screen.getByText(/Carlos Gomez/i)).toBeInTheDocument();
+  });
+
+  it('muestra la etiqueta Cancelado y la incluye en el filtro "Cancelados" para órdenes en estado CANCELLED / EXPIRED', async () => {
+    const cancelledOrder = {
+      ...mockOrder,
+      id: 'order-cancelled-1',
+      customerNombre: 'Lucia Fernandez',
+      estado: 'CANCELLED'
+    };
+
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'order-cancelled-1', data: () => cancelledOrder }
+      ]
+    });
+
+    render(<WebOrdersManager />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Lucia Fernandez/i)).toBeInTheDocument();
+      expect(screen.getByText(/^Cancelado$/i)).toBeInTheDocument();
+    });
+
+    // Filtrar por Cancelados
+    const canceladosBtn = screen.getByRole('button', { name: /Cancelados/i });
+    fireEvent.click(canceladosBtn);
+
+    // Debe seguir mostrándose
+    expect(screen.getByText(/Lucia Fernandez/i)).toBeInTheDocument();
+  });
 });
+

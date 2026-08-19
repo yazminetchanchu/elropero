@@ -80,17 +80,25 @@ interface WebManagerProps {
 }
 
 const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selectedCategory, onSelectCategory, onUpdateInventory, onUpdateSettings, initialEditingItemId, onClearEditItem }) => {
-  const { showAlert } = useModal();
+  const { showAlert, showConfirm } = useModal();
   const [activeTab, setActiveTab] = React.useState<'catalog' | 'settings'>('catalog');
   const [searchTerm, setSearchTerm] = React.useState('');
   const [editingItem, setEditingItem] = React.useState<InventoryItem | null>(null);
   const [localSettings, setLocalSettings] = React.useState<WebSettings>(webSettings || {});
+  const [isTogglingStatus, setIsTogglingStatus] = React.useState(false);
+  const [isSavingSettings, setIsSavingSettings] = React.useState(false);
   const [newTalle, setNewTalle] = React.useState('');
   const [newColor, setNewColor] = React.useState('');
   const [newImagen, setNewImagen] = React.useState('');
   const [newCategory, setNewCategory] = React.useState('');
   const [isUploading, setIsUploading] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (webSettings) {
+      setLocalSettings(webSettings);
+    }
+  }, [webSettings]);
 
   React.useEffect(() => {
     if (initialEditingItemId) {
@@ -175,6 +183,35 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
     showAlert(`Se actualizó el precio de ${itemsToUpdate.length} productos en un ${bulkPercentage}%.`, 'Actualización Exitosa', 'success');
   };
 
+  const handleBulkSetVisibility = async (targetVisible: boolean) => {
+    const confirmTitle = targetVisible ? "Poner en Vista Todos" : "Sacar de Vista Todos";
+    const confirmMsg = targetVisible
+      ? "¿Estás seguro de poner en vista (hacer visibles en la web) TODOS los productos del catálogo?"
+      : "¿Estás seguro de sacar de vista (ocultar de la web) TODOS los productos del catálogo?";
+
+    const confirmed = await showConfirm(confirmMsg, confirmTitle, {
+      confirmText: targetVisible ? "Sí, poner visibles todos" : "Sí, ocultar todos",
+      type: targetVisible ? 'info' : 'warning'
+    });
+
+    if (!confirmed) return;
+
+    const updatedInventory = inventory.map(item => ({
+      ...item,
+      visible: targetVisible
+    }));
+
+    onUpdateInventory(updatedInventory);
+
+    showAlert(
+      targetVisible
+        ? `Se han puesto en vista todos los productos (${updatedInventory.length} artículos).`
+        : `Se han sacado de vista todos los productos (${updatedInventory.length} artículos).`,
+      "Visibilidad Actualizada",
+      "success"
+    );
+  };
+
   const filteredItems = inventory.filter(i => {
     const matchesSearch = i.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) || 
       i.sku.toLowerCase().includes(searchTerm.toLowerCase());
@@ -194,14 +231,38 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
   });
   const allCategories = Array.from(categoriasSet);
 
-  const toggleVisibility = (id: string) => {
+  const toggleVisibility = async (id: string) => {
     const next = inventory.map(item => 
       item.id === id ? { ...item, visible: !item.visible } : item
     );
-    onUpdateInventory(next);
+    try {
+      await onUpdateInventory(next);
+    } catch (err) {
+      console.error("Error al actualizar visibilidad del producto:", err);
+    }
   };
 
-  const handleSaveSettings = () => {
+  const handleToggleStoreStatus = async () => {
+    const nextHidden = !localSettings.storeHidden;
+    const nextSettings = { ...localSettings, storeHidden: nextHidden };
+    setLocalSettings(nextSettings);
+    setIsTogglingStatus(true);
+    try {
+      await onUpdateSettings(nextSettings);
+      showAlert(
+        nextHidden ? 'La tienda ha sido pausada para los clientes.' : 'La tienda web ha sido activada y es visible públicamente.',
+        nextHidden ? 'Tienda Pausada' : 'Tienda Activa',
+        'success'
+      );
+    } catch (err) {
+      console.error('Error al cambiar visibilidad de la tienda:', err);
+    } finally {
+      setIsTogglingStatus(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
     if (localSettings.ualaEnvironment) {
       setUalaEnvironment(localSettings.ualaEnvironment);
     }
@@ -216,7 +277,15 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
         );
       }
     }
-    onUpdateSettings(localSettings);
+    try {
+      await onUpdateSettings(localSettings);
+      showAlert('Configuración de la tienda guardada correctamente.', 'Configuración Guardada', 'success');
+    } catch (err) {
+      console.error('Error al guardar configuración:', err);
+      showAlert('No se pudo guardar la configuración. Por favor reintenta.', 'Error al Guardar', 'error');
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   const handleAddCategory = () => {
@@ -385,24 +454,49 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
   return (
     <>
       <div className="space-y-8 text-left animate-in fade-in duration-500">
-        <header className="border-b-2 border-[#C9B8A8]/30 pb-4 flex justify-between items-end">
+        <header className="border-b-2 border-[#C9B8A8]/30 pb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h2 className="font-serif text-3xl italic text-[#1A1A1A]">Gestión de Sitio Web</h2>
           <p className="text-[10px] tracking-[4px] uppercase font-bold text-[#1A1A1A]/40 mt-1">Contenido y visualización pública</p>
         </div>
-        <div className="flex bg-[#F5F1EB] p-1 rounded-xl border border-[#C9B8A8]/30">
-          <button 
-            onClick={() => setActiveTab('catalog')}
-            className={`px-6 py-2 rounded-lg text-[10px] tracking-[2px] font-bold uppercase transition-all ${activeTab === 'catalog' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#1A1A1A]/40 hover:text-[#1A1A1A]'}`}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleToggleStoreStatus}
+            disabled={isTogglingStatus}
+            title={localSettings.storeHidden ? "Click para Activar la Tienda Web" : "Click para Pausar la Tienda Web"}
+            className={`px-3.5 py-2 rounded-xl border text-[9px] tracking-[1.5px] font-bold uppercase transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
+              localSettings.storeHidden
+                ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+            }`}
           >
-            Catálogo
+            {isTogglingStatus ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : localSettings.storeHidden ? (
+              <EyeOff size={13} />
+            ) : (
+              <Eye size={13} />
+            )}
+            <span>{localSettings.storeHidden ? 'Tienda Pausada' : 'Tienda Activa'}</span>
+            <span className="text-[8px] opacity-80 underline font-normal">
+              ({localSettings.storeHidden ? 'Click para Activar' : 'Click para Pausar'})
+            </span>
           </button>
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`px-6 py-2 rounded-lg text-[10px] tracking-[2px] font-bold uppercase transition-all ${activeTab === 'settings' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#1A1A1A]/40 hover:text-[#1A1A1A]'}`}
-          >
-            Configuración
-          </button>
+
+          <div className="flex bg-[#F5F1EB] p-1 rounded-xl border border-[#C9B8A8]/30">
+            <button 
+              onClick={() => setActiveTab('catalog')}
+              className={`px-6 py-2 rounded-lg text-[10px] tracking-[2px] font-bold uppercase transition-all ${activeTab === 'catalog' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#1A1A1A]/40 hover:text-[#1A1A1A]'}`}
+            >
+              Catálogo
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`px-6 py-2 rounded-lg text-[10px] tracking-[2px] font-bold uppercase transition-all ${activeTab === 'settings' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#1A1A1A]/40 hover:text-[#1A1A1A]'}`}
+            >
+              Configuración
+            </button>
+          </div>
         </div>
       </header>
 
@@ -496,12 +590,28 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
               </button>
             </div>
 
-            <button
-              onClick={() => setShowBulkPriceModal(true)}
-              className="px-3.5 py-1.5 bg-[#C9B8A8] text-[#1A1A1A] text-[9px] font-black tracking-[1.5px] uppercase rounded-lg hover:bg-stone-400 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer ml-auto"
-            >
-              <Percent size={12} /> Actualización Masiva Precios
-            </button>
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
+              <button
+                onClick={() => handleBulkSetVisibility(false)}
+                title="Oculta todos los artículos de la tienda web"
+                className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 text-[9px] font-bold tracking-[1.5px] uppercase rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <EyeOff size={12} /> Sacar de vista todos
+              </button>
+              <button
+                onClick={() => handleBulkSetVisibility(true)}
+                title="Hace visibles todos los artículos en la tienda web"
+                className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[9px] font-bold tracking-[1.5px] uppercase rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Eye size={12} /> Poner en vista todos
+              </button>
+              <button
+                onClick={() => setShowBulkPriceModal(true)}
+                className="px-3.5 py-1.5 bg-[#C9B8A8] text-[#1A1A1A] text-[9px] font-black tracking-[1.5px] uppercase rounded-lg hover:bg-stone-400 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Percent size={12} /> Actualización Masiva Precios
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -552,24 +662,42 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
       {activeTab === 'settings' && (
         <div className="max-w-3xl mx-auto bg-white/90 backdrop-blur-sm border border-[#C9B8A8]/50 rounded-2xl p-10 shadow-xl space-y-10">
           
-          <div className="flex items-center justify-between bg-[#F5F1EB]/50 border border-[#C9B8A8]/30 p-6 rounded-xl">
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-xl ${localSettings.storeHidden ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                {localSettings.storeHidden ? <EyeOff size={24} /> : <Eye size={24} />}
+          <div className="bg-[#F5F1EB]/50 border border-[#C9B8A8]/30 p-6 rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-xl ${localSettings.storeHidden ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                  {localSettings.storeHidden ? <EyeOff size={24} /> : <Eye size={24} />}
+                </div>
+                <div>
+                  <h3 className="font-serif text-xl italic text-[#1A1A1A]">{localSettings.storeHidden ? 'Tienda Pausada' : 'Tienda Activa'}</h3>
+                  <p className="text-[10px] tracking-[2px] uppercase opacity-40 font-bold">
+                    {localSettings.storeHidden ? 'Los clientes verán un cartel de mantenimiento y comunicación de pausa.' : 'La tienda es visible públicamente.'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-serif text-xl italic text-[#1A1A1A]">{localSettings.storeHidden ? 'Tienda Pausada' : 'Tienda Activa'}</h3>
-                <p className="text-[10px] tracking-[2px] uppercase opacity-40 font-bold">
-                  {localSettings.storeHidden ? 'Los clientes verán un cartel de mantenimiento.' : 'La tienda es visible públicamente.'}
-                </p>
-              </div>
+              <button
+                onClick={handleToggleStoreStatus}
+                disabled={isTogglingStatus}
+                className={`px-6 py-2 rounded-lg text-[10px] tracking-[2px] font-bold uppercase transition-all border flex items-center gap-2 cursor-pointer ${localSettings.storeHidden ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'bg-white text-[#1A1A1A] border-[#C9B8A8]/50 hover:bg-[#F5F1EB]'} disabled:opacity-50`}
+              >
+                {isTogglingStatus && <Loader2 size={12} className="animate-spin" />}
+                <span>{localSettings.storeHidden ? 'Activar Tienda' : 'Pausar Tienda'}</span>
+              </button>
             </div>
-            <button
-              onClick={() => setLocalSettings({ ...localSettings, storeHidden: !localSettings.storeHidden })}
-              className={`px-6 py-2 rounded-lg text-[10px] tracking-[2px] font-bold uppercase transition-all border ${localSettings.storeHidden ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'bg-white text-[#1A1A1A] border-[#C9B8A8]/50 hover:bg-[#F5F1EB]'}`}
-            >
-              {localSettings.storeHidden ? 'Activar Tienda' : 'Pausar Tienda'}
-            </button>
+
+            <div className="pt-3 border-t border-[#C9B8A8]/20 space-y-2">
+              <label className="text-[10px] tracking-[2px] uppercase font-bold text-[#1A1A1A]/70 flex items-center justify-between">
+                <span>Mensaje al Cliente en Vista Pausada</span>
+                <span className="text-[9px] font-normal text-stone-400">Opcional</span>
+              </label>
+              <textarea
+                rows={2}
+                value={localSettings.storePausedMessage || ''}
+                onChange={e => setLocalSettings({ ...localSettings, storePausedMessage: e.target.value })}
+                placeholder="Ej: Estamos actualizando nuestro stock y nuevos ingresos. Volvemos muy pronto..."
+                className="w-full bg-white border border-[#C9B8A8]/40 p-3 rounded-lg text-xs font-normal focus:outline-none focus:border-[#C9B8A8]"
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-4 border-b border-[#C9B8A8]/20 pb-6">
@@ -883,9 +1011,11 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
           <div className="pt-6 border-t border-[#C9B8A8]/20 flex justify-end">
             <button 
               onClick={handleSaveSettings}
-              className="bg-[#1A1A1A] text-white px-10 py-4 rounded-xl text-[11px] tracking-[4px] font-black uppercase hover:bg-black transition-all flex items-center gap-3 shadow-lg"
+              disabled={isSavingSettings}
+              className="bg-[#1A1A1A] text-white px-10 py-4 rounded-xl text-[11px] tracking-[4px] font-black uppercase hover:bg-black transition-all flex items-center gap-3 shadow-lg disabled:opacity-50 cursor-pointer"
             >
-              <Save size={16} /> Guardar Configuración
+              {isSavingSettings ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              <span>{isSavingSettings ? 'Guardando...' : 'Guardar Configuración'}</span>
             </button>
           </div>
         </div>

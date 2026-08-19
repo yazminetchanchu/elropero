@@ -214,21 +214,58 @@ const App: React.FC = () => {
 
       setLastUpdate(confirmed.lastSync ?? Date.now());
       database.updateLocalOnly(confirmed);
+      return confirmed;
 
     } catch (error: any) {
-      if (error?.type === 'CONFLICT') {
-        console.warn('⚠️ Conflicto detectado: el servidor tiene datos más nuevos. Sincronizando...');
-        const serverState = error.serverState;
-        applyRemoteData(serverState);
-        alert(
-          '⚠️ Datos actualizados desde otro dispositivo.\n' +
-          'Se sincronizó tu dispositivo. Por favor, verificá los últimos cambios y reintentá tu última acción si no aparece.'
-        );
+      if (error?.type === 'CONFLICT' && error.serverState) {
+        console.warn('⚠️ Conflicto detectado: el servidor tiene datos más nuevos. Intentando merge inteligente...');
+        const serverState: DatabaseState = error.serverState;
+
+        try {
+          // Auto-merge: si una sección específica fue modificada por esta llamada, preservamos el cambio del usuario;
+          // para las demás secciones que no cambiaron en esta llamada, usamos los datos más recientes del servidor.
+          const mergedWebSettings = newWebSettings !== webSettings ? newWebSettings : (serverState.webSettings || webSettings);
+          const mergedClosures = newClosures !== closures ? newClosures : (serverState.closures || closures);
+          const mergedExpenses = newExp !== expenses ? newExp : (serverState.expenses || expenses);
+          const mergedGiftCards = newGift !== giftCards ? newGift : (serverState.giftCards || giftCards);
+          const mergedSales = newSales !== sales ? newSales : (serverState.sales || sales);
+          const mergedInventory = newInv !== inventory ? newInv : (serverState.inventory || inventory);
+
+          const confirmedRetry = await database.persistSafe(
+            {
+              inventory: mergedInventory,
+              sales: mergedSales,
+              expenses: mergedExpenses,
+              giftCards: mergedGiftCards,
+              closures: mergedClosures,
+              webSettings: mergedWebSettings
+            },
+            serverState.lastSync || Date.now()
+          );
+
+          setInventory(mergedInventory);
+          setSales(mergedSales);
+          setExpenses(mergedExpenses);
+          setGiftCards(mergedGiftCards);
+          setClosures(mergedClosures);
+          setWebSettings(mergedWebSettings);
+
+          setLastUpdate(confirmedRetry.lastSync ?? Date.now());
+          database.updateLocalOnly(confirmedRetry);
+          console.log('✅ Conflicto resuelto exitosamente mediante auto-merge.');
+          return confirmedRetry;
+        } catch (retryErr) {
+          console.warn('⚠️ No se pudo resolver automáticamente el conflicto, sincronizando con servidor:', retryErr);
+          applyRemoteData(serverState);
+          alert(
+            '⚠️ Datos actualizados desde otro dispositivo o proceso en segundo plano.\n' +
+            'Se sincronizó tu dispositivo. Por favor, verificá los últimos cambios y reintentá tu última acción si no aparece.'
+          );
+        }
       } else {
         console.error('❌ Error al guardar cambios:', error);
         alert('❌ Error general: No se pudo guardar en la base de datos. La operación fue cancelada.');
       }
-      throw error; // Lanza el error para evitar continuar
     } finally {
       setIsSyncing(false);
     }
@@ -876,6 +913,30 @@ const App: React.FC = () => {
     // GIFT CARD AUTOMÁTICA (diferencia negativa = a favor del cliente)
     // =======================
     let giftGenerada: GiftCard | undefined;
+    if (saleData.tipo === 'cambio' && (saleData.diferencia ?? 0) < 0) {
+      const montoGift = Math.abs(saleData.diferencia!);
+      const codigoGift = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+      const ventaOrig = sales.find(s => s.id === saleData.ventaOriginalId);
+      let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
+      if (ventaOrig?.pago) {
+        if (ventaOrig.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
+        else if (ventaOrig.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
+        else medioPagoOrigen = 'mixto';
+      }
+
+      giftGenerada = {
+        id: saleData.giftGeneradaId || `gift_${Date.now()}`,
+        codigo: codigoGift,
+        destinatario: saleData.giftDestinatario?.trim() || 'Cambio automático',
+        montoInicial: montoGift,
+        saldo: montoGift,
+        estado: 'ACTIVA',
+        fechaCreacion: new Date().toISOString(),
+        medioPagoOrigen,
+        ventaOrigenId: saleData.ventaOriginalId,
+      };
+    }
 
     // Los emails se enviarán después de persistir correctamente
   

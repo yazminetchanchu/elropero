@@ -320,17 +320,31 @@ export async function reserveWebOrderStock(
   }
 }
 
+export function isOrderExpired(order: { estado?: string; expiresAt?: string; fecha?: string }): boolean {
+  if (!order) return false;
+  const isPending = order.estado === 'Pendiente' || order.estado === 'PENDING_PAYMENT';
+  if (!isPending) return false;
+
+  const now = Date.now();
+  if (order.expiresAt) {
+    return new Date(order.expiresAt).getTime() < now;
+  }
+  if (order.fecha) {
+    const fechaMs = new Date(order.fecha).getTime();
+    if (!isNaN(fechaMs)) {
+      return (now - fechaMs) > 15 * 60 * 1000;
+    }
+  }
+  return false;
+}
+
 export async function releaseExpiredReservations(showroomId: string) {
   const ordersCol = collection(db, 'showrooms', showroomId, 'orders');
-  const nowStr = new Date().toISOString();
-  
-  // Buscar pedidos Pendientes
-  const q = query(ordersCol, where('estado', '==', 'Pendiente'));
-  const snap = await getDocs(q);
+  const snap = await getDocs(ordersCol);
   
   const expiredDocs = snap.docs.filter(d => {
     const data = d.data();
-    return data.expiresAt && data.expiresAt < nowStr;
+    return isOrderExpired(data);
   });
 
   if (expiredDocs.length === 0) return;
@@ -349,12 +363,12 @@ export async function releaseExpiredReservations(showroomId: string) {
         const nextInventory = restoreInventory(srData.inventory || [], data.items || []);
         
         transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
-        transaction.update(d.ref, { estado: 'Cancelado' });
+        transaction.update(d.ref, { estado: 'Cancelado', cancelReason: 'expired' });
         
         // Update in customer profile if exists
         if (data.customerId && data.customerId !== 'GUEST') {
            const customerOrderRef = doc(db, 'showrooms', showroomId, 'customers', data.customerId, 'orders', d.id);
-           transaction.update(customerOrderRef, { estado: 'Cancelado' });
+           transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired' }, { merge: true });
         }
       });
       console.log(`Reserva ${d.id} expirada, stock liberado y pedido cancelado.`);
@@ -363,4 +377,5 @@ export async function releaseExpiredReservations(showroomId: string) {
     }
   }
 }
+
 

@@ -55,7 +55,8 @@ vi.mock('../services/firebase', () => ({
   functions: {}
 }));
 
-vi.mock('../services/webOrderFulfillment', () => ({
+vi.mock('../services/webOrderFulfillment', async (importOriginal) => ({
+  ...(await importOriginal() as any),
   fulfillWebOrder: vi.fn(),
   reserveWebOrderStock: vi.fn()
 }));

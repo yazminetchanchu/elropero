@@ -153,5 +153,24 @@ describe('emailService - Notificaciones y Envíos de Correos', () => {
       expect(payload.message.html).toContain('Valentina');
       expect(payload.message.html).toContain('$10.000');
     });
+
+    it('encola correctamente el correo de gift card generada por cambio a favor del cliente', async () => {
+      await sendGiftCardEmail(
+        'cliente@gmail.com',
+        'María',
+        'El Ropero Showroom',
+        4500,
+        'GIFT-CAMBIO-999',
+        'Crédito a favor generado por cambio de prendas.'
+      );
+
+      const payload = mockAddDoc.mock.calls[0][1];
+      expect(payload.to).toBe('cliente@gmail.com');
+      expect(payload.message.subject).toContain('Gift Card');
+      expect(payload.message.text).toContain('GIFT-CAMBIO-999');
+      expect(payload.message.text).toContain('Crédito a favor generado por cambio de prendas.');
+      expect(payload.message.html).toContain('GIFT-CAMBIO-999');
+      expect(payload.message.html).toContain('$4.500');
+    });
   });
 });

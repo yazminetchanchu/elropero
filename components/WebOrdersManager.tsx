@@ -4,7 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import { database } from '../services/storage';
 import { collection, getDocs, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { Search, ShoppingBag, Eye, X, MessageSquare, CheckCircle, Clock, Truck, Loader2, Receipt, Package, FileText, Activity, Download, ExternalLink } from 'lucide-react';
-import { fulfillWebOrder } from '../services/webOrderFulfillment';
+import { fulfillWebOrder, releaseExpiredReservations, isOrderExpired } from '../services/webOrderFulfillment';
 import { sendNotificationEmail, sendSaleConfirmationEmail, sendOrderCancelledEmail } from '../services/emailService';
 import { useModal } from '../contexts/ModalContext';
 import { generarEnvioManual, obtenerEtiquetaPdf } from '../services/correoArgentinoService';
@@ -40,7 +40,7 @@ interface WebOrder {
     codigoPostal: string;
     indicaciones?: string;
   };
-  estado: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado';
+  estado: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado' | 'PENDING_PAYMENT' | 'PAID' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'FAILED' | 'REFUNDED';
   costoEnvio?: number;
   metodoPago?: string;
   saleId?: string;
@@ -205,14 +205,20 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
     setIsLoading(true);
     try {
       const showroomId = database.getShowroomID();
+      // Liberar cualquier reserva pendiente que haya superado los 15 minutos
+      await releaseExpiredReservations(showroomId).catch(err => console.error('Error al liberar reservas expiradas:', err));
+
       const ordersCol = collection(db, 'showrooms', showroomId, 'orders');
       const ordersSnap = await getDocs(ordersCol);
       
       const list: WebOrder[] = [];
-      ordersSnap.docs.forEach(doc => {
+      ordersSnap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        const finalEstado = isOrderExpired(data) ? 'Cancelado' : data.estado;
         list.push({
-          id: doc.id,
-          ...doc.data()
+          id: docSnap.id,
+          ...data,
+          estado: finalEstado
         } as WebOrder);
       });
 
@@ -372,7 +378,11 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
         (o.customerTelefono || '').includes(searchTerm) ||
         o.id.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = statusFilter === 'todos' || o.estado === statusFilter;
+      const matchesStatus = 
+        statusFilter === 'todos' || 
+        o.estado === statusFilter || 
+        (statusFilter === 'Pendiente' && o.estado === 'PENDING_PAYMENT') ||
+        (statusFilter === 'Cancelado' && ['CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(o.estado));
       return matchesSearch && matchesStatus;
     });
   }, [orders, searchTerm, statusFilter]);
@@ -380,12 +390,15 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
   const getStatusBadge = (status: WebOrder['estado']) => {
     switch (status) {
       case 'Confirmado':
+      case 'PAID':
         return (
           <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-emerald-300">
             <CheckCircle size={11} /> Confirmado
           </span>
         );
       case 'Pendiente':
+      case 'PENDING_PAYMENT':
+      default:
         return (
           <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-700 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-amber-200">
             <Clock size={11} /> Pendiente
@@ -404,6 +417,11 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
           </span>
         );
       case 'Cancelado':
+      case 'CANCELLED':
+      case 'REJECTED':
+      case 'EXPIRED':
+      case 'FAILED':
+      case 'REFUNDED':
         return (
           <span className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-700 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-red-200">
             <X size={11} /> Cancelado
@@ -533,7 +551,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
               className={`border rounded-2xl p-5 transition-all duration-200 ease-out shadow-2xs flex flex-col md:flex-row justify-between items-start md:items-center gap-5 ${
                 selectedOrderIds.includes(order.id)
                   ? 'bg-amber-50/40 border-stone-400 shadow-sm'
-                  : order.estado === 'Cancelado' 
+                  : ['Cancelado', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(order.estado) 
                     ? 'bg-stone-50 border-stone-200/60 opacity-60' 
                     : 'bg-white border-stone-200/60 hover:border-stone-300 hover:-translate-y-1 hover:shadow-md'
               }`}
@@ -629,7 +647,9 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                         key={status}
                         onClick={() => handleUpdateStatus(selectedOrder.id, selectedOrder.customerId, status)}
                         className={`px-3 py-2 text-[9px] tracking-[1px] uppercase font-bold transition-all ${
-                          selectedOrder.estado === status 
+                          selectedOrder.estado === status || 
+                          (status === 'Pendiente' && selectedOrder.estado === 'PENDING_PAYMENT') ||
+                          (status === 'Cancelado' && ['CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(selectedOrder.estado))
                             ? 'bg-black text-white' 
                             : 'bg-white text-black hover:bg-neutral-50'
                         }`}

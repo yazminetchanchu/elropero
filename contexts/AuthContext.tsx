@@ -14,10 +14,15 @@ import { doc, getDoc, setDoc, updateDoc, collection, addDoc, getDocs, query, ord
 import { auth, db, googleProvider } from '../services/firebase';
 import { InventoryItem } from '../types';
 import { sendWelcomeEmail } from '../services/emailService';
-
+import { releaseExpiredReservations, isOrderExpired } from '../services/webOrderFulfillment';
 import { getShowroomID } from '../services/storage';
 
 const PUBLIC_SHOWROOM_ID = getShowroomID();
+
+export const ADMIN_EMAILS = [
+  'elropero.informacion@gmail.com',
+  'yazminetchanchu@gmail.com'
+];
 
 export interface ShippingAddress {
   id: string;
@@ -118,11 +123,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (ordersUnsubscribe.current) {
         ordersUnsubscribe.current();
       }
+      // Liberar reservas expiradas en el showroom
+      releaseExpiredReservations(PUBLIC_SHOWROOM_ID).catch(err => console.error('Error al liberar reservas expiradas:', err));
+
       const ordersCol = collection(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', uid, 'orders');
       const q = query(ordersCol, orderBy('fecha', 'desc'));
       
       ordersUnsubscribe.current = onSnapshot(q, (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as CustomerOrder));
+        const list = snap.docs.map(d => {
+          const data = d.data();
+          const finalEstado = isOrderExpired(data) ? 'Cancelado' : data.estado;
+          return { id: d.id, ...data, estado: finalEstado } as CustomerOrder;
+        });
         setOrders(list);
       }, (error) => {
         console.error('Error in orders snapshot:', error);
@@ -230,11 +242,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setIsLoading(true);
       if (firebaseUser) {
-        setUser(firebaseUser);
-        try {
-          await ensureProfile(firebaseUser);
-        } catch (e) {
-          console.error('Error al cargar perfil de cliente en Firestore:', e);
+        const cleanEmail = firebaseUser.email?.trim().toLowerCase();
+        if (cleanEmail && ADMIN_EMAILS.includes(cleanEmail)) {
+          // Si el usuario autenticado en Firebase es una cuenta de administración de la tienda,
+          // la tienda pública del cliente se mantiene estrictamente en modo INVITADO.
+          console.log('[Auth] Email de administración detectado. La tienda pública permanece en modo INVITADO.');
+          setUser(null);
+          setCustomerProfile(null);
+          setOrders([]);
+          if (ordersUnsubscribe.current) {
+            ordersUnsubscribe.current();
+            ordersUnsubscribe.current = undefined;
+          }
+        } else {
+          setUser(firebaseUser);
+          try {
+            await ensureProfile(firebaseUser);
+          } catch (e) {
+            console.error('Error al cargar perfil de cliente en Firestore:', e);
+          }
         }
       } else {
         setUser(null);
@@ -257,16 +283,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // API de Autenticación
   const loginWithEmail = async (email: string, pass: string) => {
+    const clean = email.trim().toLowerCase();
+    if (ADMIN_EMAILS.includes(clean)) {
+      throw new Error('Este correo pertenece a la administración de la tienda. Para ingresar como administrador, usá el panel de gestión.');
+    }
     await signInWithEmailAndPassword(auth, email, pass);
   };
 
   const signUpWithEmail = async (email: string, pass: string, name?: string, phone?: string) => {
+    const clean = email.trim().toLowerCase();
+    if (ADMIN_EMAILS.includes(clean)) {
+      throw new Error('Este correo pertenece a la administración de la tienda.');
+    }
     const credential = await createUserWithEmailAndPassword(auth, email, pass);
     await ensureProfile(credential.user, { nombre: name, telefono: phone });
   };
 
   const loginWithGoogle = async () => {
     const credential = await signInWithPopup(auth, googleProvider);
+    const clean = credential.user.email?.trim().toLowerCase();
+    if (clean && ADMIN_EMAILS.includes(clean)) {
+      await signOut(auth);
+      throw new Error('Este correo pertenece a la administración de la tienda.');
+    }
     await ensureProfile(credential.user);
   };
 

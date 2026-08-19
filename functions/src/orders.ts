@@ -112,24 +112,37 @@ export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5
   const showroomRef = db.collection('showrooms').doc(showroomId);
   const ordersCol = showroomRef.collection('orders');
   
-  const nowStr = new Date().toISOString();
+  const now = Date.now();
   
-  // Buscar órdenes expiradas en estado PENDING_PAYMENT
-  // Nota: Requiere índice en Firestore para (estado, expiresAt)
-  const expiredOrders = await ordersCol
-    .where('estado', '==', 'PENDING_PAYMENT')
-    .where('expiresAt', '<', nowStr)
-    .get();
+  // Buscar órdenes en estado PENDING_PAYMENT o Pendiente
+  const allOrdersSnap = await ordersCol.get();
+  const expiredDocs = allOrdersSnap.docs.filter(docSnap => {
+    const data = docSnap.data();
+    const isPending = data.estado === 'PENDING_PAYMENT' || data.estado === 'Pendiente';
+    if (!isPending) return false;
 
-  if (expiredOrders.empty) {
+    if (data.expiresAt) {
+      return new Date(data.expiresAt).getTime() < now;
+    }
+    if (data.fecha) {
+      const fechaMs = new Date(data.fecha).getTime();
+      if (!isNaN(fechaMs)) {
+        return (now - fechaMs) > 15 * 60 * 1000;
+      }
+    }
+    return false;
+  });
+
+  if (expiredDocs.length === 0) {
     console.log('[Cron] No hay reservas expiradas.');
     return null;
   }
 
-  console.log(`[Cron] Encontradas ${expiredOrders.size} reservas expiradas. Procesando...`);
+  console.log(`[Cron] Encontradas ${expiredDocs.length} reservas expiradas. Procesando...`);
 
   // Devolvemos el stock orden por orden usando transacciones
-  for (const docSnap of expiredOrders.docs) {
+  for (const docSnap of expiredDocs) {
+
     const data = docSnap.data();
     
     try {
@@ -192,4 +205,285 @@ export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5
   }
 
   return null;
+});
+
+// ── Helper: parse variant from description (replicates frontend cartToSale.ts) ──
+function parseVariantFromDescripcion(descripcion: string): { color?: string; talle?: string } {
+  const colorMatch = descripcion.match(/\(.*?C:([^\s)]+)/i);
+  const talleMatch = descripcion.match(/\(.*?T:([^\s)]+)/i);
+  return {
+    color: colorMatch?.[1]?.trim().toUpperCase(),
+    talle: talleMatch?.[1]?.trim(),
+  };
+}
+
+// ── Helper: adjust a single inventory line's stock ──
+function adjustStockLine(
+  item: any,
+  productId: string,
+  qty: number,
+  color: string | undefined,
+  talle: string | undefined,
+  direction: 'add' | 'subtract'
+): any {
+  if (item.id !== productId) return item;
+
+  const sign = direction === 'add' ? 1 : -1;
+  let updated = { ...item };
+
+  if (updated.stockPorVariante && talle && color) {
+    const varKey = `${talle}-${color}`;
+    const matchKey = Object.keys(updated.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase()) || varKey;
+    const nextVariants = { ...updated.stockPorVariante };
+
+    const oldVarVal = nextVariants[matchKey] || 0;
+    nextVariants[matchKey] = Math.max(0, oldVarVal + sign * qty);
+
+    let nextColoresStock = updated.coloresStock ? { ...updated.coloresStock } : undefined;
+    if (nextColoresStock && color) {
+      const colorKey = Object.keys(nextColoresStock).find(k => k.toLowerCase() === color.trim().toLowerCase()) || color.trim().toUpperCase();
+      if (nextColoresStock[colorKey] !== undefined) {
+        nextColoresStock[colorKey] = Math.max(0, (nextColoresStock[colorKey] || 0) + sign * qty);
+      }
+    }
+
+    const diff = nextVariants[matchKey] - oldVarVal;
+    return {
+      ...updated,
+      stockPorVariante: nextVariants,
+      ...(nextColoresStock ? { coloresStock: nextColoresStock } : {}),
+      cantidad: Math.max(0, updated.cantidad + diff),
+    };
+  } else {
+    const colorKey = color?.trim().toUpperCase();
+    if (colorKey && updated.coloresStock && updated.coloresStock[colorKey] !== undefined) {
+      const nextStock = { ...updated.coloresStock };
+      const oldVal = nextStock[colorKey] || 0;
+      nextStock[colorKey] = Math.max(0, oldVal + sign * qty);
+      const diff = nextStock[colorKey] - oldVal;
+      return { ...updated, coloresStock: nextStock, cantidad: Math.max(0, updated.cantidad + diff) };
+    }
+  }
+
+  return {
+    ...item,
+    cantidad: Math.max(0, item.cantidad + sign * qty),
+  };
+}
+
+// 3. fulfillWebCambioServer (Callable)
+// Procesa un cambio web de forma atómica en el backend, evitando restricciones
+// de security rules que impiden que usuarios no-admin modifiquen sales y giftCards.
+export const fulfillWebCambioServer = functions.https.onCall(async (data, context) => {
+  const db = admin.firestore();
+  const { showroomId, payload } = data;
+
+  if (!showroomId || !payload) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: showroomId or payload.');
+  }
+
+  const {
+    ventaOriginalId,
+    itemsDevueltos,
+    itemsNuevos,
+    diferencia,
+    giftDestinatario,
+  } = payload;
+
+  if (!itemsDevueltos || !itemsDevueltos.length) {
+    throw new functions.https.HttpsError('invalid-argument', 'Debés seleccionar al menos una prenda a devolver.');
+  }
+
+  const showroomRef = db.collection('showrooms').doc(showroomId);
+  const saleId = `sale_cambio_web_${Date.now()}`;
+  let giftCodigo: string | undefined;
+
+  await db.runTransaction(async (transaction) => {
+    const snap = await transaction.get(showroomRef);
+    if (!snap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Showroom no encontrado.');
+    }
+
+    const srData = snap.data() || {};
+    const sales = srData.sales || [];
+    const inventory = srData.inventory || [];
+    const giftCards = srData.giftCards || [];
+
+    // Validate original sale exists
+    const ventaOriginal = sales.find((s: any) => s.id === ventaOriginalId);
+    if (!ventaOriginal) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'No se encontró la venta original en caja. Confirmá el pedido desde el panel si aún está pendiente.'
+      );
+    }
+
+    // Validate 15-day window
+    const diasTranscurridos = Math.floor(
+      (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    if (diasTranscurridos > 15) {
+      throw new functions.https.HttpsError('failed-precondition', 'Ya han pasado 15 días desde la compra.');
+    }
+
+    // Validate returned items belong to original sale
+    const itemsOriginales = ventaOriginal.items ?? [];
+    for (const devuelto of itemsDevueltos) {
+      const enOriginal = itemsOriginales.find((i: any) => i.id === devuelto.id);
+      if (!enOriginal) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `La prenda "${devuelto.descripcion}" no pertenece a la venta original.`
+        );
+      }
+      if (devuelto.cantidad > enOriginal.cantidad) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `La cantidad devuelta de "${devuelto.descripcion}" no puede superar la comprada (${enOriginal.cantidad}).`
+        );
+      }
+
+      const yaDevueltaEn = sales
+        .filter((s: any) => s.tipo === 'cambio' && s.ventaOriginalId === ventaOriginalId)
+        .reduce((sum: number, s: any) => {
+          const prev = (s.itemsDevueltos ?? []).find((i: any) => i.id === devuelto.id);
+          return sum + (prev?.cantidad ?? 0);
+        }, 0);
+
+      const disponible = enOriginal.cantidad - yaDevueltaEn;
+      if (devuelto.cantidad > disponible) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `"${devuelto.descripcion}": solo podés devolver ${disponible} unidad(es).`
+        );
+      }
+    }
+
+    // Validate stock for new items
+    const safeItemsNuevos = itemsNuevos || [];
+    for (const itemNuevo of safeItemsNuevos) {
+      const invItem = inventory.find((i: any) => i.id === itemNuevo.id);
+      if (!invItem) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `Producto no encontrado en stock: ${itemNuevo.descripcion}`
+        );
+      }
+
+      const { color, talle } = parseVariantFromDescripcion(itemNuevo.descripcion);
+
+      if (invItem.stockPorVariante && talle && color) {
+        const varKey = `${talle}-${color}`;
+        const matchKey = Object.keys(invItem.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase());
+        if (matchKey) {
+          if ((invItem.stockPorVariante[matchKey] || 0) < itemNuevo.cantidad) {
+            throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para variante ${matchKey} de ${itemNuevo.descripcion}`);
+          }
+        } else {
+          if (invItem.cantidad < itemNuevo.cantidad) {
+            throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para ${itemNuevo.descripcion}`);
+          }
+        }
+      } else {
+        const colorKey = color?.trim().toUpperCase();
+        if (colorKey && invItem.coloresStock && invItem.coloresStock[colorKey] !== undefined) {
+          if ((invItem.coloresStock[colorKey] || 0) < itemNuevo.cantidad) {
+            throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para el color ${colorKey} de ${itemNuevo.descripcion}`);
+          }
+        } else {
+          if (invItem.cantidad < itemNuevo.cantidad) {
+            throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para ${itemNuevo.descripcion}`);
+          }
+        }
+      }
+    }
+
+    // Generate gift card if diferencia < 0
+    let giftGenerada: any;
+    let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
+    if (ventaOriginal?.pago) {
+      if (ventaOriginal.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
+      else if (ventaOriginal.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
+      else medioPagoOrigen = 'mixto';
+    } else if (ventaOriginal?.metodoPago) {
+      const mp = String(ventaOriginal.metodoPago).toLowerCase();
+      if (mp.includes('tarjeta') || mp.includes('uala') || mp.includes('crédito') || mp.includes('debito')) {
+        medioPagoOrigen = 'tarjeta';
+      } else {
+        medioPagoOrigen = 'efectivo';
+      }
+    }
+
+    if (diferencia < 0) {
+      const montoGift = Math.abs(diferencia);
+      giftCodigo = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+      giftGenerada = {
+        id: `gift_${Date.now()}`,
+        codigo: giftCodigo,
+        destinatario: giftDestinatario?.trim() || 'Cambio web',
+        montoInicial: montoGift,
+        saldo: montoGift,
+        estado: 'ACTIVA',
+        fechaCreacion: new Date().toISOString(),
+        medioPagoOrigen,
+        ventaOrigenId: ventaOriginalId,
+      };
+    }
+
+    // Default payment from original sale if diferencia <= 0
+    const pagoDefaultOrig = ventaOriginal?.pago || (medioPagoOrigen === 'tarjeta' ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 });
+
+    // Build the sale record
+    const newSale: any = {
+      id: saleId,
+      fecha: new Date().toISOString(),
+      tipo: 'cambio',
+      ventaOriginalId,
+      itemsDevueltos,
+      itemsNuevos: safeItemsNuevos,
+      items: [],
+      total: Math.max(0, diferencia),
+      diferencia,
+      pago: diferencia <= 0 ? pagoDefaultOrig : (payload.pago || { efectivo: 100, tarjeta: 0 }),
+      pagoDevolucion: pagoDefaultOrig,
+      giftDestinatario: giftDestinatario?.trim() || 'Cambio web',
+      ...(giftGenerada?.id ? { giftGeneradaId: giftGenerada.id } : {}),
+      costoEnvio: payload.costoEnvio ?? 0,
+      costoEnvioDevolucion: payload.costoEnvioDevolucion ?? 0,
+      costoEnvioNuevo: payload.costoEnvioNuevo ?? 0,
+      tipoEnvioDevolucion: payload.tipoEnvioDevolucion,
+      tipoEnvioNuevo: payload.tipoEnvioNuevo,
+      codigoPostalCliente: payload.codigoPostalCliente,
+    };
+
+    // Apply inventory changes
+    let nextInventory = [...inventory];
+    for (const dev of itemsDevueltos) {
+      const parsed = parseVariantFromDescripcion(dev.descripcion);
+      const color = dev.color || parsed.color;
+      const talle = dev.talle || parsed.talle;
+      nextInventory = nextInventory.map((inv: any) => adjustStockLine(inv, dev.id, dev.cantidad, color, talle, 'add'));
+    }
+    for (const neu of safeItemsNuevos) {
+      const parsed = parseVariantFromDescripcion(neu.descripcion);
+      const color = neu.color || parsed.color;
+      const talle = neu.talle || parsed.talle;
+      nextInventory = nextInventory.map((inv: any) => adjustStockLine(inv, neu.id, neu.cantidad, color, talle, 'subtract'));
+    }
+
+    const nextGiftCards = giftGenerada ? [...giftCards, giftGenerada] : giftCards;
+
+    // Remove undefined values (Firestore doesn't accept them)
+    const sanitize = (obj: any): any => JSON.parse(JSON.stringify(obj));
+
+    transaction.update(showroomRef, sanitize({
+      inventory: nextInventory,
+      sales: [...sales, newSale],
+      giftCards: nextGiftCards,
+      lastSync: Date.now(),
+    }));
+  });
+
+  return { saleId, giftCodigo: giftCodigo || null };
 });

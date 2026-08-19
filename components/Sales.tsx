@@ -311,23 +311,27 @@ const Sales: React.FC<SalesProps> = ({
   // =======================
   // CAMBIO: totales y diferencia
   // =======================
-  // 1️⃣ VALOR DEVUELTO (Calculado según medio de pago seleccionado actualmente)
+  // 1️⃣ VALOR DEVUELTO (Calculado estrictamente según el medio de pago de la venta original)
   const totalDevuelto = React.useMemo(() => {
-    if (!modoCambio) return 0;
+    if (!modoCambio || !ventaOriginal) return 0;
+
+    const pagoOriginalCalc = ventaOriginal.pago || { efectivo: 100, tarjeta: 0 };
+    const efePerc = pagoOriginalCalc.efectivo ?? 100;
+    const tarPerc = pagoOriginalCalc.tarjeta ?? 0;
 
     return itemsDevueltos.reduce((sum, item) => {
       const cant = item.cantidad ?? 0;
       const desc = item.descuento || 0;
 
-      // Usamos la misma lógica de pesaje que la venta normal
+      // Usamos la lógica de pesaje según cómo se pagó en la venta original
       const pT = item.precioTarjeta * (1 - desc / 100);
       const descuentoExtraEfectivo = Math.max(0, desc - 20);
       const pE = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
 
-      const valPesado = pE * (pagoEfectivo / 100) + pT * (pagoTarjeta / 100);
+      const valPesado = pE * (efePerc / 100) + pT * (tarPerc / 100);
       return sum + valPesado * cant;
     }, 0);
-  }, [modoCambio, itemsDevueltos, pagoEfectivo, pagoTarjeta]);
+  }, [modoCambio, itemsDevueltos, ventaOriginal]);
 
   const totalNuevo = modoCambio
     ? cart.reduce((sum, item) => {

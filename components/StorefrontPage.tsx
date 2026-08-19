@@ -4,7 +4,7 @@ import { InventoryItem, WebSettings, GiftCard, SaleItem } from '../types';
 import { db, functions } from '../services/firebase';
 import { doc, onSnapshot, getDoc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle, SlidersHorizontal, MapPin, MessageCircle } from 'lucide-react';
+import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle, SlidersHorizontal, MapPin, MessageCircle, PauseCircle } from 'lucide-react';
 
 const getColorDotStyle = (colorName: string): React.CSSProperties => {
   const c = colorName.toLowerCase().trim();
@@ -32,8 +32,8 @@ import { CustomerOrder } from '../contexts/AuthContext';
 import { buildSaleItemsFromOrder, getOrderSaleId, isGiftCardOrder } from '../services/webOrderToSale';
 import { sumTransferLines, sumExchangeLines, DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
 import { fulfillWebCambio } from '../services/webCambioFulfillment';
-import { fulfillWebOrder } from '../services/webOrderFulfillment';
-import { sendNotificationEmail, sendSaleConfirmationEmail } from '../services/emailService';
+import { fulfillWebOrder, isOrderExpired, releaseExpiredReservations } from '../services/webOrderFulfillment';
+import { sendNotificationEmail, sendSaleConfirmationEmail, sendGiftCardEmail } from '../services/emailService';
 import { cartLinesToSaleItems } from '../services/cartToSale';
 import { calculateCartWeightGrams, calculateCartDimensions, calculateSaleItemsWeightGrams, calculateSaleItemsDimensions } from '../utils/shippingHelpers';
 import { createUalaPayment, setUalaEnvironment } from '../services/ualaApi';
@@ -196,6 +196,15 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [showBuyGiftCard, setShowBuyGiftCard] = React.useState(false);
   const [pendingPaymentOrder, setPendingPaymentOrder] = React.useState<any | null>(null);
 
+  const handleClosePendingPaymentModal = React.useCallback(() => {
+    try {
+      localStorage.removeItem('ropero_last_pending_order');
+    } catch (e) {
+      console.error('Error al remover orden pendiente:', e);
+    }
+    setPendingPaymentOrder(null);
+  }, []);
+
   React.useEffect(() => {
     if (customerProfile?.direcciones?.[0]?.codigoPostal && !exchangeCpCliente) {
       setExchangeCpCliente(customerProfile.direcciones[0].codigoPostal);
@@ -344,12 +353,17 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           const data = snap.data();
           if (['PAID', 'APPROVED', 'Confirmada'].includes(data.estado)) {
             localStorage.removeItem('ropero_last_pending_order');
+            setPendingPaymentOrder(null);
             showAlert('¡Excelente! Tu pago ha sido acreditado y confirmado con éxito.', '¡Pago Exitoso!', 'success');
           }
         }
       });
 
-      return () => unsubscribe();
+      return () => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      };
     } catch (err) {
       console.error('Error escuchando orden pendiente:', err);
     }
@@ -383,6 +397,22 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               if (data.estado === 'Pendiente') {
                 const { saleId, giftCodigo } = await fulfillWebCambio(PUBLIC_SHOWROOM_ID, data.payload);
                 await updateDoc(cambioRef, { estado: 'Confirmado', saleId });
+
+                if (giftCodigo) {
+                  const targetEmail = customerProfile?.email || user?.email || data.customerEmail;
+                  if (targetEmail) {
+                    const destinatario = data.payload?.giftDestinatario || customerProfile?.nombre || 'Cliente';
+                    const montoGift = Math.abs(data.payload?.diferencia || 0);
+                    sendGiftCardEmail(
+                      targetEmail,
+                      destinatario,
+                      'El Ropero Showroom',
+                      montoGift,
+                      giftCodigo,
+                      'Crédito a favor generado por cambio de prendas.'
+                    ).catch(err => console.error('Error al enviar correo de Gift Card por cambio Ualá:', err));
+                  }
+                }
 
                 if (data.originalOrderId && data.customerId) {
                   try {
@@ -520,22 +550,36 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             getDoc(orderRef).then(snap => {
               if (snap.exists()) {
                 const data = snap.data();
-                if (data.estado === 'PENDING_PAYMENT' || data.estado === 'Pendiente') {
+                if ((data.estado === 'PENDING_PAYMENT' || data.estado === 'Pendiente') && !isOrderExpired(data)) {
                   setPendingPaymentOrder({ orderId: targetId, ...data });
                 } else {
+                  if (isOrderExpired(data)) {
+                    releaseExpiredReservations(PUBLIC_SHOWROOM_ID).catch(err => console.error('Error al liberar orden expirada:', err));
+                  }
                   localStorage.removeItem('ropero_last_pending_order');
+                  setPendingPaymentOrder(null);
                 }
               } else {
-                setPendingPaymentOrder(parsed);
+                // Si la orden no existe en Firestore (ej. eliminada o inválida), limpiar almacenamiento local
+                localStorage.removeItem('ropero_last_pending_order');
+                setPendingPaymentOrder(null);
               }
             }).catch(err => {
               console.error('Error al verificar estado de orden guardada:', err);
-              setPendingPaymentOrder(parsed);
+              localStorage.removeItem('ropero_last_pending_order');
+              setPendingPaymentOrder(null);
             });
+          } else {
+            localStorage.removeItem('ropero_last_pending_order');
+            setPendingPaymentOrder(null);
           }
         }
       } catch (e) {
         console.error('Error al restaurar orden pendiente local:', e);
+        try {
+          localStorage.removeItem('ropero_last_pending_order');
+        } catch (_) {}
+        setPendingPaymentOrder(null);
       }
     }
   }, []);
@@ -777,12 +821,15 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       return;
     }
 
-    const isTransferencia = exchangePaymentMethod === 'transferencia';
-    const totalDev = sumExchangeLines(exchangeSession.itemsDevueltos, isTransferencia);
+    const metodoPagoOriginal = exchangeSession.order?.metodoPago?.toLowerCase() || '';
+    const isTransferenciaDev = metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo');
+    const totalDev = sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaDev);
+
+    const isTransferenciaNuevo = exchangePaymentMethod === 'transferencia';
     const totalNuevo = cart.reduce((sum, c) => {
       const disc = getDiscount(c.product);
-      const basePrice = isTransferencia ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-      const price = getDiscountedPrice(basePrice, disc, isTransferencia);
+      const basePrice = isTransferenciaNuevo ? c.product.ventaEfectivo : c.product.ventaTarjeta;
+      const price = getDiscountedPrice(basePrice, disc, isTransferenciaNuevo);
       return sum + price * c.quantity;
     }, 0);
 
@@ -801,16 +848,82 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       }
     }
 
-    const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
+    const costoEnvioTotal = (cart.length > 0 && exchangeTipoEnvio === 'envio') ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
     const diferencia = totalNuevo - totalDev + costoEnvioTotal;
 
-    if (cart.length === 0 && diferencia >= 0) {
-      const ok = await showConfirm(
-        `¿Generar Gift Card por $${totalDev.toLocaleString('es-AR')}?\nNo hay devoluciones de dinero.`,
-        'Generar Gift Card',
-        'info'
-      );
-      if (!ok) return;
+    const ventaOriginalId = getOrderSaleId(exchangeSession.order)!;
+
+    // CASO 0: Carrito vacío -> Canje directo por Gift Card (sin logística ni medio de pago)
+    if (cart.length === 0) {
+      if (!exchangeSession.giftDestinatario.trim()) {
+        showAlert('Indicá el nombre para la Gift Card.', 'Dato Faltante', 'warning');
+        return;
+      }
+      setIsConfirmingExchange(true);
+      try {
+        const { saleId, giftCodigo } = await fulfillWebCambio(PUBLIC_SHOWROOM_ID, {
+          ventaOriginalId,
+          itemsDevueltos: exchangeSession.itemsDevueltos,
+          itemsNuevos: [],
+          diferencia: -totalDev,
+          giftDestinatario: exchangeSession.giftDestinatario.trim(),
+          customerNombre: customerProfile?.nombre || user?.displayName || 'Cliente',
+          pago: isTransferenciaDev ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
+        });
+
+        let msg = `Cambio registrado en caja (${saleId}).`;
+        if (giftCodigo) {
+          msg += ` Gift Card: ${giftCodigo}`;
+          if (user) {
+            await assignGiftCard(giftCodigo);
+          }
+
+          const targetEmail = customerProfile?.email || user?.email;
+          if (targetEmail) {
+            const destinatario = exchangeSession.giftDestinatario.trim();
+            const montoGift = totalDev;
+            sendGiftCardEmail(
+              targetEmail,
+              destinatario,
+              'El Ropero Showroom',
+              montoGift,
+              giftCodigo,
+              'Crédito a favor generado por cambio de prendas.'
+            ).catch(err => console.error('Error al enviar correo de Gift Card por cambio:', err));
+          }
+
+          showAlert(`Se generó tu Gift Card con código ${giftCodigo} por $${totalDev.toLocaleString('es-AR')}. Te enviamos los detalles a tu email.`, '¡Gift Card Creada!', 'success');
+        } else {
+          showAlert('El cambio ha sido registrado correctamente.', 'Cambio Exitoso', 'success');
+        }
+
+        sendNotificationEmail(
+          `Canje por Gift Card - ${customerProfile?.nombre || 'Cliente'}`,
+          `Se ha registrado un cambio por Gift Card.\nID de Venta (Caja): ${saleId}\nMonto Gift Card: $${totalDev}\n${giftCodigo ? `Gift Card generada: ${giftCodigo}` : ''}`
+        );
+
+        if (user) {
+          try {
+            const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', user.uid, 'orders', exchangeSession.order.id);
+            await updateDoc(orderRef, { isExchanged: true });
+          } catch (err) {
+            console.error('Error al marcar orden como cambiada:', err);
+          }
+        }
+
+        setExchangeSuccessMsg(msg);
+        setExchangeSession(null);
+        setCart([]);
+        updateCartStateAndSync([]);
+        setShowCart(false);
+        await refreshOrders();
+      } catch (e: unknown) {
+        console.error(e);
+        showAlert(e instanceof Error ? e.message : 'No se pudo confirmar el cambio.', 'Error en Cambio', 'error');
+      } finally {
+        setIsConfirmingExchange(false);
+      }
+      return;
     }
 
     if (diferencia < 0 && !exchangeSession.giftDestinatario.trim()) {
@@ -818,7 +931,6 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       return;
     }
 
-    const ventaOriginalId = getOrderSaleId(exchangeSession.order)!;
     const itemsNuevos = cartLinesToSaleItems(cart, getDiscount);
 
     const shippingPayloadMeta = {
@@ -968,7 +1080,22 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         if (user) {
           await assignGiftCard(giftCodigo);
         }
-        showAlert(`Se generó una Gift Card a tu favor con código ${giftCodigo}. Anotalo para futuras compras.`, '¡Gift Card Creada!', 'success');
+
+        const targetEmail = customerProfile?.email || user?.email;
+        if (targetEmail) {
+          const destinatario = exchangeSession.giftDestinatario || customerProfile?.nombre || user?.displayName || 'Cliente';
+          const montoGift = Math.abs(diferencia);
+          sendGiftCardEmail(
+            targetEmail,
+            destinatario,
+            'El Ropero Showroom',
+            montoGift,
+            giftCodigo,
+            'Crédito a favor generado por cambio de prendas.'
+          ).catch(err => console.error('Error al enviar correo de Gift Card por cambio:', err));
+        }
+
+        showAlert(`Se generó una Gift Card a tu favor con código ${giftCodigo}. Te enviamos los detalles a tu email.`, '¡Gift Card Creada!', 'success');
       } else {
         showAlert('El cambio ha sido registrado correctamente.', 'Cambio Exitoso', 'success');
       }
@@ -1241,9 +1368,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
   const totalDevueltoExchange = React.useMemo(() => {
     if (!exchangeSession) return 0;
-    const isTransferencia = exchangePaymentMethod === 'transferencia';
-    return sumExchangeLines(exchangeSession.itemsDevueltos, isTransferencia);
-  }, [exchangeSession, exchangePaymentMethod]);
+    const metodoPagoOriginal = exchangeSession.order?.metodoPago?.toLowerCase() || '';
+    const isTransferenciaDev = metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo');
+    return sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaDev);
+  }, [exchangeSession]);
 
   const diferenciaExchange = finalCartTotal - totalDevueltoExchange;
 
@@ -1543,29 +1671,52 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         </>
       )}
 
-      {/* ══════ HERO ══════ */}
+      {/* ══════ STOREFRONT CONTENT / PAUSED VIEW ══════ */}
       {webSettings.storeHidden ? (
-        <section className="w-full h-[70vh] flex flex-col items-center justify-center text-center px-6">
-          <div className="max-w-md mx-auto space-y-6">
-            <div className="w-12 h-12 border border-black/20 rounded-none flex items-center justify-center mx-auto mb-4">
-              <Loader2 size={20} className="text-black/40 animate-spin" />
+        <section className="w-full min-h-[70vh] flex flex-col items-center justify-center text-center px-6 py-20 bg-neutral-50/40">
+          <div className="max-w-lg w-full mx-auto space-y-6 bg-white p-8 sm:p-12 border border-black/10 shadow-xs">
+            <div className="w-14 h-14 border border-black/10 flex items-center justify-center mx-auto bg-neutral-50">
+              <PauseCircle size={26} strokeWidth={1.2} className="text-black/70" />
             </div>
-            <h2 className="text-base sm:text-lg tracking-[0.25em] uppercase font-light leading-tight">
-              TIENDA EN MANTENIMIENTO
-            </h2>
-            <p className="text-[11px] font-light leading-relaxed text-neutral-500">
-              Estamos actualizando nuestro catálogo o realizando tareas de mantenimiento. Por favor, vuelve más tarde.
+            
+            <div className="space-y-2">
+              <p className="text-[9px] tracking-[0.3em] uppercase font-light text-neutral-400">
+                {webSettings.storeName || 'El Ropero Showroom'}
+              </p>
+              <h2 className="text-base sm:text-lg tracking-[0.25em] uppercase font-light leading-tight text-black">
+                TIENDA EN MANTENIMIENTO
+              </h2>
+            </div>
+
+            <p className="text-xs font-light leading-relaxed text-neutral-600 max-w-md mx-auto">
+              {webSettings.storePausedMessage || 'Estamos actualizando nuestro catálogo o realizando tareas de mantenimiento. Por favor, vuelve más tarde.'}
             </p>
-            {(webSettings.contactWhatsapp || '5492346685836') && (
-              <a 
-                href={`https://wa.me/${(webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '')}?text=${encodeURIComponent('Hola El Ropero! Desde la pagina web me surgio una consulta sobre ...')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-6 text-[10px] tracking-[0.25em] uppercase font-light border-b border-black pb-0.5 hover:opacity-50 transition-opacity"
-              >
-                CONTACTANOS POR WHATSAPP
-              </a>
-            )}
+
+            <div className="pt-4 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-center gap-3">
+              {(webSettings.contactWhatsapp || '5492346685836') && (
+                <a 
+                  href={`https://wa.me/${(webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '')}?text=${encodeURIComponent('Hola! Quisiera consultar sobre la tienda...')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-black text-white px-6 py-3 text-[9px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-all w-full sm:w-auto justify-center"
+                >
+                  <MessageCircle size={14} />
+                  <span>CONSULTAR POR WHATSAPP</span>
+                </a>
+              )}
+
+              {webSettings.instagramHandle && (
+                <a 
+                  href={`https://instagram.com/${webSettings.instagramHandle.replace('@', '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 border border-black text-black px-6 py-3 text-[9px] tracking-[0.25em] uppercase font-light hover:bg-black hover:text-white transition-all w-full sm:w-auto justify-center"
+                >
+                  <Instagram size={14} />
+                  <span>INSTAGRAM</span>
+                </a>
+              )}
+            </div>
           </div>
         </section>
       ) : (
@@ -2430,39 +2581,50 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                     </div>
                   )}
                 </div>
-                {(exchangeSession.itemsDevueltos.length > 0 || cart.length > 0) && (
-                  <div className="space-y-3 border-t border-black/10 pt-3">
-                    {/* Selector de Medio de Pago de la Diferencia */}
-                    <div className="space-y-1.5">
-                      <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Medio de Pago de Diferencia</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setExchangePaymentMethod('transferencia')}
-                          className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                            exchangePaymentMethod === 'transferencia'
-                              ? 'border-black bg-black text-white'
-                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                          }`}
-                        >
-                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
-                          <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'transferencia' ? 'text-white/80' : 'text-neutral-500'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setExchangePaymentMethod('tarjeta')}
-                          className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                            exchangePaymentMethod === 'tarjeta'
-                              ? 'border-black bg-black text-white'
-                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                          }`}
-                        >
-                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Ualá Bis</span>
-                          <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Tarjeta / Cuotas</span>
-                        </button>
+                {cart.length === 0 ? (
+                  /* Flujo 1: Sin prendas en carrito -> Canje directo por Gift Card */
+                  <div className="space-y-4 border-t border-black/10 pt-3">
+                    <div className="pt-2 space-y-1.5 text-[10px] uppercase tracking-[0.5px]">
+                      <div className="flex justify-between font-bold text-[11px] text-black">
+                        <span>Saldo a Favor (Gift Card)</span>
+                        <span className="text-emerald-700 font-semibold">${totalDevueltoExchange.toLocaleString('es-AR')}</span>
                       </div>
                     </div>
-
+                    {exchangeSession.itemsDevueltos.length > 0 && (
+                      <div className="space-y-1">
+                        <label className="block text-[8px] tracking-[0.2em] uppercase font-semibold text-neutral-500">
+                          Nombre para la Gift Card
+                        </label>
+                        <input
+                          type="text"
+                          value={exchangeSession.giftDestinatario}
+                          onChange={(e) =>
+                            setExchangeSession((prev) =>
+                              prev ? { ...prev, giftDestinatario: e.target.value } : prev
+                            )
+                          }
+                          placeholder="NOMBRE DEL DESTINATARIO"
+                          className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px] bg-transparent focus:outline-none focus:border-black"
+                        />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={confirmExchange}
+                      disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0}
+                      className="w-full bg-black text-white py-4 text-[11px] tracking-[3px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      {isConfirmingExchange ? (
+                        <Loader2 className="animate-spin" size={14} />
+                      ) : (
+                        <Gift size={14} />
+                      )}
+                      Canjear por Gift Card
+                    </button>
+                  </div>
+                ) : (
+                  /* Flujo 2: Con prendas en carrito -> Cambio de prendas con logística y pago de diferencia si corresponde */
+                  <div className="space-y-3 border-t border-black/10 pt-3">
                     {/* Selector de Logística del Cambio */}
                     <div className="space-y-2.5">
                       <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Logística del Cambio</p>
@@ -2582,40 +2744,38 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                           </div>
 
                           {/* Tramo 2: Reenvío de prenda nueva */}
-                          {cart.length > 0 && (
-                            <div className="space-y-1 border-t border-neutral-200 pt-2">
-                              <div className="flex justify-between items-center text-[9px] font-bold text-neutral-700">
-                                <span>2. Reenvío (Chivilcoy → Tu dirección)</span>
-                                <span className="text-black font-semibold">
-                                  {isCalculatingExchangeShipping ? '...' : `+$${costoEnvioNuevo.toLocaleString('es-AR')}`}
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => setExchangeTipoNuevo('D')}
-                                  className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
-                                    exchangeTipoNuevo === 'D'
-                                      ? 'border-black bg-neutral-900 text-white'
-                                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
-                                  }`}
-                                >
-                                  Envío a Domicilio
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setExchangeTipoNuevo('S')}
-                                  className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
-                                    exchangeTipoNuevo === 'S'
-                                      ? 'border-black bg-neutral-900 text-white'
-                                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
-                                  }`}
-                                >
-                                  Retiro en Sucursal
-                                </button>
-                              </div>
+                          <div className="space-y-1 border-t border-neutral-200 pt-2">
+                            <div className="flex justify-between items-center text-[9px] font-bold text-neutral-700">
+                              <span>2. Reenvío (Chivilcoy → Tu dirección)</span>
+                              <span className="text-black font-semibold">
+                                {isCalculatingExchangeShipping ? '...' : `+$${costoEnvioNuevo.toLocaleString('es-AR')}`}
+                              </span>
                             </div>
-                          )}
+                            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setExchangeTipoNuevo('D')}
+                                className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
+                                  exchangeTipoNuevo === 'D'
+                                    ? 'border-black bg-neutral-900 text-white'
+                                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                }`}
+                              >
+                                Envío a Domicilio
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setExchangeTipoNuevo('S')}
+                                className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
+                                  exchangeTipoNuevo === 'S'
+                                    ? 'border-black bg-neutral-900 text-white'
+                                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                }`}
+                              >
+                                Retiro en Sucursal
+                              </button>
+                            </div>
+                          </div>
 
                           {isCalculatingExchangeShipping && (
                             <div className="flex items-center gap-2 text-neutral-500 text-[9px] font-medium pt-1">
@@ -2632,60 +2792,106 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                         </div>
                       )}
                     </div>
+
+                    {/* Selector de Medio de Pago (Solo si hay diferencia a abonar) */}
+                    {(() => {
+                      const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
+                      const difFinal = diferenciaExchange + costoEnvioTotal;
+                      if (difFinal <= 0) return null;
+
+                      return (
+                        <div className="space-y-1.5 border-t border-black/10 pt-3">
+                          <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Medio de Pago de Diferencia</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setExchangePaymentMethod('transferencia')}
+                              className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
+                                exchangePaymentMethod === 'transferencia'
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                              }`}
+                            >
+                              <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
+                              <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'transferencia' ? 'text-white/80' : 'text-neutral-500'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExchangePaymentMethod('tarjeta')}
+                              className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
+                                exchangePaymentMethod === 'tarjeta'
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                              }`}
+                            >
+                              <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Ualá Bis</span>
+                              <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Tarjeta / Cuotas</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Desglose Final y Botón de Confirmación */}
+                    {(() => {
+                      const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
+                      const difFinal = diferenciaExchange + costoEnvioTotal;
+                      return (
+                        <>
+                          <div className="border-t border-black/10 pt-3 space-y-1.5 text-[10px] uppercase tracking-[0.5px]">
+                            {exchangeTipoEnvio === 'envio' && costoEnvioTotal > 0 && (
+                              <div className="flex justify-between text-neutral-500">
+                                <span>Envío Total Correo Argentino</span>
+                                <span>+${costoEnvioTotal.toLocaleString('es-AR')}</span>
+                              </div>
+                            )}
+                            {exchangeTipoEnvio === 'recoleta' && (
+                              <div className="flex justify-between text-neutral-600 font-medium">
+                                <span>Logística Cambio</span>
+                                <span className="text-emerald-700 font-semibold">Pick Up Recoleta (Gratis)</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between font-bold text-[11px] text-black border-t border-black/5 pt-1.5">
+                              <span>{difFinal > 0 ? 'Diferencia a pagar' : difFinal < 0 ? 'Saldo Gift Card' : 'Sin diferencia'}</span>
+                              <span>${Math.abs(difFinal).toLocaleString('es-AR')}</span>
+                            </div>
+                          </div>
+                          {difFinal < 0 && (
+                            <div className="space-y-1">
+                              <label className="block text-[8px] tracking-[0.2em] uppercase font-semibold text-neutral-500">
+                                Nombre para la Gift Card
+                              </label>
+                              <input
+                                type="text"
+                                value={exchangeSession.giftDestinatario}
+                                onChange={(e) =>
+                                  setExchangeSession((prev) =>
+                                    prev ? { ...prev, giftDestinatario: e.target.value } : prev
+                                  )
+                                }
+                                placeholder="NOMBRE DEL DESTINATARIO"
+                                className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px] bg-transparent focus:outline-none focus:border-black"
+                              />
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={confirmExchange}
+                            disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0 || (exchangeTipoEnvio === 'envio' && isCalculatingExchangeShipping)}
+                            className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
+                          >
+                            {isConfirmingExchange || isCalculatingExchangeShipping ? (
+                              <Loader2 className="animate-spin" size={14} />
+                            ) : (
+                              <RefreshCw size={14} />
+                            )}
+                            {difFinal > 0 && exchangePaymentMethod === 'tarjeta' ? 'Pagar diferencia en Ualá Bis' : 'Confirmar cambio'}
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
-                {(() => {
-                  const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
-                  const difFinal = diferenciaExchange + costoEnvioTotal;
-                  return (
-                    <>
-                      <div className="border-t border-black/10 pt-3 space-y-1.5 text-[10px] uppercase tracking-[0.5px]">
-                        {exchangeTipoEnvio === 'envio' && costoEnvioTotal > 0 && (
-                          <div className="flex justify-between text-neutral-500">
-                            <span>Envío Total Correo Argentino</span>
-                            <span>+${costoEnvioTotal.toLocaleString('es-AR')}</span>
-                          </div>
-                        )}
-                        {exchangeTipoEnvio === 'recoleta' && (
-                          <div className="flex justify-between text-neutral-600 font-medium">
-                            <span>Logística Cambio</span>
-                            <span className="text-emerald-700 font-semibold">Pick Up Recoleta (Gratis)</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between font-bold text-[11px] text-black border-t border-black/5 pt-1.5">
-                          <span>{difFinal > 0 ? 'Diferencia a pagar' : difFinal < 0 ? 'Saldo Gift Card' : 'Sin diferencia'}</span>
-                          <span>${Math.abs(difFinal).toLocaleString('es-AR')}</span>
-                        </div>
-                      </div>
-                      {difFinal < 0 && (
-                        <input
-                          type="text"
-                          value={exchangeSession.giftDestinatario}
-                          onChange={(e) =>
-                            setExchangeSession((prev) =>
-                              prev ? { ...prev, giftDestinatario: e.target.value } : prev
-                            )
-                          }
-                          placeholder="NOMBRE PARA GIFT CARD"
-                          className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px]"
-                        />
-                      )}
-                      <button
-                        type="button"
-                        onClick={confirmExchange}
-                        disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0 || (exchangeTipoEnvio === 'envio' && isCalculatingExchangeShipping)}
-                        className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
-                      >
-                        {isConfirmingExchange || isCalculatingExchangeShipping ? (
-                          <Loader2 className="animate-spin" size={14} />
-                        ) : (
-                          <RefreshCw size={14} />
-                        )}
-                        {difFinal > 0 && exchangePaymentMethod === 'tarjeta' ? 'Pagar diferencia en Ualá Bis' : 'Confirmar cambio'}
-                      </button>
-                    </>
-                  );
-                })()}
               </div>
             )}
           </div>
@@ -3037,7 +3243,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden p-6 md:p-8 relative border border-black/5 text-center space-y-6">
             <button
-              onClick={() => setPendingPaymentOrder(null)}
+              onClick={handleClosePendingPaymentModal}
               className="absolute top-4 right-4 p-2 text-black/40 hover:text-black transition-colors rounded-full hover:bg-neutral-100"
               aria-label="Cerrar"
             >
@@ -3091,7 +3297,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             </div>
 
             <button
-              onClick={() => setPendingPaymentOrder(null)}
+              onClick={handleClosePendingPaymentModal}
               className="w-full text-[10px] tracking-[3px] uppercase font-bold text-black/40 hover:text-black transition-colors pt-2"
             >
               Volver a la Tienda

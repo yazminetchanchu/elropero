@@ -22,7 +22,8 @@ vi.mock('../services/firebase', () => ({
   db: {}
 }));
 
-vi.mock('../services/webOrderFulfillment', () => ({
+vi.mock('../services/webOrderFulfillment', async (importOriginal) => ({
+  ...(await importOriginal() as any),
   releaseExpiredReservations: vi.fn(),
   fulfillWebOrder: vi.fn()
 }));

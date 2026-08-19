@@ -108,6 +108,8 @@ export interface GiftCard {
   saldo: number;
   estado: 'ACTIVA' | 'AGOTADA' | 'ANULADA';
   fechaCreacion: string;
+  medioPagoOrigen?: 'efectivo' | 'tarjeta' | 'mixto' | string;
+  ventaOrigenId?: string;
   //saleId?: string;
 }
 
@@ -135,6 +137,7 @@ export interface WebSettings {
 
   // Visibility settings
   storeHidden?: boolean;
+  storePausedMessage?: string;
   hiddenSections?: string[];
 
   // Ualá Bis Environment & Testing
