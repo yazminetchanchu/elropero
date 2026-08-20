@@ -4,7 +4,7 @@ import { useAuth, ShippingAddress } from '../../contexts/AuthContext';
 import { InventoryItem, WebSettings, GiftCard } from '../../types';
 import { db, auth, functions } from '../../services/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { fulfillWebOrder, reserveWebOrderStock } from '../../services/webOrderFulfillment';
+import { fulfillWebOrder, reserveWebOrderStock, getAvailableStock } from '../../services/webOrderFulfillment';
 import { collection, addDoc, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import { sendNotificationEmail } from '../../services/emailService';
 import { DESCUENTO_BASE_TRANSFERENCIA } from '../../services/exchangePricing';
@@ -147,6 +147,7 @@ interface CheckoutFlowProps {
   onClose: () => void;
   cart: CartItem[];
   cartTotal: number;
+  inventory?: InventoryItem[];
   webSettings: WebSettings;
   onSuccess: () => void; // Limpia el carrito local y cierra
   getDiscount: (item: InventoryItem) => number;
@@ -162,6 +163,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
   onClose, 
   cart, 
   cartTotal, 
+  inventory,
   webSettings, 
   onSuccess,
   getDiscount,
@@ -448,6 +450,29 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
     return null;
   }, [webSettings.mercadoPagoTransferUrl, webSettings.mercadoPagoAlias]);
 
+  const validateCurrentStock = React.useCallback((): string | null => {
+    for (const c of cart) {
+      const liveProd = (inventory && inventory.length > 0)
+        ? inventory.find(i => i.id === c.product.id)
+        : c.product;
+      
+      if (!liveProd) {
+        return `El producto "${c.product.descripcion}" ya no se encuentra disponible.`;
+      }
+
+      const available = getAvailableStock(liveProd, c.selectedTalle, c.selectedColor);
+      const variantInfo = [c.selectedTalle && `Talle ${c.selectedTalle}`, c.selectedColor && `Color ${c.selectedColor}`].filter(Boolean).join(' ');
+      
+      if (available <= 0) {
+        return `El producto "${c.product.descripcion}" ${variantInfo ? `(${variantInfo}) ` : ''}se acaba de agotar en el showroom. Por favor retíralo de tu carrito.`;
+      }
+      if (available < c.quantity) {
+        return `Solo quedan ${available} unidad(es) disponible(s) de "${c.product.descripcion}" ${variantInfo ? `(${variantInfo}) ` : ''}(solicitadas: ${c.quantity}).`;
+      }
+    }
+    return null;
+  }, [cart, inventory]);
+
   const handleNextStep = () => {
     setErrorMsg(null);
 
@@ -458,6 +483,12 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       }
       setStep('delivery');
     } else if (step === 'delivery') {
+      const stockErr = validateCurrentStock();
+      if (stockErr) {
+        setErrorMsg(stockErr);
+        return;
+      }
+
       if (tipoEnvio === 'envio') {
         const addr = activeAddress;
         if (!addr || !addr.calle || !addr.numero || !addr.localidad || !addr.provincia || !addr.codigoPostal) {
@@ -510,6 +541,13 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
   const handlePlaceOrder = async () => {
     setIsLoading(true);
     setErrorMsg(null);
+
+    const stockErr = validateCurrentStock();
+    if (stockErr) {
+      setErrorMsg(stockErr);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const orderItems = cart.map(c => {

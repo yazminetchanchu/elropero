@@ -32,7 +32,7 @@ import { CustomerOrder } from '../contexts/AuthContext';
 import { buildSaleItemsFromOrder, getOrderSaleId, isGiftCardOrder } from '../services/webOrderToSale';
 import { sumTransferLines, sumExchangeLines, DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
 import { fulfillWebCambio } from '../services/webCambioFulfillment';
-import { fulfillWebOrder, isOrderExpired, releaseExpiredReservations } from '../services/webOrderFulfillment';
+import { fulfillWebOrder, isOrderExpired, releaseExpiredReservations, getAvailableStock } from '../services/webOrderFulfillment';
 import { sendNotificationEmail, sendSaleConfirmationEmail, sendGiftCardEmail } from '../services/emailService';
 import { cartLinesToSaleItems } from '../services/cartToSale';
 import { calculateCartWeightGrams, calculateCartDimensions, calculateSaleItemsWeightGrams, calculateSaleItemsDimensions } from '../utils/shippingHelpers';
@@ -195,6 +195,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [showLocation, setShowLocation] = React.useState(false);
   const [showBuyGiftCard, setShowBuyGiftCard] = React.useState(false);
   const [pendingPaymentOrder, setPendingPaymentOrder] = React.useState<any | null>(null);
+
+  // Advertencias reactivas de stock en el carrito (generadas por onSnapshot del inventario)
+  const [cartStockWarnings, setCartStockWarnings] = React.useState<string[]>([]);
 
   const handleClosePendingPaymentModal = React.useCallback(() => {
     try {
@@ -703,11 +706,31 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     return unsub;
   }, [inventoryProp, settingsProp]);
 
+  // Liberar reservas expiradas al cargar la tienda (complementa el cron del servidor)
+  React.useEffect(() => {
+    if (inventoryProp) return; // En modo preview/test no hacer nada
+    releaseExpiredReservations(PUBLIC_SHOWROOM_ID).catch((err) => {
+      // Silencioso: es una operación de limpieza, no crítica para el usuario
+      console.warn('[StorefrontPage] Error al liberar reservas expiradas:', err);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   React.useEffect(() => {
     if (webSettings?.ualaEnvironment) {
       setUalaEnvironment(webSettings.ualaEnvironment);
     }
   }, [webSettings?.ualaEnvironment]);
+
+  // Mantener producto seleccionado en modal actualizado con el último stock y precios en tiempo real
+  React.useEffect(() => {
+    if (selectedProduct) {
+      const updated = inventory.find(i => i.id === selectedProduct.id);
+      if (updated) {
+        setSelectedProduct(updated);
+      }
+    }
+  }, [inventory, selectedProduct]);
 
   // Discount helper: max of product-level and section-level discount
   const getDiscount = React.useCallback((item: InventoryItem) => {
@@ -1206,43 +1229,107 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   }, [webSettings.categoriesOrder, webSettings.hiddenSections]);
 
   // Cart logic
-  const getVariantStock = (product: InventoryItem, talle?: string, color?: string): number => {
-    if (product.stockPorVariante && talle && color) {
-      return product.stockPorVariante[`${talle}-${color}`] ?? 0;
+  const getVariantStock = React.useCallback((product: InventoryItem, talle?: string, color?: string): number => {
+    if (!product) return 0;
+    const liveProd = inventory.find(i => i.id === product.id) || product;
+    return getAvailableStock(liveProd, talle, color);
+  }, [inventory]);
+
+  // ── Sincronización reactiva del carrito con el inventario en tiempo real ──
+  // Se ejecuta cada vez que onSnapshot recibe una actualización de Firestore.
+  // Ajusta cantidades, elimina agotados y emite advertencias visuales.
+  const prevInventoryRef = React.useRef<InventoryItem[]>([]);
+  React.useEffect(() => {
+    if (!inventory || inventory.length === 0) return;
+
+    const isFirstLoad = prevInventoryRef.current.length === 0;
+    prevInventoryRef.current = inventory;
+
+    if (cart.length === 0) return;
+
+    const warnings: string[] = [];
+    let changed = false;
+
+    const updatedCart = cart.reduce<CartItem[]>((acc, c) => {
+      const liveProd = inventory.find(i => i.id === c.product.id);
+
+      // Producto ya no existe en el catálogo
+      if (!liveProd) {
+        changed = true;
+        if (!isFirstLoad) warnings.push(`"${c.product.descripcion}" fue removido del catálogo.`);
+        return acc; // Eliminar del carrito
+      }
+
+      const liveStock = getAvailableStock(liveProd, c.selectedTalle, c.selectedColor);
+
+      // Stock llegó a 0 → eliminar del carrito
+      if (liveStock <= 0) {
+        changed = true;
+        if (!isFirstLoad) {
+          const variante = [c.selectedTalle && `talle ${c.selectedTalle}`, c.selectedColor].filter(Boolean).join(', ');
+          warnings.push(`"${liveProd.descripcion}"${variante ? ` (${variante})` : ''} se agotó.`);
+        }
+        return acc; // Eliminar del carrito
+      }
+
+      // La cantidad en el carrito supera el stock live → ajustar
+      if (c.quantity > liveStock) {
+        changed = true;
+        if (!isFirstLoad) {
+          const variante = [c.selectedTalle && `talle ${c.selectedTalle}`, c.selectedColor].filter(Boolean).join(', ');
+          warnings.push(`"${liveProd.descripcion}"${variante ? ` (${variante})` : ''}: cantidad ajustada a ${liveStock} (stock disponible).`);
+        }
+        return [...acc, { ...c, product: liveProd, quantity: liveStock }];
+      }
+
+      // Producto actualizado pero stock suficiente
+      if (liveProd !== c.product) {
+        changed = true;
+        return [...acc, { ...c, product: liveProd }];
+      }
+
+      return [...acc, c];
+    }, []);
+
+    if (changed) {
+      setCart(updatedCart);
     }
-    if (product.coloresStock && color) {
-      return product.coloresStock[color] ?? 0;
+    if (warnings.length > 0) {
+      setCartStockWarnings(warnings);
+      // Auto-limpiar después de 12 segundos
+      setTimeout(() => setCartStockWarnings([]), 12000);
     }
-    return product.cantidad;
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inventory]);
 
   const addToCart = (product: InventoryItem, talle?: string, color?: string) => {
-    const maxQty = getVariantStock(product, talle, color);
+    const liveProd = inventory.find(i => i.id === product.id) || product;
+    const maxQty = getVariantStock(liveProd, talle, color);
 
     if (maxQty <= 0) {
-      showAlert("Lo sentimos, este color no está disponible actualmente.", "Agotado", "warning");
+      showAlert("Lo sentimos, este producto/color no está disponible actualmente.", "Agotado", "warning");
       return;
     }
 
     let nextCart: CartItem[] = [];
-    const existing = cart.find(c => c.product.id === product.id && c.selectedTalle === talle && c.selectedColor === color);
+    const existing = cart.find(c => c.product.id === liveProd.id && c.selectedTalle === talle && c.selectedColor === color);
     if (existing) {
       if (existing.quantity >= maxQty) {
-        showAlert(`Alcanzaste el límite de stock disponible para el color ${color || 'seleccionado'}.`, "Límite de Stock", "warning");
+        showAlert(`Alcanzaste el límite de stock disponible para ${color ? `el color ${color}` : 'este producto'}.`, "Límite de Stock", "warning");
         return;
       }
-      nextCart = cart.map(c => (c.product.id === product.id && c.selectedTalle === talle && c.selectedColor === color) ? { ...c, quantity: c.quantity + 1 } : c);
+      nextCart = cart.map(c => (c.product.id === liveProd.id && c.selectedTalle === talle && c.selectedColor === color) ? { ...c, product: liveProd, quantity: c.quantity + 1 } : c);
     } else {
-      nextCart = [...cart, { product, quantity: 1, payMethod: 'transferencia', selectedTalle: talle, selectedColor: color }];
+      nextCart = [...cart, { product: liveProd, quantity: 1, payMethod: 'transferencia', selectedTalle: talle, selectedColor: color }];
     }
     updateCartStateAndSync(nextCart);
     if (exchangeSession) setShowCart(true);
-    setAddedFeedback(product.id);
+    setAddedFeedback(liveProd.id);
     setTimeout(() => setAddedFeedback(null), 1200);
 
     // Activar aviso de prenda agregada al carrito
     if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
-    setCartToastNotification({ item: product, talle, color });
+    setCartToastNotification({ item: liveProd, talle, color });
     cartToastTimerRef.current = setTimeout(() => {
       setCartToastNotification(null);
     }, 4000);
@@ -1251,16 +1338,16 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const updateQty = (id: string, delta: number, talle?: string, color?: string) => {
     const nextCart = cart.map(c => {
       if (c.product.id !== id || c.selectedTalle !== talle || c.selectedColor !== color) return c;
+      const liveProd = inventory.find(i => i.id === id) || c.product;
       const next = c.quantity + delta;
       
-      const maxQty = getVariantStock(c.product, talle, color);
+      const maxQty = getVariantStock(liveProd, talle, color);
 
       if (next < 1 || next > maxQty) return c;
-      return { ...c, quantity: next };
+      return { ...c, product: liveProd, quantity: next };
     });
     updateCartStateAndSync(nextCart);
   };
-
 
   const removeFromCart = (id: string, talle?: string, color?: string) => {
     const nextCart = cart.filter(c => !(c.product.id === id && c.selectedTalle === talle && c.selectedColor === color));
@@ -2133,7 +2220,14 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             <div className="w-full sm:w-[55%] h-[40vh] sm:h-full bg-neutral-50 relative group">
               {selectedProduct.imagenes && selectedProduct.imagenes.length > 0 ? (
                 <>
-                  <img src={selectedProduct.imagenes[modalImgIdx]} alt="" className="w-full h-full object-cover transition-all duration-300"/>
+                  <img src={selectedProduct.imagenes[modalImgIdx]} alt="" className={`w-full h-full object-cover transition-all duration-300 ${selectedProduct.cantidad <= 0 ? 'grayscale-[30%]' : ''}`}/>
+                  {selectedProduct.cantidad <= 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="bg-neutral-800/80 text-white text-[10px] tracking-[0.3em] uppercase font-medium px-4 py-2">
+                        Agotado
+                      </span>
+                    </div>
+                  )}
                   {selectedProduct.imagenes.length > 1 && (
                     <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => setModalImgIdx(prev => (prev - 1 + selectedProduct.imagenes.length) % selectedProduct.imagenes.length)} className="bg-white/90 p-1.5 rounded-none border border-black/10"><ChevronLeft size={16}/></button>
@@ -2221,12 +2315,18 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                   <div className="flex flex-wrap gap-2 justify-start">
                     {Array.isArray(selectedProduct.talles) && Array.from(new Set(selectedProduct.talles as string[])).map((t, idx) => {
                       const isSelected = modalTalle === t;
+                      // Deshabilitar talle si no tiene stock en ningún color (o sin color si no hay colores)
+                      const hasStockForTalle = selectedProduct.colores && selectedProduct.colores.length > 0
+                        ? selectedProduct.colores.some(c => getVariantStock(selectedProduct, t, c) > 0)
+                        : getVariantStock(selectedProduct, t, undefined) > 0;
+                      const isTalleDisabled = !hasStockForTalle;
                       
                       return (
                         <button 
                           key={`${t}-${idx}`} 
-                          disabled={false}
+                          disabled={isTalleDisabled}
                           onClick={() => {
+                            if (isTalleDisabled) return;
                             setModalTalle(t);
                             if (selectedProduct.colores && selectedProduct.colores.length > 0) {
                               const isCurrentColorAvailable = modalColor && getVariantStock(selectedProduct, t, modalColor) > 0;
@@ -2236,13 +2336,21 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                               }
                             }
                           }} 
-                          className={`w-9 h-9 text-[10px] tracking-[0.1em] uppercase font-light transition-all flex items-center justify-center rounded-none ${
-                            isSelected 
-                              ? 'bg-black text-white border border-black' 
-                              : 'bg-white border border-neutral-300 text-black hover:border-black'
+                          className={`w-9 h-9 text-[10px] tracking-[0.1em] uppercase font-light transition-all flex items-center justify-center rounded-none relative ${
+                            isTalleDisabled
+                              ? 'bg-neutral-50 border border-neutral-200 text-neutral-300 cursor-not-allowed'
+                              : isSelected 
+                                ? 'bg-black text-white border border-black' 
+                                : 'bg-white border border-neutral-300 text-black hover:border-black'
                           }`}
+                          title={isTalleDisabled ? 'Sin stock' : undefined}
                         >
-                          {t}
+                          {isTalleDisabled ? (
+                            <span className="relative">
+                              {t}
+                              <span className="absolute inset-x-0 top-1/2 h-px bg-neutral-300 -rotate-12" />
+                            </span>
+                          ) : t}
                         </button>
                       );
                     })}
@@ -2293,15 +2401,38 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 {(() => {
                   const needsTalle = selectedProduct.talles && selectedProduct.talles.length > 0;
                   const needsColor = selectedProduct.colores && selectedProduct.colores.length > 0;
-                  const canAdd = (!needsTalle || modalTalle) && (!needsColor || modalColor);
+                  const hasSelection = (!needsTalle || modalTalle) && (!needsColor || modalColor);
+                  // Verificar stock real de la combinación seleccionada
+                  const liveVariantStock = hasSelection
+                    ? getVariantStock(selectedProduct, modalTalle || undefined, modalColor || undefined)
+                    : -1;
+                  const isVariantOutOfStock = hasSelection && liveVariantStock <= 0;
+                  const canAdd = hasSelection && !isVariantOutOfStock;
                   return (
-                    <button 
-                      disabled={!canAdd}
-                      onClick={() => { addToCart(selectedProduct, modalTalle, modalColor); setSelectedProduct(null); }} 
-                      className={`w-full py-3 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none ${canAdd ? 'bg-black text-white hover:bg-neutral-800' : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'}`}
-                    >
-                      {canAdd ? 'Añadir al carrito' : 'Selecciona opciones'}
-                    </button>
+                    <>
+                      <button 
+                        disabled={!hasSelection || isVariantOutOfStock}
+                        onClick={() => { addToCart(selectedProduct, modalTalle, modalColor); setSelectedProduct(null); }} 
+                        className={`w-full py-3 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none ${
+                          isVariantOutOfStock
+                            ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed border border-neutral-200'
+                            : canAdd
+                              ? 'bg-black text-white hover:bg-neutral-800'
+                              : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {isVariantOutOfStock
+                          ? '✕ Agotado'
+                          : canAdd
+                            ? 'Añadir al carrito'
+                            : 'Seleccioná opciones'}
+                      </button>
+                      {hasSelection && liveVariantStock > 0 && liveVariantStock <= 3 && (
+                        <p className="text-center text-[9px] tracking-[0.15em] uppercase text-amber-600 font-light">
+                          ¡Quedan solo {liveVariantStock} {liveVariantStock === 1 ? 'unidad' : 'unidades'}!
+                        </p>
+                      )}
+                    </>
                   );
                 })()}
                 <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light text-center">Ref: {selectedProduct.sku}</p>
@@ -2322,6 +2453,23 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               </span>
               <button onClick={() => setShowCart(false)} className="opacity-40 hover:opacity-100"><X size={18} strokeWidth={1.2} /></button>
             </div>
+            {/* Banner de advertencia de stock en tiempo real */}
+            {cartStockWarnings.length > 0 && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex-shrink-0">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" strokeWidth={2} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[9px] tracking-[0.2em] uppercase font-bold text-amber-700 mb-1">Cambio en stock</p>
+                    {cartStockWarnings.map((w, i) => (
+                      <p key={i} className="text-[10px] text-amber-700 leading-relaxed">{w}</p>
+                    ))}
+                  </div>
+                  <button onClick={() => setCartStockWarnings([])} className="text-amber-400 hover:text-amber-700 flex-shrink-0">
+                    <X size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto visible-scrollbar px-6 divide-y divide-neutral-100">
               {cart.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center gap-4 text-black/30 px-4 text-center">
@@ -2338,23 +2486,45 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                   const disc = getDiscount(c.product);
                   const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
                   const hasDiscount = price < basePrice;
+                  const liveStock = getVariantStock(c.product, c.selectedTalle, c.selectedColor);
+                  const isOutOfStock = liveStock <= 0;
+                  const isExceedingStock = c.quantity > liveStock;
+
                   return (
-                    <div key={i} className="py-8 flex gap-6">
-                      <div className="w-20 h-28 bg-neutral-50 flex-shrink-0 flex items-center justify-center">
+                    <div key={i} className={`py-8 flex gap-6 ${isOutOfStock ? 'opacity-70 bg-red-50/40 p-3 rounded' : isExceedingStock ? 'bg-amber-50/40 p-3 rounded' : ''}`}>
+                      <div className="w-20 h-28 bg-neutral-50 flex-shrink-0 flex items-center justify-center relative">
                         {c.product.imagenes?.[0] ? <img src={c.product.imagenes[0]} alt="" className="w-full h-full object-cover"/> : <span className="text-[6px] opacity-20 uppercase">{c.product.descripcion}</span>}
+                        {isOutOfStock && (
+                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-[8px] tracking-wider uppercase font-semibold text-center p-1">
+                            Agotado
+                          </div>
+                        )}
                       </div>
                       <div className="flex-1 flex flex-col">
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="text-[14px] tracking-[1px] uppercase font-bold text-black">{c.product.descripcion}</h4>
                           <button onClick={() => removeFromCart(c.product.id, c.selectedTalle, c.selectedColor)} className="opacity-30 hover:opacity-100"><Trash2 size={16} /></button>
                         </div>
-                        <p className="text-[11px] tracking-[2px] uppercase text-black/50 font-medium mb-4">{c.selectedTalle && `Talle ${c.selectedTalle}`} {c.selectedColor && `— ${c.selectedColor}`}</p>
+                        <p className="text-[11px] tracking-[2px] uppercase text-black/50 font-medium mb-1">{c.selectedTalle && `Talle ${c.selectedTalle}`} {c.selectedColor && `— ${c.selectedColor}`}</p>
+                        
+                        {isOutOfStock ? (
+                          <p className="text-[9px] tracking-[1px] uppercase text-red-600 font-bold mb-2">⚠️ Agotado recientemente en showroom</p>
+                        ) : isExceedingStock ? (
+                          <p className="text-[9px] tracking-[1px] uppercase text-amber-600 font-bold mb-2">⚠️ Solo quedan {liveStock} unidad(es) disponible(s)</p>
+                        ) : null}
+
                         {hasDiscount && <span className="text-[10px] tracking-[2px] uppercase text-red-600 font-bold mb-3">-{disc}% OFF</span>}
                         <div className="mt-auto flex justify-between items-center">
                           <div className="flex items-center border border-black/15">
                             <button onClick={() => updateQty(c.product.id, -1, c.selectedTalle, c.selectedColor)} className="w-9 h-9 flex items-center justify-center hover:bg-black/5"><Minus size={14} /></button>
-                            <span className="w-10 text-center text-[14px] font-semibold text-black">{c.quantity}</span>
-                            <button onClick={() => updateQty(c.product.id, 1, c.selectedTalle, c.selectedColor)} className="w-9 h-9 flex items-center justify-center hover:bg-black/5"><Plus size={14} /></button>
+                            <span className={`w-10 text-center text-[14px] font-semibold ${isOutOfStock || isExceedingStock ? 'text-red-600 font-bold' : 'text-black'}`}>{c.quantity}</span>
+                            <button 
+                              onClick={() => updateQty(c.product.id, 1, c.selectedTalle, c.selectedColor)} 
+                              disabled={isOutOfStock || c.quantity >= liveStock} 
+                              className="w-9 h-9 flex items-center justify-center hover:bg-black/5 disabled:opacity-20"
+                            >
+                              <Plus size={14} />
+                            </button>
                           </div>
                           <div className="text-right">
                             {hasDiscount && <span className="text-[12px] font-light line-through text-black/30 block">${(basePrice * c.quantity).toLocaleString()}</span>}
@@ -2490,21 +2660,54 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                   <span className="text-xl font-normal text-black tracking-wide">${finalCartTotal.toLocaleString()}</span>
                 </div>
 
-                <button 
-                  onClick={() => {
-                    setShowCart(false);
-                    if (user) {
-                      setShowCheckout(true);
-                    } else {
-                      setPendingCheckout(true);
-                      setShowAuthModal(true);
-                    }
-                  }} 
-                  className="w-full bg-black text-white py-3.5 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-all rounded-none flex items-center justify-center gap-2"
-                >
-                  Finalizar pedido
-                  <ArrowRight size={13} strokeWidth={1.2} />
-                </button>
+                {(() => {
+                  const cartStockIssues = cart.filter(c => getVariantStock(c.product, c.selectedTalle, c.selectedColor) < c.quantity);
+                  const hasStockIssues = cartStockIssues.length > 0;
+                  return (
+                    <>
+                      {hasStockIssues && (
+                        <div className="bg-red-50 border border-red-200 rounded-none px-3 py-2.5 flex items-start gap-2">
+                          <AlertCircle size={13} className="text-red-500 flex-shrink-0 mt-0.5" strokeWidth={2} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[9px] tracking-[0.15em] uppercase font-bold text-red-700 mb-1">Items sin stock</p>
+                            {cartStockIssues.map((c, i) => {
+                              const liveStock = getVariantStock(c.product, c.selectedTalle, c.selectedColor);
+                              return (
+                                <p key={i} className="text-[9px] text-red-600 leading-relaxed">
+                                  {c.product.descripcion}
+                                  {c.selectedTalle && ` — T:${c.selectedTalle}`}
+                                  {c.selectedColor && ` ${c.selectedColor}`}
+                                  {liveStock <= 0 ? ' — Agotado' : ` — Solo ${liveStock} disponible(s)`}
+                                </p>
+                              );
+                            })}
+                            <p className="text-[8px] text-red-500 mt-1 font-light">Eliminá los items marcados para continuar.</p>
+                          </div>
+                        </div>
+                      )}
+                      <button 
+                        disabled={hasStockIssues}
+                        onClick={() => {
+                          setShowCart(false);
+                          if (user) {
+                            setShowCheckout(true);
+                          } else {
+                            setPendingCheckout(true);
+                            setShowAuthModal(true);
+                          }
+                        }} 
+                        className={`w-full py-3.5 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none flex items-center justify-center gap-2 ${
+                          hasStockIssues
+                            ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                            : 'bg-black text-white hover:bg-neutral-800'
+                        }`}
+                      >
+                        {hasStockIssues ? 'Stock insuficiente' : 'Finalizar pedido'}
+                        {!hasStockIssues && <ArrowRight size={13} strokeWidth={1.2} />}
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             )}
             {exchangeSession && (
@@ -3216,6 +3419,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         onClose={() => setShowCheckout(false)}
         cart={cart}
         cartTotal={cartTotal}
+        inventory={inventory}
         webSettings={webSettings}
         onSuccess={handleCheckoutSuccess}
         getDiscount={getDiscount}
@@ -3322,35 +3526,62 @@ const ProductCard: React.FC<{
   const tarjetaPrice = discount > 0 ? Math.round(item.ventaTarjeta * (1 - discount / 100)) : item.ventaTarjeta;
   const cuotas3 = Math.round(tarjetaPrice / 3);
   const cuotas6 = Math.round(tarjetaPrice / 6);
+  const isProductSoldOut = item.cantidad <= 0;
+  const isLowStock = !isProductSoldOut && item.cantidad <= 2;
+
   return (
-    <article className="fade-in group flex flex-col relative rounded-none" style={{ animationDelay: `${(idx % 8) * 60}ms` }}>
+    <article className={`fade-in group flex flex-col relative rounded-none transition-opacity duration-300 ${isProductSoldOut ? 'opacity-60' : ''}`} style={{ animationDelay: `${(idx % 8) * 60}ms` }}>
       <div className="relative w-full aspect-[3/4] overflow-hidden bg-neutral-50 cursor-pointer flex items-center justify-center rounded-none" onClick={() => onOpen(item)}>
         {item.imagenes?.[0] ? (
-          <img src={item.imagenes[0]} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"/>
+          <img src={item.imagenes[0]} alt="" className={`w-full h-full object-cover transition-transform duration-500 ${isProductSoldOut ? 'grayscale-[40%]' : 'group-hover:scale-103'}`}/>
         ) : (
           <div className="w-full h-full flex items-center justify-center p-4 transition-transform duration-500 group-hover:scale-105">
             <p className="text-[11px] font-light tracking-[0.25em] uppercase text-neutral-300 leading-normal select-none text-center break-words px-4">{item.descripcion}</p>
           </div>
         )}
-        <button onClick={(e) => { e.stopPropagation(); onOpen(item); }} className={`absolute bottom-0 left-0 w-full py-2.5 text-[9px] tracking-[0.2em] uppercase font-light transition-all duration-300 rounded-none ${addedFeedback === item.id ? 'bg-black text-white' : 'bg-white/95 text-black hover:bg-black hover:text-white'}`}>
-          Ver Detalle
-        </button>
-        
-        {/* Wishlist Heart Icon */}
-        <button 
-          onClick={(e) => { e.stopPropagation(); onToggleFavorite(item.id); }}
-          className="absolute top-3 right-3 z-10 bg-white/90 p-1.5 rounded-none border border-black/10 hover:bg-black hover:text-white transition-all flex items-center justify-center"
-        >
-          <Heart 
-            size={13} 
-            strokeWidth={1.2} 
-            className={`transition-colors duration-300 ${isFavorited ? 'fill-black text-black' : 'text-neutral-600'}`} 
-          />
-        </button>
 
+        {/* Botón inferior: Agotado o Ver Detalle */}
+        {isProductSoldOut ? (
+          <div className="absolute bottom-0 left-0 w-full py-2.5 text-[9px] tracking-[0.2em] uppercase font-light text-center bg-neutral-100/95 text-neutral-400 select-none border-t border-neutral-200">
+            Sin stock
+          </div>
+        ) : (
+          <button onClick={(e) => { e.stopPropagation(); onOpen(item); }} className={`absolute bottom-0 left-0 w-full py-2.5 text-[9px] tracking-[0.2em] uppercase font-light transition-all duration-300 rounded-none ${addedFeedback === item.id ? 'bg-black text-white' : 'bg-white/95 text-black hover:bg-black hover:text-white'}`}>
+            Ver Detalle
+          </button>
+        )}
+        
+        {/* Wishlist Heart Icon — solo si no está agotado */}
+        {!isProductSoldOut && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite(item.id); }}
+            className="absolute top-3 right-3 z-10 bg-white/90 p-1.5 rounded-none border border-black/10 hover:bg-black hover:text-white transition-all flex items-center justify-center"
+          >
+            <Heart 
+              size={13} 
+              strokeWidth={1.2} 
+              className={`transition-colors duration-300 ${isFavorited ? 'fill-black text-black' : 'text-neutral-600'}`} 
+            />
+          </button>
+        )}
+
+        {/* Badges top-left */}
         <div className="absolute top-3 left-3 flex flex-col gap-1">
-          {item.cantidad <= 2 && <span className="text-[8px] tracking-[0.2em] uppercase bg-black text-white px-2 py-0.5 font-light rounded-none">Últimas unidades</span>}
-          {discount > 0 && <span className="text-[8px] tracking-[0.2em] uppercase bg-black text-white border border-white/20 px-2 py-0.5 font-light rounded-none">-{discount}% OFF</span>}
+          {isProductSoldOut && (
+            <span className="text-[8px] tracking-[0.2em] uppercase bg-neutral-700 text-white px-2 py-0.5 font-medium rounded-none">
+              Agotado
+            </span>
+          )}
+          {isLowStock && (
+            <span className="text-[8px] tracking-[0.2em] uppercase bg-black text-white px-2 py-0.5 font-light rounded-none">
+              Últimas unidades
+            </span>
+          )}
+          {discount > 0 && (
+            <span className="text-[8px] tracking-[0.2em] uppercase bg-black text-white border border-white/20 px-2 py-0.5 font-light rounded-none">
+              -{discount}% OFF
+            </span>
+          )}
         </div>
       </div>
       
@@ -3358,14 +3589,20 @@ const ProductCard: React.FC<{
       <div className="mt-2.5 px-0.5 flex flex-col gap-0.5 text-left">
         <h4 className="text-[10px] sm:text-[11px] tracking-[0.16em] uppercase font-light text-neutral-900 truncate">{item.descripcion}</h4>
         
-        <div className="flex items-baseline gap-2 mt-0.5">
-          {discount > 0 && <span className="text-[10px] font-light line-through text-neutral-400">${item.ventaTarjeta.toLocaleString()}</span>}
-          <span className="text-[11px] sm:text-[12px] font-light tracking-[0.05em] text-black">${tarjetaPrice.toLocaleString()}</span>
-        </div>
+        {isProductSoldOut ? (
+          <span className="text-[10px] tracking-[0.1em] uppercase text-neutral-400 font-light">Sin stock</span>
+        ) : (
+          <>
+            <div className="flex items-baseline gap-2 mt-0.5">
+              {discount > 0 && <span className="text-[10px] font-light line-through text-neutral-400">${item.ventaTarjeta.toLocaleString()}</span>}
+              <span className="text-[11px] sm:text-[12px] font-light tracking-[0.05em] text-black">${tarjetaPrice.toLocaleString()}</span>
+            </div>
 
-        <div className="flex flex-col gap-0.5 mt-0.5">
-          <p className="text-[9px] tracking-[0.1em] text-neutral-400 font-light">3 cuotas de <span className="font-normal text-neutral-700">${cuotas3.toLocaleString()}</span> ó 6 de <span className="font-normal text-neutral-700">${cuotas6.toLocaleString()}</span></p>
-        </div>
+            <div className="flex flex-col gap-0.5 mt-0.5">
+              <p className="text-[9px] tracking-[0.1em] text-neutral-400 font-light">3 cuotas de <span className="font-normal text-neutral-700">${cuotas3.toLocaleString()}</span> ó 6 de <span className="font-normal text-neutral-700">${cuotas6.toLocaleString()}</span></p>
+            </div>
+          </>
+        )}
       </div>
     </article>
   );

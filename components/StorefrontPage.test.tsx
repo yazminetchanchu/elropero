@@ -76,7 +76,7 @@ describe('StorefrontPage', () => {
     expect(screen.getAllByText('Remera Blanca').length).toBeGreaterThan(0);
   });
 
-  it('permite siempre la selección de talle y habilita los colores según el talle elegido', () => {
+  it('deshabilita talles sin stock y habilita colores según el talle elegido', () => {
     const mockInventory = [
       {
         id: '1',
@@ -114,14 +114,16 @@ describe('StorefrontPage', () => {
     // Abrir modal de detalle
     fireEvent.click(screen.getByText('Ver Detalle'));
 
-    // Los tres talles (S, M, L) deben estar habilitados
-    const btnS = screen.getByRole('button', { name: 'S' });
-    const btnM = screen.getByRole('button', { name: 'M' });
-    const btnL = screen.getByRole('button', { name: 'L' });
+    // S tiene stock (S-BLANCO:5) → habilitado
+    // M tiene stock (M-NEGRO:3) → habilitado
+    // L no tiene stock en ninguna variante (L-BLANCO:0, L-NEGRO:0) → debe quedar deshabilitado
+    const btnS = screen.getByRole('button', { name: /^S$/i });
+    const btnM = screen.getByRole('button', { name: /^M$/i });
+    const btnL = screen.getByRole('button', { name: /^L$/i });
 
     expect(btnS).not.toBeDisabled();
     expect(btnM).not.toBeDisabled();
-    expect(btnL).not.toBeDisabled();
+    expect(btnL).toBeDisabled(); // ← Correcto: L agotado en todas las variantes
 
     // Al estar seleccionado 'S' por defecto:
     // S-BLANCO tiene stock 5 (BLANCO habilitado), S-NEGRO tiene stock 0 (NEGRO deshabilitado)

@@ -16,6 +16,7 @@ import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import WebOrdersManager from './components/WebOrdersManager';
 import InnovativeLoader from './components/InnovativeLoader';
 import { computeSaleBreakdown, isMonth } from './services/finance';
+import { deductSaleFromInventory, restoreSaleToInventory } from './services/webOrderFulfillment';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import NetworkStatus from './components/NetworkStatus';
@@ -370,35 +371,7 @@ const App: React.FC = () => {
     }
   }, [sales, isEntered, hasMigrated, isSyncing, inventory, expenses, giftCards]);
 
-  // =======================
-  // POLLING DE SINCRONIZACIÓN
-  // =======================
-  React.useEffect(() => {
-    if (!isEntered) return;
 
-    const interval = setInterval(async () => {
-      if (!navigator.onLine || isSyncing) return;
-
-      try {
-        const remote = await database.fetchRemote();
-        if (remote) {
-          const local = database.getLocalBackup();
-          // Comparar timestamps para ver si hay datos más recientes
-          const remoteTime = remote.lastSync || 0;
-          const localTime = local.lastSync || 0;
-          
-          if (remoteTime > localTime) {
-            console.log('🔄 Datos remotos más recientes detectados, sincronizando...');
-            applyRemoteData(remote);
-          }
-        }
-      } catch (error) {
-        console.error('Error en sincronización automática:', error);
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [isEntered, isSyncing, applyRemoteData]);
 
   // =======================
   // CIERRES MENSUALES AUTOMÁTICOS
@@ -747,32 +720,30 @@ const App: React.FC = () => {
 
 
   // =======================
-  // INITIAL FETCH (PUBLIC)
+  // SINCRONIZACIÓN EN TIEMPO REAL (FIRESTORE REALTIME)
   // =======================
   React.useEffect(() => {
-    const initFetch = async () => {
-      setIsInitialLoading(true);
-      setIsDataLoaded(false);
-      try {
-        const id = database.getShowroomID();
-        const remote = await database.fetchRemote(id);
-        if (remote) {
-          applyRemoteData(remote);
-        } else {
-          const local = database.getLocalBackup();
-          if (local.inventory?.length > 0) applyRemoteData(local);
-        }
-      } catch (e) {
-        console.error("Initial fetch error:", e);
-        const local = database.getLocalBackup();
-        if (local.inventory?.length > 0) applyRemoteData(local);
-      } finally {
-        setIsDataLoaded(true);
-        setIsLoading(false);
-      }
+    setIsInitialLoading(true);
+    setIsDataLoaded(false);
+
+    // 1. Cargar respaldo local de inmediato para respuesta instantánea
+    const local = database.getLocalBackup();
+    if (local.inventory?.length > 0) {
+      applyRemoteData(local);
+    }
+
+    // 2. Suscribirse a cambios en tiempo real en Firestore
+    const unsub = database.subscribe((remoteData) => {
+      applyRemoteData(remoteData);
+      setIsDataLoaded(true);
+      setIsInitialLoading(false);
+      setIsLoading(false);
+    }, showroomID);
+
+    return () => {
+      unsub();
     };
-    initFetch();
-  }, [applyRemoteData]);
+  }, [showroomID, applyRemoteData]);
 
   // =======================
   // INVENTORY
@@ -827,8 +798,13 @@ const App: React.FC = () => {
     // VALIDACIONES DE CAMBIO
     // =======================
     if (saleData.tipo === 'cambio') {
-      if (!saleData.itemsDevueltos?.length || !saleData.itemsNuevos?.length) {
-        alert('Un cambio debe tener prendas devueltas y prendas nuevas');
+      if (!saleData.itemsDevueltos?.length) {
+        alert('Un cambio o devolución debe tener al menos una prenda devuelta');
+        return;
+      }
+      // Allow partial returns without new items or gift card if there is no monetary difference
+      if (!saleData.itemsNuevos?.length && (saleData.diferencia ?? 0) > 0 && !saleData.giftGeneradaId) {
+        alert('Un cambio debe incluir prendas nuevas o generar una Gift Card a favor del cliente');
         return;
       }
     }
@@ -841,9 +817,9 @@ const App: React.FC = () => {
       return;
     }
 
-    // Validar stock de las prendas nuevas
-    if (saleData.tipo === 'cambio') {
-      for (const itemNuevo of saleData.itemsNuevos!) {
+    // Validar stock de las prendas nuevas (si las hay)
+    if (saleData.tipo === 'cambio' && saleData.itemsNuevos && saleData.itemsNuevos.length > 0) {
+      for (const itemNuevo of saleData.itemsNuevos) {
         const invItem = inventory.find(i => i.id === itemNuevo.id);
         if (!invItem) {
           alert('Producto no encontrado en stock');
@@ -873,8 +849,8 @@ const App: React.FC = () => {
 
       // Validar que cada prenda devuelta pertenezca a la venta original
       const itemsOriginales = ventaOriginal.items ?? [];
-      for (const devuelto of saleData.itemsDevueltos!) {
-        const enOriginal = itemsOriginales.find(i => i.id === devuelto.id);
+      for (const devuelto of (saleData.itemsDevueltos || [])) {
+        const enOriginal = itemsOriginales.find(i => i.id === devuelto.id && i.talle === devuelto.talle && i.color === devuelto.color);
         if (!enOriginal) {
           alert(
             `La prenda "${devuelto.descripcion}" no pertenece a la venta original seleccionada.\n` +
@@ -894,7 +870,7 @@ const App: React.FC = () => {
         const yaDevueltaEn = sales
           .filter(s => s.tipo === 'cambio' && s.ventaOriginalId === saleData.ventaOriginalId)
           .reduce((sum, s) => {
-            const prev = (s.itemsDevueltos ?? []).find(i => i.id === devuelto.id);
+            const prev = (s.itemsDevueltos ?? []).find(i => i.id === devuelto.id && i.talle === devuelto.talle && i.color === devuelto.color);
             return sum + (prev?.cantidad ?? 0);
           }, 0);
 
@@ -915,86 +891,48 @@ const App: React.FC = () => {
     let giftGenerada: GiftCard | undefined;
     if (saleData.tipo === 'cambio' && (saleData.diferencia ?? 0) < 0) {
       const montoGift = Math.abs(saleData.diferencia!);
-      const codigoGift = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      // Generate gift card only for full returns (all items returned)
+      const originalSale = sales.find(s => s.id === saleData.ventaOriginalId);
+      const allReturned = originalSale?.items?.every(origItem => {
+        const devuelto = (saleData.itemsDevueltos ?? []).find(d => d.id === origItem.id && d.talle === origItem.talle && d.color === origItem.color);
+        return devuelto && devuelto.cantidad === origItem.cantidad;
+      }) ?? false;
+      if (allReturned) {
+        const montoGift = Math.abs(saleData.diferencia!);
+        const codigoGift = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-      const ventaOrig = sales.find(s => s.id === saleData.ventaOriginalId);
-      let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
-      if (ventaOrig?.pago) {
-        if (ventaOrig.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
-        else if (ventaOrig.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
-        else medioPagoOrigen = 'mixto';
+        const ventaOrig = sales.find(s => s.id === saleData.ventaOriginalId);
+        let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
+        if (ventaOrig?.pago) {
+          if (ventaOrig.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
+          else if (ventaOrig.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
+          else medioPagoOrigen = 'mixto';
+        }
+
+        giftGenerada = {
+          id: saleData.giftGeneradaId || `gift_${Date.now()}`,
+          codigo: codigoGift,
+          destinatario: saleData.giftDestinatario?.trim() || 'Cambio automático',
+          montoInicial: montoGift,
+          saldo: montoGift,
+          estado: 'ACTIVA',
+          fechaCreacion: new Date().toISOString(),
+          medioPagoOrigen,
+          ventaOrigenId: saleData.ventaOriginalId,
+        };
       }
-
-      giftGenerada = {
-        id: saleData.giftGeneradaId || `gift_${Date.now()}`,
-        codigo: codigoGift,
-        destinatario: saleData.giftDestinatario?.trim() || 'Cambio automático',
-        montoInicial: montoGift,
-        saldo: montoGift,
-        estado: 'ACTIVA',
-        fechaCreacion: new Date().toISOString(),
-        medioPagoOrigen,
-        ventaOrigenId: saleData.ventaOriginalId,
-      };
     }
 
     // Los emails se enviarán después de persistir correctamente
+    const saleId = `sale_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newSale: Sale = {
+      ...saleData,
+      id: saleId
+    };
   
-    const nextInv = inventory.map(item => {
-
-      // =======================
-      // CAMBIO → NO USA items
-      // =======================
-      if (saleData.tipo === 'cambio') {
-        const devuelto = saleData.itemsDevueltos?.find(i => i.id === item.id);
-        const nuevo = saleData.itemsNuevos?.find(i => i.id === item.id);
+    const nextInv = deductSaleFromInventory(inventory, newSale);
     
-        let cantidad = item.cantidad;
-        let updatedVariants = item.stockPorVariante ? { ...item.stockPorVariante } : undefined;
-    
-        if (devuelto) {
-          cantidad += devuelto.cantidad;
-          if (updatedVariants && devuelto.talle && devuelto.color) {
-            const key = `${devuelto.talle}-${devuelto.color}`;
-            updatedVariants[key] = (updatedVariants[key] || 0) + devuelto.cantidad;
-          }
-        }
-        if (nuevo) {
-          cantidad -= nuevo.cantidad;
-          if (updatedVariants && nuevo.talle && nuevo.color) {
-            const key = `${nuevo.talle}-${nuevo.color}`;
-            updatedVariants[key] = Math.max(0, (updatedVariants[key] || 0) - nuevo.cantidad);
-          }
-        }
-    
-        return {
-          ...item,
-          cantidad: Math.max(0, cantidad),
-          ...(updatedVariants !== undefined ? { stockPorVariante: updatedVariants } : {}),
-        };
-      }
-    
-      // =======================
-      // VENTA / DEVOLUCIÓN
-      // =======================
-      const sold = saleData.items?.find(si => si.id === item.id);
-      
-      if (!sold) return item;
-
-      let updatedVariants = item.stockPorVariante ? { ...item.stockPorVariante } : undefined;
-      if (updatedVariants && sold.talle && sold.color) {
-        const key = `${sold.talle}-${sold.color}`;
-        updatedVariants[key] = Math.max(0, (updatedVariants[key] || 0) - sold.cantidad);
-      }
-
-      return {
-        ...item,
-        cantidad: Math.max(0, item.cantidad - sold.cantidad),
-        ...(updatedVariants !== undefined ? { stockPorVariante: updatedVariants } : {}),
-      };
-    });
-    
-    const nextSales = [...sales, saleData];
+    const nextSales = [...sales, newSale];
     const finalGiftCards = giftGenerada ? [...nextGiftCards, giftGenerada] : nextGiftCards;
 
     try {
@@ -1012,12 +950,12 @@ const App: React.FC = () => {
         ).catch(err => console.error("Error sending auto-generated gift card email:", err));
       }
 
-      if (saleData.tipo === 'venta') {
-        sendSaleConfirmationEmail(saleData, 'Showroom / Local', undefined, 'local');
-      } else if (saleData.tipo !== 'gift') {
+      if (newSale.tipo === 'venta') {
+        sendSaleConfirmationEmail(newSale, 'Showroom / Local', undefined, 'local');
+      } else if (newSale.tipo !== 'gift') {
         sendNotificationEmail(
-          saleData.tipo === 'cambio' ? 'Nuevo Cambio en Local' : 'Nueva Venta en Local',
-          `Se ha registrado un(a) ${saleData.tipo} en el local.\nID: ${saleData.id}\nTotal: $${saleData.total}\n${saleData.tipo === 'cambio' ? `Diferencia: $${saleData.diferencia || 0}` : ''}`
+          newSale.tipo === 'cambio' ? 'Nuevo Cambio en Local' : 'Nueva Venta en Local',
+          `Se ha registrado un(a) ${newSale.tipo} en el local.\nID: ${newSale.id}\nTotal: $${newSale.total}\n${newSale.tipo === 'cambio' ? `Diferencia: $${newSale.diferencia || 0}` : ''}`
         );
       }
     } catch (err) {
@@ -1041,65 +979,8 @@ const handleDeleteSale = (saleId: string) => {
     const sale = prevSales.find(s => s.id === saleId);
     if (!sale) return prevSales;
     
-    // 1. Devolver stock
-    let nextInv = [...inventory];
-
-    if (sale.tipo === 'cambio') {
-      // Para cambios: devolver items nuevos y quitar items devueltos
-      if (sale.itemsNuevos) {
-        sale.itemsNuevos.forEach(itemNuevo => {
-          const idx = nextInv.findIndex(i => i.id === itemNuevo.id);
-          if (idx !== -1) {
-            let uv = nextInv[idx].stockPorVariante ? { ...nextInv[idx].stockPorVariante } : undefined;
-            if (uv && itemNuevo.talle && itemNuevo.color) {
-              const key = `${itemNuevo.talle}-${itemNuevo.color}`;
-              uv[key] = (uv[key] || 0) + itemNuevo.cantidad;
-            }
-            nextInv[idx] = {
-              ...nextInv[idx],
-              cantidad: nextInv[idx].cantidad + itemNuevo.cantidad,
-              ...(uv !== undefined ? { stockPorVariante: uv } : {}),
-            };
-          }
-        });
-      }
-      if (sale.itemsDevueltos) {
-        sale.itemsDevueltos.forEach(itemDevuelto => {
-          const idx = nextInv.findIndex(i => i.id === itemDevuelto.id);
-          if (idx !== -1) {
-            let uv = nextInv[idx].stockPorVariante ? { ...nextInv[idx].stockPorVariante } : undefined;
-            if (uv && itemDevuelto.talle && itemDevuelto.color) {
-              const key = `${itemDevuelto.talle}-${itemDevuelto.color}`;
-              uv[key] = Math.max(0, (uv[key] || 0) - itemDevuelto.cantidad);
-            }
-            nextInv[idx] = {
-              ...nextInv[idx],
-              cantidad: Math.max(0, nextInv[idx].cantidad - itemDevuelto.cantidad),
-              ...(uv !== undefined ? { stockPorVariante: uv } : {}),
-            };
-          }
-        });
-      }
-    } else {
-      // Para ventas normales: devolver todos los items
-      if (sale.items) {
-        sale.items.forEach(si => {
-          const idx = nextInv.findIndex(i => i.id === si.id);
-          if (idx !== -1) {
-            let uv = nextInv[idx].stockPorVariante ? { ...nextInv[idx].stockPorVariante } : undefined;
-            if (uv && si.talle && si.color) {
-              const key = `${si.talle}-${si.color}`;
-              uv[key] = (uv[key] || 0) + si.cantidad;
-            }
-            nextInv[idx] = {
-              ...nextInv[idx],
-              cantidad: nextInv[idx].cantidad + si.cantidad,
-              ...(uv !== undefined ? { stockPorVariante: uv } : {}),
-            };
-          }
-        });
-      }
-    }
+    // 1. Devolver stock de forma atómica y completa
+    const nextInv = restoreSaleToInventory(inventory, sale);
 
     // 2. Devolver saldo a gift si hubo
     let nextGiftCards = [...giftCards];

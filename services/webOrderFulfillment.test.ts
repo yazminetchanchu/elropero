@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { deductInventory, restoreInventory, verifyStock, WebOrderItem } from './webOrderFulfillment';
-import { InventoryItem } from '../types';
+import { 
+  deductInventory, 
+  restoreInventory, 
+  verifyStock, 
+  getAvailableStock, 
+  deductSaleFromInventory, 
+  restoreSaleToInventory, 
+  WebOrderItem 
+} from './webOrderFulfillment';
+import { InventoryItem, Sale } from '../types';
 
 describe('webOrderFulfillment stock tests', () => {
   const mockInventory: InventoryItem[] = [
@@ -107,5 +115,70 @@ describe('webOrderFulfillment stock tests', () => {
     
     const updatedProd3 = newInv.find(i => i.id === 'prod-3')!;
     expect(updatedProd3.cantidad).toBe(10);
+  });
+
+  it('getAvailableStock: resuelve correctamente con variantes insensible a mayúsculas/minúsculas', () => {
+    const prod1 = mockInventory.find(i => i.id === 'prod-1')!;
+    expect(getAvailableStock(prod1, 's', 'rojo')).toBe(2);
+    expect(getAvailableStock(prod1, 'M', 'azul')).toBe(5);
+    expect(getAvailableStock(prod1, 'XL', 'VERDE')).toBe(0);
+
+    const prod2 = mockInventory.find(i => i.id === 'prod-2')!;
+    expect(getAvailableStock(prod2, undefined, 'negro')).toBe(8);
+
+    const prod3 = mockInventory.find(i => i.id === 'prod-3')!;
+    expect(getAvailableStock(prod3)).toBe(15);
+  });
+
+  it('deductSaleFromInventory: descuenta múltiples líneas del mismo producto en una venta de Showroom', () => {
+    const sale: Sale = {
+      id: 'sale-1',
+      fecha: new Date().toISOString(),
+      tipo: 'venta',
+      total: 500,
+      pago: { efectivo: 100, tarjeta: 0 },
+      items: [
+        { id: 'prod-1', sku: 'P1', descripcion: 'Remera S Rojo', cantidad: 1, costo: 100, precioEfectivo: 200, precioTarjeta: 250, descuento: 0, talle: 'S', color: 'ROJO' },
+        { id: 'prod-1', sku: 'P1', descripcion: 'Remera M Azul', cantidad: 2, costo: 100, precioEfectivo: 200, precioTarjeta: 250, descuento: 0, talle: 'M', color: 'AZUL' }
+      ]
+    };
+
+    const newInv = deductSaleFromInventory(mockInventory, sale);
+    const prod1 = newInv.find(i => i.id === 'prod-1')!;
+
+    expect(prod1.stockPorVariante!['S-ROJO']).toBe(1); // 2 - 1
+    expect(prod1.stockPorVariante!['M-AZUL']).toBe(3); // 5 - 2
+    expect(prod1.cantidad).toBe(7); // 10 - 3
+  });
+
+  it('deductSaleFromInventory & restoreSaleToInventory: maneja cambios con prendas devueltas y nuevas', () => {
+    const cambioSale: Sale = {
+      id: 'cambio-1',
+      fecha: new Date().toISOString(),
+      tipo: 'cambio',
+      total: 0,
+      pago: { efectivo: 100, tarjeta: 0 },
+      items: [],
+      itemsDevueltos: [
+        { id: 'prod-1', sku: 'P1', descripcion: 'Remera S Rojo devuelta', cantidad: 1, costo: 100, precioEfectivo: 200, precioTarjeta: 250, descuento: 0, talle: 'S', color: 'ROJO' }
+      ],
+      itemsNuevos: [
+        { id: 'prod-1', sku: 'P1', descripcion: 'Remera M Azul nueva', cantidad: 1, costo: 100, precioEfectivo: 200, precioTarjeta: 250, descuento: 0, talle: 'M', color: 'AZUL' }
+      ]
+    };
+
+    const updatedInv = deductSaleFromInventory(mockInventory, cambioSale);
+    const prodAfterCambio = updatedInv.find(i => i.id === 'prod-1')!;
+
+    expect(prodAfterCambio.stockPorVariante!['S-ROJO']).toBe(3); // 2 + 1 devuelto
+    expect(prodAfterCambio.stockPorVariante!['M-AZUL']).toBe(4); // 5 - 1 nuevo
+    expect(prodAfterCambio.cantidad).toBe(10); // 10 + 1 - 1
+
+    const restoredInv = restoreSaleToInventory(updatedInv, cambioSale);
+    const prodRestored = restoredInv.find(i => i.id === 'prod-1')!;
+
+    expect(prodRestored.stockPorVariante!['S-ROJO']).toBe(2);
+    expect(prodRestored.stockPorVariante!['M-AZUL']).toBe(5);
+    expect(prodRestored.cantidad).toBe(10);
   });
 });

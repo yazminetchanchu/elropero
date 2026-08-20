@@ -36,15 +36,48 @@ export interface WebOrderForFulfillment {
   customerId?: string;
 }
 
-export function deductInventory(inventory: InventoryItem[], items: WebOrderItem[]): InventoryItem[] {
+export function getAvailableStock(product: InventoryItem, talle?: string, color?: string): number {
+  if (!product) return 0;
+  
+  if (product.stockPorVariante && (talle || color)) {
+    if (talle && color) {
+      const varKey = `${talle.trim()}-${color.trim()}`;
+      const matchingKey = Object.keys(product.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase());
+      return matchingKey !== undefined ? Math.max(0, product.stockPorVariante[matchingKey] ?? 0) : 0;
+    }
+    if (color && !talle) {
+      const cleanColor = color.trim().toLowerCase();
+      let sum = 0;
+      let found = false;
+      for (const [key, qty] of Object.entries(product.stockPorVariante)) {
+        const parts = key.split('-');
+        if (parts.length >= 2 && parts.slice(1).join('-').trim().toLowerCase() === cleanColor) {
+          sum += Math.max(0, qty || 0);
+          found = true;
+        }
+      }
+      if (found) return sum;
+    }
+  }
+  
+  if (product.coloresStock && color) {
+    const cleanColor = color.trim().toLowerCase();
+    const matchingColorKey = Object.keys(product.coloresStock).find(k => k.toLowerCase() === cleanColor);
+    return matchingColorKey !== undefined ? Math.max(0, product.coloresStock[matchingColorKey] ?? 0) : 0;
+  }
+  
+  return Math.max(0, product.cantidad ?? 0);
+}
+
+export function deductInventory(inventory: InventoryItem[], items: (WebOrderItem | { productId?: string; id?: string; descripcion?: string; sku?: string; cantidad: number; talle?: string; color?: string; isVirtualGiftCard?: boolean })[]): InventoryItem[] {
   return inventory.map((item) => {
-    const soldLines = items.filter((oi) => !oi.isVirtualGiftCard && oi.productId === item.id);
+    const soldLines = items.filter((oi) => !oi.isVirtualGiftCard && ((oi.productId && oi.productId === item.id) || (oi.id && oi.id === item.id)));
     if (!soldLines.length) return item;
 
     let updated: InventoryItem = { ...item };
     for (const sold of soldLines) {
       if (updated.stockPorVariante && sold.talle && sold.color) {
-        const varKey = `${sold.talle}-${sold.color}`;
+        const varKey = `${sold.talle.trim()}-${sold.color.trim()}`;
         const matchingKey = Object.keys(updated.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase()) || varKey;
         const nextVariants = { ...updated.stockPorVariante };
         nextVariants[matchingKey] = Math.max(0, (nextVariants[matchingKey] || 0) - sold.cantidad);
@@ -82,15 +115,15 @@ export function deductInventory(inventory: InventoryItem[], items: WebOrderItem[
   });
 }
 
-export function restoreInventory(inventory: InventoryItem[], items: WebOrderItem[]): InventoryItem[] {
+export function restoreInventory(inventory: InventoryItem[], items: (WebOrderItem | { productId?: string; id?: string; descripcion?: string; sku?: string; cantidad: number; talle?: string; color?: string; isVirtualGiftCard?: boolean })[]): InventoryItem[] {
   return inventory.map((item) => {
-    const soldLines = items.filter((oi) => !oi.isVirtualGiftCard && oi.productId === item.id);
+    const soldLines = items.filter((oi) => !oi.isVirtualGiftCard && ((oi.productId && oi.productId === item.id) || (oi.id && oi.id === item.id)));
     if (!soldLines.length) return item;
 
     let updated: InventoryItem = { ...item };
     for (const sold of soldLines) {
       if (updated.stockPorVariante && sold.talle && sold.color) {
-        const varKey = `${sold.talle}-${sold.color}`;
+        const varKey = `${sold.talle.trim()}-${sold.color.trim()}`;
         const matchingKey = Object.keys(updated.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase()) || varKey;
         const nextVariants = { ...updated.stockPorVariante };
         nextVariants[matchingKey] = (nextVariants[matchingKey] || 0) + sold.cantidad;
@@ -126,6 +159,78 @@ export function restoreInventory(inventory: InventoryItem[], items: WebOrderItem
     }
     return updated;
   });
+}
+
+export function deductSaleFromInventory(inventory: InventoryItem[], sale: Sale | Omit<Sale, 'id'>): InventoryItem[] {
+  let updatedInv = [...inventory];
+  if (sale.tipo === 'cambio') {
+    if (sale.itemsDevueltos && sale.itemsDevueltos.length > 0) {
+      updatedInv = restoreInventory(updatedInv, sale.itemsDevueltos.map(si => ({
+        productId: si.id,
+        descripcion: si.descripcion,
+        sku: si.sku,
+        cantidad: si.cantidad,
+        talle: si.talle,
+        color: si.color
+      })));
+    }
+    if (sale.itemsNuevos && sale.itemsNuevos.length > 0) {
+      updatedInv = deductInventory(updatedInv, sale.itemsNuevos.map(si => ({
+        productId: si.id,
+        descripcion: si.descripcion,
+        sku: si.sku,
+        cantidad: si.cantidad,
+        talle: si.talle,
+        color: si.color
+      })));
+    }
+  } else if (sale.items && sale.items.length > 0) {
+    updatedInv = deductInventory(updatedInv, sale.items.map(si => ({
+      productId: si.id,
+      descripcion: si.descripcion,
+      sku: si.sku,
+      cantidad: si.cantidad,
+      talle: si.talle,
+      color: si.color
+    })));
+  }
+  return updatedInv;
+}
+
+export function restoreSaleToInventory(inventory: InventoryItem[], sale: Sale): InventoryItem[] {
+  let updatedInv = [...inventory];
+  if (sale.tipo === 'cambio') {
+    if (sale.itemsNuevos && sale.itemsNuevos.length > 0) {
+      updatedInv = restoreInventory(updatedInv, sale.itemsNuevos.map(si => ({
+        productId: si.id,
+        descripcion: si.descripcion,
+        sku: si.sku,
+        cantidad: si.cantidad,
+        talle: si.talle,
+        color: si.color
+      })));
+    }
+    if (sale.itemsDevueltos && sale.itemsDevueltos.length > 0) {
+      updatedInv = deductInventory(updatedInv, sale.itemsDevueltos.map(si => ({
+        productId: si.id,
+        descripcion: si.descripcion,
+        sku: si.sku,
+        cantidad: si.cantidad,
+        talle: si.talle,
+        color: si.color
+      })));
+    }
+  } else if (sale.items && sale.items.length > 0) {
+    updatedInv = restoreInventory(updatedInv, sale.items.map(si => ({
+      productId: si.id,
+      descripcion: si.descripcion,
+      sku: si.sku,
+      cantidad: si.cantidad,
+      talle: si.talle,
+      color: si.color
+    })));
+  }
+  return updatedInv;
 }
 
 export function verifyStock(inventory: InventoryItem[], items: WebOrderItem[]): void {
@@ -276,9 +381,19 @@ export async function fulfillWebOrder(
       }
     }
 
+    // El stock ya fue decrementado atómicamente por `reserveWebOrder` (Cloud Function).
+    // Aquí re-escritura el inventario desde el snapshot actual (ya descontado) para:
+    //  a) Garantizar idempotencia: si por algún motivo no pasó por reserveWebOrder, se descuenta ahora.
+    //  b) Forzar que `lastSync` se actualice y que el onSnapshot propague a todos los clientes.
+    const nonGiftItems = order.items.filter((oi) => !oi.isVirtualGiftCard);
+    const confirmedInventory = nonGiftItems.length > 0
+      ? deductInventory(inventory, nonGiftItems)
+      : inventory;
+
     transaction.update(showroomRef, {
       sales: [...sales, sale],
       giftCards: nextGiftCards,
+      inventory: confirmedInventory,
       lastSync: Date.now(),
     });
 

@@ -18,6 +18,16 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
 
   // Ejecutamos la reserva de forma atómica en el servidor
   await db.runTransaction(async (transaction) => {
+    // ── Idempotencia: si la orden ya fue reservada, no volver a descontar stock ──
+    const existingOrderSnap = await transaction.get(orderRef);
+    if (existingOrderSnap.exists) {
+      const existingData = existingOrderSnap.data() || {};
+      if (existingData.estado === 'PENDING_PAYMENT' || existingData.estado === 'Confirmado') {
+        console.log(`[reserveWebOrder] Orden ${orderId} ya está en estado '${existingData.estado}'. Omitiendo reserva duplicada.`);
+        return; // Stock ya fue descontado previamente
+      }
+    }
+
     const srSnap = await transaction.get(showroomRef);
     if (!srSnap.exists) {
       throw new functions.https.HttpsError('not-found', 'Showroom no encontrado');
@@ -329,7 +339,9 @@ export const fulfillWebCambioServer = functions.https.onCall(async (data, contex
     // Validate returned items belong to original sale
     const itemsOriginales = ventaOriginal.items ?? [];
     for (const devuelto of itemsDevueltos) {
-      const enOriginal = itemsOriginales.find((i: any) => i.id === devuelto.id);
+      const enOriginal = itemsOriginales.find(
+        (i: any) => i.id === devuelto.id && i.talle === devuelto.talle && i.color === devuelto.color
+      );
       if (!enOriginal) {
         throw new functions.https.HttpsError(
           'failed-precondition',
@@ -346,8 +358,10 @@ export const fulfillWebCambioServer = functions.https.onCall(async (data, contex
       const yaDevueltaEn = sales
         .filter((s: any) => s.tipo === 'cambio' && s.ventaOriginalId === ventaOriginalId)
         .reduce((sum: number, s: any) => {
-          const prev = (s.itemsDevueltos ?? []).find((i: any) => i.id === devuelto.id);
-          return sum + (prev?.cantidad ?? 0);
+          const matches = (s.itemsDevueltos ?? []).filter(
+            (i: any) => i.id === devuelto.id && i.talle === devuelto.talle && i.color === devuelto.color
+          );
+          return sum + matches.reduce((acc: number, m: any) => acc + (m.cantidad ?? 0), 0);
         }, 0);
 
       const disponible = enOriginal.cantidad - yaDevueltaEn;

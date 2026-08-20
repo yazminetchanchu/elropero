@@ -1,6 +1,6 @@
 import React from 'react';
 import { InventoryItem, Sale, GiftCard, SaleItem } from '../types';
-import { Trash2, CreditCard, Banknote, CheckCircle } from 'lucide-react';
+import { Trash2, CreditCard, Banknote, CheckCircle, Search, X } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
 
 
@@ -108,19 +108,52 @@ const Sales: React.FC<SalesProps> = ({
   // =======================
   // BUSCADOR
   // =======================
-  // (filteredProducts se declara más abajo, después de getStockDisponible)
+  const normalizeText = (str: string) =>
+    (str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
 
   const findProduct = (key: string) => {
     return inventory.find(p => p.id === key || p.sku === key);
   };
 
   const getStockDisponible = (prod: InventoryItem) => {
-    // Para el buscador: usa cantidad total del producto
+    // Cantidad agregada actualmente al carrito
     const inCart = cart
       .filter(ci => ci.id === prod.id)
       .reduce((sum, ci) => sum + ci.cantidad, 0);
-    return prod.cantidad - inCart;
+
+    const totalVariantStock = prod.stockPorVariante
+      ? Object.values(prod.stockPorVariante).reduce((sum, val) => sum + (Number(val) || 0), 0)
+      : 0;
+
+    const baseStock = (prod.stockPorVariante && Object.keys(prod.stockPorVariante).length > 0 && totalVariantStock > 0)
+      ? totalVariantStock
+      : (prod.cantidad || 0);
+
+    return baseStock - inCart;
   };
+
+  // Calcular cantidad restante que puede ser devuelta de un item de una venta original
+  const getCantidadDisponibleDevolucion = React.useCallback((ventaOrig: Sale, item: SaleItem) => {
+    const originalItem = ventaOrig.items?.find(
+      i => i.id === item.id && i.talle === item.talle && i.color === item.color
+    );
+    const cantidadComprada = originalItem?.cantidad || item.cantidad || 0;
+
+    const yaDevuelta = recentSales
+      .filter(s => s.tipo === 'cambio' && s.ventaOriginalId === ventaOrig.id)
+      .reduce((sum, s) => {
+        const matches = (s.itemsDevueltos ?? []).filter(
+          i => i.id === item.id && i.talle === item.talle && i.color === item.color
+        );
+        return sum + matches.reduce((acc, m) => acc + (m.cantidad ?? 0), 0);
+      }, 0);
+
+    return Math.max(0, cantidadComprada - yaDevuelta);
+  }, [recentSales]);
 
   // Stock máximo para un item del carrito considerando su variante seleccionada
   const getMaxQtyForCartItem = (item: CartItem): number => {
@@ -133,24 +166,27 @@ const Sales: React.FC<SalesProps> = ({
   };
 
   const filteredProducts = React.useMemo(() => {
-    if (!searchTerm.trim()) return [];
-    
-    const query = searchTerm.toLowerCase();
+    const cleanSearch = normalizeText(searchTerm);
+    if (!cleanSearch) return [];
 
-    // Acceso directo al inventario invertido
+    const tokens = cleanSearch.split(/\s+/).filter(Boolean);
+
+    // Acceso directo al inventario invertido (más recientes primero)
     return [...inventory]
       .reverse() 
       .filter(p => {
         const disponible = getStockDisponible(p);
         if (disponible <= 0) return false;
 
-        return (
-          (p.sku?.toLowerCase() || "").includes(query) ||
-          (p.descripcion?.toLowerCase() || "").includes(query) ||
-          (p.proveedor?.toLowerCase() || "").includes(query)
+        const tallesStr = (p.talles || []).join(' ');
+        const coloresStr = (p.colores || []).join(' ');
+        const fullSearchable = normalizeText(
+          `${p.sku || ''} ${p.descripcion || ''} ${p.proveedor || ''} ${p.categoria || ''} ${tallesStr} ${coloresStr}`
         );
+
+        return tokens.every(token => fullSearchable.includes(token));
       })
-      .slice(0, 25);
+      .slice(0, 30);
   }, [inventory, searchTerm, cart]);
 
   const addToCart = (product: InventoryItem) => {
@@ -395,6 +431,18 @@ const devolucionLabel = pagoOriginal
         return;
       }
 
+      for (const devuelto of itemsDevueltos) {
+        const cantDisp = getCantidadDisponibleDevolucion(ventaOriginal, devuelto);
+        if (devuelto.cantidad > cantDisp) {
+          showAlert(
+            `La prenda "${devuelto.descripcion}" solo tiene ${cantDisp} unidad(es) disponible(s) para devolver.`,
+            'Cantidad Excedida',
+            'warning'
+          );
+          return;
+        }
+      }
+
       const esRetornoCompletoGift = cart.length === 0;
 
       if (esRetornoCompletoGift) {
@@ -594,15 +642,22 @@ const devolucionLabel = pagoOriginal
       Prendas a devolver
     </h4>
 
-    {(ventaOriginal.items ?? []).map(item => {
-      const seleccionada = itemsDevueltos.find(i => i.id === item.id);
-      const cantSeleccionada = cantDevueltasInput[item.id] ?? (seleccionada?.cantidad ?? 0);
+    {(ventaOriginal.items ?? []).map((item, idx) => {
+      const cantDisponible = getCantidadDisponibleDevolucion(ventaOriginal, item);
+      const estaAgotada = cantDisponible <= 0;
+      const compKey = `${item.id}-${item.talle || ''}-${item.color || ''}`;
+      const seleccionada = itemsDevueltos.find(i => i.id === item.id && i.talle === item.talle && i.color === item.color);
+      const cantSeleccionada = cantDevueltasInput[compKey] ?? (seleccionada?.cantidad ?? 0);
+      const itemKey = `${item.id || 'item'}-${item.sku || ''}-${item.talle || ''}-${item.color || ''}-${idx}`;
+      const inputId = `dev-${item.id || 'item'}-${idx}`;
 
       return (
         <div
-          key={item.id}
+          key={itemKey}
           className={`flex items-center gap-3 p-3 border rounded-xl transition-colors ${
-            seleccionada
+            estaAgotada
+              ? 'opacity-40 bg-stone-50 border-stone-200 cursor-not-allowed'
+              : seleccionada
               ? 'bg-stone-100/70 border-stone-300'
               : 'border-stone-200/60 hover:bg-stone-50'
           }`}
@@ -610,24 +665,36 @@ const devolucionLabel = pagoOriginal
           {/* Checkbox */}
           <input
             type="checkbox"
-            id={`dev-${item.id}`}
+            id={inputId}
             checked={!!seleccionada}
+            disabled={estaAgotada}
             onChange={() => {
+              if (estaAgotada) return;
               setItemsDevueltos(prev => {
-                if (prev.some(i => i.id === item.id)) {
-                  setCantDevueltasInput(p => { const n = {...p}; delete n[item.id]; return n; });
-                  return prev.filter(i => i.id !== item.id);
+                if (prev.some(i => i.id === item.id && i.talle === item.talle && i.color === item.color)) {
+                  setCantDevueltasInput(p => { const n = {...p}; delete n[compKey]; return n; });
+                  return prev.filter(i => !(i.id === item.id && i.talle === item.talle && i.color === item.color));
                 }
-                const cant = cantDevueltasInput[item.id] ?? 1;
-                return [...prev, { ...item, cantidad: Math.min(cant, item.cantidad) }];
+                const cant = Math.min((cantDevueltasInput[compKey] as number) || 1, cantDisponible);
+                return [...prev, { ...item, cantidad: cant }];
               });
             }}
-            className="accent-stone-900 w-4 h-4 rounded shrink-0 cursor-pointer"
+            className="accent-stone-900 w-4 h-4 rounded shrink-0 cursor-pointer disabled:cursor-not-allowed"
           />
           {/* Info prenda */}
-          <label htmlFor={`dev-${item.id}`} className="flex-1 cursor-pointer text-xs text-stone-800">
+          <label htmlFor={estaAgotada ? undefined : inputId} className={`flex-1 ${estaAgotada ? 'cursor-not-allowed' : 'cursor-pointer'} text-xs text-stone-800`}>
             <span className="font-mono text-xs text-stone-400 mr-2">{item.sku}</span>
             {item.descripcion}
+            {item.talle || item.color ? (
+              <span className="ml-2 text-[9px] text-stone-500 font-mono">
+                ({[item.talle, item.color].filter(Boolean).join(' - ')})
+              </span>
+            ) : null}
+            {estaAgotada && (
+              <span className="ml-2 text-[9px] uppercase tracking-wider text-rose-600 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">
+                (Ya devuelto)
+              </span>
+            )}
           </label>
           {/* Cantidad editable */}
           <div className="flex items-center gap-1 shrink-0">
@@ -635,19 +702,24 @@ const devolucionLabel = pagoOriginal
             <input
               type="number"
               min={1}
-              max={item.cantidad}
-              value={cantSeleccionada || ''}
-              disabled={!seleccionada}
+              max={cantDisponible}
+              value={cantSeleccionada === '' ? '' : cantSeleccionada}
+              disabled={!seleccionada || estaAgotada}
               onChange={e => {
-                const val = Math.min(Math.max(1, parseInt(e.target.value) || 1), item.cantidad);
-                setCantDevueltasInput(p => ({ ...p, [item.id]: val }));
+                const rawVal = e.target.value;
+                if (rawVal === '') {
+                  setCantDevueltasInput(p => ({ ...p, [compKey]: '' as any }));
+                  return;
+                }
+                const val = Math.min(Math.max(1, parseInt(rawVal) || 1), cantDisponible);
+                setCantDevueltasInput(p => ({ ...p, [compKey]: val }));
                 setItemsDevueltos(prev =>
-                  prev.map(i => i.id === item.id ? { ...i, cantidad: val } : i)
+                  prev.map(i => (i.id === item.id && i.talle === item.talle && i.color === item.color) ? { ...i, cantidad: val } : i)
                 );
               }}
-              className="w-14 border border-stone-200/80 rounded-lg px-2 py-1 text-xs text-center text-stone-900 focus:outline-none focus:border-stone-400 disabled:opacity-30"
+              className="w-14 border border-stone-200/80 rounded-lg px-2 py-1 text-xs text-center text-stone-900 focus:outline-none focus:border-stone-400 disabled:opacity-30 font-mono"
             />
-            <span className="text-[10px] text-stone-400">/ {item.cantidad}</span>
+            <span className="text-[10px] text-stone-400 font-mono">/ {cantDisponible} disp.</span>
           </div>
         </div>
       );
@@ -682,7 +754,7 @@ const devolucionLabel = pagoOriginal
       )}
 
       {/* PANEL BUSCADOR + CARRITO */}
-      <div className="border border-stone-200/60 bg-white rounded-2xl grid md:grid-cols-2 gap-0 shadow-2xs overflow-hidden relative">
+      <div className="border border-stone-200/60 bg-white rounded-2xl grid md:grid-cols-2 gap-0 shadow-2xs relative">
         {addedToast && (
           <div className="absolute top-3 right-3 z-[110] bg-black text-white text-[10px] tracking-[1.5px] uppercase font-semibold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-200">
             <CheckCircle size={12} className="text-emerald-400" />
@@ -690,56 +762,87 @@ const devolucionLabel = pagoOriginal
           </div>
         )}
         {/* BUSCADOR */}
-        <div className="border-b md:border-b-0 md:border-r border-stone-100 relative">
+        <div className="border-b md:border-b-0 md:border-r border-stone-100 relative z-30 p-3 sm:p-4">
           <div className="relative">
-            <input
-              ref={searchInputRef}
-              value={searchTerm}
-              onChange={e => {
-                setSearchTerm(e.target.value);
-                setShowResults(true);
-              }}
-              onBlur={() => {
-                setTimeout(() => setShowResults(false), 200);
-              }}
-              onFocus={() => {
-                if (filteredProducts.length > 0) {
+            <div className="relative flex items-center">
+              <Search size={15} className="absolute left-3 text-stone-400 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                value={searchTerm}
+                onChange={e => {
+                  setSearchTerm(e.target.value);
                   setShowResults(true);
-                }
-              }}
-              placeholder="Buscar producto por SKU o nombre..."
-              className="w-full p-4 text-xs outline-none text-stone-800 placeholder:text-stone-400 focus:bg-stone-50/50 transition-colors uppercase font-medium"
-            />
+                }}
+                onBlur={() => {
+                  setTimeout(() => setShowResults(false), 250);
+                }}
+                onFocus={() => {
+                  if (searchTerm.trim().length > 0) {
+                    setShowResults(true);
+                  }
+                }}
+                placeholder="Buscar producto por SKU o nombre..."
+                className="w-full pl-9 pr-8 py-2.5 text-xs outline-none text-stone-800 placeholder:text-stone-400 bg-stone-50/70 focus:bg-white border border-stone-200/80 focus:border-stone-400 rounded-xl transition-all uppercase font-medium shadow-2xs"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setShowResults(false);
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2.5 text-stone-400 hover:text-stone-700 p-0.5 rounded transition-colors text-xs font-bold"
+                  title="Limpiar búsqueda"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
 
-            {showResults && filteredProducts.length > 0 && (
-              <div className="absolute z-[100] bg-white border border-stone-200/80 rounded-xl w-full left-0 top-full shadow-lg max-h-60 overflow-y-auto mt-1">
-                {filteredProducts.map(p => (
-                  <div
-                    key={p.id}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      addToCart(p);
-                    }}
-                    className="p-3.5 hover:bg-stone-50 cursor-pointer border-b border-stone-100 last:border-b-0 text-xs transition-colors"
-                  >
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-stone-900 truncate">{p.descripcion}</div>
-                        <div className="flex items-center gap-3 mt-1 text-stone-400">
-                          <span className="text-[9px] font-mono">REF: {p.sku}</span>
-                          <span className="text-[9px] font-mono">{p.proveedor}</span>
+            {showResults && searchTerm.trim().length > 0 && (
+              filteredProducts.length > 0 ? (
+                <div className="absolute z-[100] bg-white border border-stone-200/90 rounded-xl w-full left-0 top-full shadow-2xl max-h-72 overflow-y-auto mt-1.5 divide-y divide-stone-100">
+                  {filteredProducts.map(p => (
+                    <div
+                      key={p.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        addToCart(p);
+                      }}
+                      className="p-3 hover:bg-stone-50 cursor-pointer text-xs transition-colors"
+                    >
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-stone-900 truncate uppercase">{p.descripcion}</div>
+                          <div className="flex flex-wrap items-center gap-2 mt-1 text-stone-400">
+                            <span className="text-[9px] font-mono font-medium text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded">REF: {p.sku}</span>
+                            {p.proveedor && <span className="text-[9px] font-mono text-stone-500">{p.proveedor}</span>}
+                            {p.categoria && <span className="text-[9px] uppercase tracking-wider text-stone-400">{p.categoria}</span>}
+                            {((p.talles && p.talles.length > 0) || (p.colores && p.colores.length > 0)) && (
+                              <span className="text-[9px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60">
+                                {p.talles && p.talles.length > 0 ? `Talles: ${p.talles.join(', ')}` : ''}
+                                {p.talles && p.talles.length > 0 && p.colores && p.colores.length > 0 ? ' · ' : ''}
+                                {p.colores && p.colores.length > 0 ? `Colores: ${p.colores.join(', ')}` : ''}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="text-xs font-mono font-semibold text-stone-900">${p.ventaEfectivo.toLocaleString()}</span>
+                          <span className="text-[8px] tracking-[0.15em] uppercase font-medium text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded">
+                            {getStockDisponible(p)} DISP.
+                          </span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span className="text-[11px] font-mono font-medium text-stone-900">${p.ventaEfectivo.toLocaleString()}</span>
-                        <span className="text-[8px] tracking-[0.15em] uppercase font-medium text-stone-400">
-                          {getStockDisponible(p)} DISPONIBLES
-                        </span>
-                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="absolute z-[100] bg-white border border-stone-200/90 rounded-xl w-full left-0 top-full shadow-xl p-4 mt-1.5 text-center text-xs text-stone-400">
+                  No se encontraron prendas disponibles para "{searchTerm}"
+                </div>
+              )
             )}
           </div>
         </div>
@@ -1037,8 +1140,8 @@ const devolucionLabel = pagoOriginal
       <option value="">Seleccionar Gift Card</option>
       {giftCards
         .filter(gc => gc.estado === 'ACTIVA' && gc.saldo > 0)
-        .map(gc => (
-          <option key={gc.id} value={gc.codigo}>
+        .map((gc, idx) => (
+          <option key={gc.id || gc.codigo || `gc-${idx}`} value={gc.codigo}>
             {gc.codigo} — {gc.destinatario} (Saldo: ${gc.saldo.toLocaleString()})
           </option>
         ))}
@@ -1173,19 +1276,21 @@ const devolucionLabel = pagoOriginal
             const d = new Date(s.fecha);
             if (d.getMonth() + 1 !== filtroMes || d.getFullYear() !== filtroAnio) return false;
 
-            if (!searchSale.trim()) return true;
-            const q = searchSale.toLowerCase();
-            const codigos = (s.items ?? []).map(i => i.sku).join(' ').toLowerCase();
-            const fecha = d.toLocaleString('es-AR').toLowerCase();
-            const total = String(s.total).toLowerCase();
+            const cleanQuery = normalizeText(searchSale);
+            if (!cleanQuery) return true;
+            const qTokens = cleanQuery.split(/\s+/).filter(Boolean);
+            const codigos = (s.items ?? []).map(i => `${i.sku} ${i.descripcion}`).join(' ');
+            const fecha = d.toLocaleString('es-AR');
+            const total = String(s.total);
             const codigosCambio = [
               ...(s.itemsNuevos ?? []),
               ...(s.itemsDevueltos ?? [])
-            ].map(i => i.sku).join(' ').toLowerCase();
-            return codigos.includes(q) || codigosCambio.includes(q) || fecha.includes(q) || total.includes(q);
+            ].map(i => `${i.sku} ${i.descripcion}`).join(' ');
+            const fullHistoryText = normalizeText(`${codigos} ${codigosCambio} ${fecha} ${total}`);
+            return qTokens.every(token => fullHistoryText.includes(token));
           })
           .slice(0, 20)
-          .map(s => {
+          .map((s, idx) => {
             const pagoLabel = s.pago
   ? s.pago.efectivo === 100
     ? 'E'
@@ -1194,9 +1299,11 @@ const devolucionLabel = pagoOriginal
     : `E ${s.pago.efectivo}% / T ${s.pago.tarjeta}%`
   : '';
 
+  const saleKey = s.id || `sale-${s.fecha || ''}-${idx}`;
+
   return (
             <div
-              key={s.id}
+              key={saleKey}
               className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 items-center border border-[#C9B8A8]/50 rounded-lg
                          p-3.5 text-sm hover:bg-[#C9B8A8]/5 transition-colors bg-white/80 backdrop-blur-sm shadow-sm"
             >
@@ -1244,29 +1351,38 @@ const devolucionLabel = pagoOriginal
                   </select>
                 )}
 
-                <button
-                  onClick={() => {
-                    const diasTranscurridos = Math.floor(
-                      (Date.now() - new Date(s.fecha).getTime()) / (1000 * 60 * 60 * 24)
-                    );
-                    if (diasTranscurridos > 15) {
-                      showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
-                      return;
-                    }
-                    setModoCambio(true);
-                    setVentaOriginal(s);
-                    setItemsDevueltos([]);
-                    setCantDevueltasInput({});
-                    setCart([]);
-                    setPagoEfectivo(100);
-                    setPagoTarjeta(0);
-                    setGiftCardSeleccionada(null);
-                    setGiftDestinatario('');
-                  }}
-                  className="text-xs uppercase underline hover:text-[#C9B8A8] transition-colors text-[#1A1A1A]"
-                >
-                  Cambio
-                </button>
+                {s.tipo !== 'cambio' && (s.items ?? []).length > 0 && (
+                  <button
+                    onClick={() => {
+                      const diasTranscurridos = Math.floor(
+                        (Date.now() - new Date(s.fecha).getTime()) / (1000 * 60 * 60 * 24)
+                      );
+                      if (diasTranscurridos > 15) {
+                        showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
+                        return;
+                      }
+                      const tienePrendasDisponibles = (s.items ?? []).some(
+                        i => getCantidadDisponibleDevolucion(s, i) > 0
+                      );
+                      if (!tienePrendasDisponibles) {
+                        showAlert('Todas las prendas de esta venta ya fueron devueltas o cambiadas.', 'Sin Stock Para Devolver', 'warning');
+                        return;
+                      }
+                      setModoCambio(true);
+                      setVentaOriginal(s);
+                      setItemsDevueltos([]);
+                      setCantDevueltasInput({});
+                      setCart([]);
+                      setPagoEfectivo(100);
+                      setPagoTarjeta(0);
+                      setGiftCardSeleccionada(null);
+                      setGiftDestinatario('');
+                    }}
+                    className="text-xs uppercase underline hover:text-[#C9B8A8] transition-colors text-[#1A1A1A]"
+                  >
+                    Cambio
+                  </button>
+                )}
 
                 <button
                   onClick={() => onDeleteSale(s.id)}

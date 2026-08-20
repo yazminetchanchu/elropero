@@ -26,15 +26,10 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
       
       // Admins pueden actualizar cualquier campo.
-      // Usuarios no-admin (clientes en checkout) SOLO pueden modificar inventory y lastSync
-      // para la reserva temporal de stock. sales, expenses y giftCards son exclusivos del admin.
-      allow update: if isAdmin() || (
-        request.resource.data.sales     == resource.data.sales &&
-        request.resource.data.expenses  == resource.data.expenses &&
-        (resource.data.giftCards == null || request.resource.data.giftCards == resource.data.giftCards) &&
-        request.resource.data.lastSync is number &&
-        request.resource.data.inventory is list
-      );
+      // Toda reserva de stock del cliente pasa por la Cloud Function `reserveWebOrder` (Admin SDK),
+      // que no requiere estas reglas. Escribir `inventory` directamente desde el cliente queda
+      // bloqueado para evitar manipulación maliciosa.
+      allow update: if isAdmin();
 
       // Subcolección de pedidos web directos (/webOrders) - Solo Admin
       match /webOrders/{orderId} {
