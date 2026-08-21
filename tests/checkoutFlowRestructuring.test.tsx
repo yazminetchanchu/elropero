@@ -212,7 +212,7 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
     });
 
     const { httpsCallable } = await import('firebase/functions');
-    vi.mocked(httpsCallable).mockReturnValue(() => shippingPromise as any);
+    vi.mocked(httpsCallable).mockReturnValue((() => shippingPromise) as any);
 
     render(
       <ModalProvider>

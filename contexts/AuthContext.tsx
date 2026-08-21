@@ -58,6 +58,16 @@ export interface CustomerProfile {
 
 export interface CustomerOrder {
   id: string;
+  customerId?: string;
+  customerUid?: string;
+  customerNombre?: string;
+  customerEmail?: string;
+  customerTelefono?: string;
+  comprador?: {
+    nombre?: string;
+    email?: string;
+    telefono?: string;
+  };
   fecha: string;
   items: {
     productId: string;
@@ -68,8 +78,11 @@ export interface CustomerOrder {
     talle?: string;
     color?: string;
     cantidadDevuelta?: number;
+    isVirtualGiftCard?: boolean;
   }[];
   total: number;
+  subtotal?: number;
+  descuentoGlobal?: number;
   metodoPago: string;
   tipoEnvio: 'retiro' | 'envio';
   direccionEnvio?: ShippingAddress;

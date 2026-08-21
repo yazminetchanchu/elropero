@@ -195,7 +195,7 @@ describe('verifyStock - Validacion de stock al momento del cobro (anti-overselli
   it('no lanza error si hay stock suficiente', () => {
     expect(() =>
       verifyStock(sampleInventory, [
-        { productId: 'prod-v', descripcion: 'Remera', sku: 'SKU-V', cantidad: 3, talle: 'S', color: 'BLANCO' },
+        { productId: 'prod-v', descripcion: 'Remera', sku: 'SKU-V', cantidad: 3, precioUnitario: 1000, talle: 'S', color: 'BLANCO' },
       ])
     ).not.toThrow();
   });
@@ -203,7 +203,7 @@ describe('verifyStock - Validacion de stock al momento del cobro (anti-overselli
   it('lanza error si la variante esta agotada en el momento del cobro', () => {
     expect(() =>
       verifyStock(sampleInventory, [
-        { productId: 'prod-v', descripcion: 'Remera Negra S', sku: 'SKU-V', cantidad: 1, talle: 'S', color: 'NEGRO' },
+        { productId: 'prod-v', descripcion: 'Remera Negra S', sku: 'SKU-V', cantidad: 1, precioUnitario: 1000, talle: 'S', color: 'NEGRO' },
       ])
     ).toThrow(/No hay stock suficiente/);
   });
@@ -211,7 +211,7 @@ describe('verifyStock - Validacion de stock al momento del cobro (anti-overselli
   it('lanza error si el producto fue eliminado del catalogo', () => {
     expect(() =>
       verifyStock(sampleInventory, [
-        { productId: 'prod-borrado', descripcion: 'Producto Inexistente', sku: 'XXX', cantidad: 1 },
+        { productId: 'prod-borrado', descripcion: 'Producto Inexistente', sku: 'XXX', cantidad: 1, precioUnitario: 1000 },
       ])
     ).toThrow(/ya no existe en el cat/);
   });
@@ -224,6 +224,7 @@ describe('verifyStock - Validacion de stock al momento del cobro (anti-overselli
           descripcion: 'Gift Card',
           sku: 'GC',
           cantidad: 1,
+          precioUnitario: 1000,
           isVirtualGiftCard: true,
         },
       ])
@@ -233,7 +234,7 @@ describe('verifyStock - Validacion de stock al momento del cobro (anti-overselli
   it('lanza error si se excede el stock de coloresStock', () => {
     expect(() =>
       verifyStock(sampleInventory, [
-        { productId: 'prod-c', descripcion: 'Pantalon Jean Azul', sku: 'SKU-C', cantidad: 5, color: 'AZUL' },
+        { productId: 'prod-c', descripcion: 'Pantalon Jean Azul', sku: 'SKU-C', cantidad: 5, precioUnitario: 1000, color: 'AZUL' },
       ])
     ).toThrow(/No hay stock suficiente/);
   });

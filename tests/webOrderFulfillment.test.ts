@@ -7,7 +7,7 @@ import {
   isOrderExpired,
   WebOrderForFulfillment,
 } from '../services/webOrderFulfillment';
-import { InventoryItem, DatabaseState, GiftCard } from '../types';
+import { InventoryItem, GiftCard } from '../types';
 import { isOrderEligibleForExchange } from '../services/webOrderToSale';
 import { CustomerOrder } from '../contexts/AuthContext';
 
@@ -21,13 +21,13 @@ const mockQuery = vi.fn((col, ...rules) => ({ col, rules }));
 const mockWhere = vi.fn((field, op, val) => ({ field, op, val }));
 
 vi.mock('firebase/firestore', () => ({
-  doc: (...args: any[]) => mockDoc(...args),
-  collection: (...args: any[]) => mockCollection(...args),
-  query: (...args: any[]) => mockQuery(...args),
-  where: (...args: any[]) => mockWhere(...args),
-  runTransaction: (...args: any[]) => mockRunTransaction(...args),
-  updateDoc: (...args: any[]) => mockUpdateDoc(...args),
-  getDocs: (...args: any[]) => mockGetDocs(...args),
+  doc: (...args: any[]) => (mockDoc as any)(...args),
+  collection: (...args: any[]) => (mockCollection as any)(...args),
+  query: (...args: any[]) => (mockQuery as any)(...args),
+  where: (...args: any[]) => (mockWhere as any)(...args),
+  runTransaction: (...args: any[]) => (mockRunTransaction as any)(...args),
+  updateDoc: (...args: any[]) => (mockUpdateDoc as any)(...args),
+  getDocs: (...args: any[]) => (mockGetDocs as any)(...args),
 }));
 
 export const mockHttpsCallableFn = vi.fn();
@@ -199,38 +199,12 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
   });
 
   describe('fulfillWebOrder', () => {
-    it('confirma el pedido, crea la venta y emite Gift Card virtual enviando email', async () => {
-      let updatedData: any = null;
-
-      mockRunTransaction.mockImplementation(async (_db, transactionCallback) => {
-        const transaction = {
-          get: vi.fn().mockResolvedValue({
-            exists: () => true,
-            data: (): DatabaseState => ({
-              inventory: JSON.parse(JSON.stringify(sampleInventory)),
-              sales: [],
-              giftCards: [
-                {
-                  id: 'gc1',
-                  codigo: 'GIFT-100',
-                  montoInicial: 1000,
-                  saldo: 500,
-                  estado: 'ACTIVA',
-                  fechaCreacion: '2026-01-01',
-                },
-              ],
-            }),
-          }),
-          update: vi.fn((ref, data) => {
-            if (ref === 'showrooms/ROPERO') {
-              updatedData = data;
-            }
-          }),
-          set: vi.fn((ref, data) => {
-            // Just a mock for set
-          }),
-        };
-        return await transactionCallback(transaction);
+    it('invoca la Cloud Function fulfillWebOrderServer con los parámetros correctos y retorna el saleId', async () => {
+      mockHttpsCallableFn.mockResolvedValueOnce({
+        data: {
+          success: true,
+          saleId: 'sale_web_ord-555',
+        },
       });
 
       const webOrder: WebOrderForFulfillment = {
@@ -261,60 +235,16 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
 
       const saleId = await fulfillWebOrder('ROPERO', 'ord-555', webOrder);
 
+      expect(mockHttpsCallableFn).toHaveBeenCalledWith({
+        showroomId: 'ROPERO',
+        orderId: 'ord-555',
+        order: webOrder,
+      });
       expect(saleId).toBe('sale_web_ord-555');
-      expect(updatedData).not.toBeNull();
-      
-      // La giftcard usada de $500 debe quedar en saldo 0 y estado AGOTADA
-      const updatedGc = updatedData.giftCards.find((g: GiftCard) => g.codigo === 'GIFT-100');
-      expect(updatedGc.saldo).toBe(0);
-      expect(updatedGc.estado).toBe('AGOTADA');
-
-      // Se creó la nueva Gift Card virtual
-      const newGc = updatedData.giftCards.find((g: GiftCard) => g.destinatario === 'Ana');
-      expect(newGc).toBeDefined();
-      expect(newGc.montoInicial).toBe(5000);
-
-      // Se invocó el envío de correo de Gift Card
-      expect(mockSendGiftCardEmail).toHaveBeenCalledWith(
-        'ana@example.com',
-        'Ana',
-        'Carlos',
-        5000,
-        expect.stringMatching(/^GIFT-/),
-        '¡Feliz Cumpleaños!'
-      );
-
-      // Verificamos que se actualice la orden a Confirmado en la transaccion
-      // (ya no usa mockUpdateDoc independiente)
     });
 
-    it('es idempotente y no duplica ventas si ya fue procesada', async () => {
-      let updateCalled = false;
-
-      mockRunTransaction.mockImplementation(async (_db, transactionCallback) => {
-        const transaction = {
-          get: vi.fn().mockResolvedValue({
-            exists: () => true,
-            data: (): DatabaseState => ({
-              inventory: [],
-              sales: [
-                {
-                  id: 'sale_web_ord-repetida',
-                  fecha: '2026-07-28',
-                  tipo: 'venta',
-                  items: [],
-                  total: 1000,
-                  pago: { efectivo: 100, tarjeta: 0 },
-                },
-              ],
-            }),
-          }),
-          update: vi.fn(() => {
-            updateCalled = true;
-          }),
-        };
-        return await transactionCallback(transaction);
-      });
+    it('lanza un error descriptivo si la Cloud Function falla', async () => {
+      mockHttpsCallableFn.mockRejectedValueOnce(new Error('Showroom no encontrado en la base de datos.'));
 
       const webOrder: WebOrderForFulfillment = {
         fecha: '2026-07-28',
@@ -322,9 +252,9 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
         total: 1000,
       };
 
-      const saleId = await fulfillWebOrder('ROPERO', 'ord-repetida', webOrder);
-      expect(saleId).toBe('sale_web_ord-repetida');
-      expect(updateCalled).toBe(false); // No volvió a escribir en las sales
+      await expect(fulfillWebOrder('ROPERO', 'ord-err', webOrder)).rejects.toThrow(
+        'Showroom no encontrado en la base de datos.'
+      );
     });
   });
 
@@ -358,7 +288,7 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
         const transaction = {
           get: vi.fn().mockResolvedValue({
             exists: () => true,
-            data: (): DatabaseState => ({
+            data: () => ({
               inventory: JSON.parse(JSON.stringify(sampleInventory)), // S-Negro=3, cantidad=5
               sales: [],
             }),
@@ -411,7 +341,7 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
         const transaction = {
           get: vi.fn().mockResolvedValue({
             exists: () => true,
-            data: (): DatabaseState => ({
+            data: () => ({
               inventory: JSON.parse(JSON.stringify(sampleInventory)),
               sales: [],
             }),
@@ -456,7 +386,7 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
   describe('Elegibilidad de cambios (Plazo de 15 días)', () => {
     const baseOrder: CustomerOrder = {
       id: 'ORD-15',
-      customerUid: 'user-1',
+      customerId: 'user-1',
       items: [],
       total: 5000,
       subtotal: 5000,

@@ -6,8 +6,8 @@ const mockRunTransaction = vi.fn();
 const mockDoc = vi.fn((_db, ...pathSegments) => pathSegments.join('/'));
 
 vi.mock('firebase/firestore', () => ({
-  doc: (...args: any[]) => mockDoc(...args),
-  runTransaction: (...args: any[]) => mockRunTransaction(...args),
+  doc: (...args: any[]) => (mockDoc as any)(...args),
+  runTransaction: (...args: any[]) => (mockRunTransaction as any)(...args),
 }));
 
 vi.mock('firebase/functions', () => ({

@@ -27,33 +27,6 @@ import { getShowroomID } from '../../services/storage';
 
 const PUBLIC_SHOWROOM_ID = getShowroomID();
 
-const SHIPPING_RATES: Record<string, number> = {
-  'CABA': 2500,
-  'BUENOS AIRES': 3500,
-  'SANTA FE': 4200,
-  'CÓRDOBA': 4200,
-  'ENTRE RÍOS': 4200,
-  'LA PAMPA': 4200,
-  'MENDOZA': 4500,
-  'SAN JUAN': 4500,
-  'SAN LUIS': 4500,
-  'CATAMARCA': 4800,
-  'CHACO': 4800,
-  'CORRIENTES': 4800,
-  'FORMOSA': 4800,
-  'JUJUY': 4800,
-  'MISIONES': 4800,
-  'SALTA': 4800,
-  'SANTIAGO DEL ESTERO': 4800,
-  'TUCUMÁN': 4800,
-  'LA RIOJA': 4800,
-  'CHUBUT': 5500,
-  'NEUQUÉN': 5500,
-  'RÍO NEGRO': 5500,
-  'SANTA CRUZ': 5500,
-  'TIERRA DEL FUEGO': 5800
-};
-
 const ARGENTINA_PROVINCES = [
   'CABA',
   'BUENOS AIRES',
@@ -117,21 +90,6 @@ const validateProvinciaPostalCode = (provincia: string, cpStr: string): boolean 
   if (!ranges) return true; // Si no está en el mapa, omitimos validación estricta
   
   return ranges.some(r => cp >= r.min && cp <= r.max);
-};
-
-const getShippingCost = (prov?: string, pesoKg: number = 1): number => {
-  if (!prov) return 0;
-  const normalized = prov.trim().toUpperCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  
-  const isRegional = normalized.includes("CAPITAL") || normalized === "CABA" || normalized.includes("AUTONOMA") || normalized.includes("BUENOS AIRES") || normalized === "PBA";
-  
-  if (pesoKg <= 1) return isRegional ? 18400 : 24900;
-  if (pesoKg <= 5) return isRegional ? 21800 : 30200;
-  if (pesoKg <= 10) return isRegional ? 29300 : 42600;
-  if (pesoKg <= 15) return isRegional ? 36000 : 53400;
-  if (pesoKg <= 20) return isRegional ? 42500 : 62100;
-  return isRegional ? 51100 : 76300;
 };
 
 interface CartItem {

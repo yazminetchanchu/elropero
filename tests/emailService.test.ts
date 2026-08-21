@@ -11,8 +11,8 @@ const mockAddDoc = vi.fn();
 const mockCollection = vi.fn((_db, path) => path);
 
 vi.mock('firebase/firestore', () => ({
-  collection: (...args: any[]) => mockCollection(...args),
-  addDoc: (...args: any[]) => mockAddDoc(...args),
+  collection: (...args: any[]) => (mockCollection as any)(...args),
+  addDoc: (...args: any[]) => (mockAddDoc as any)(...args),
 }));
 
 vi.mock('../services/firebase', () => ({

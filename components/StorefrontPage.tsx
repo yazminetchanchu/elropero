@@ -457,20 +457,11 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               if (data.costoEnvio !== undefined) fulfillPayload.costoEnvio = data.costoEnvio;
               if (data.giftCardUsada !== undefined) fulfillPayload.giftCardUsada = data.giftCardUsada;
 
-              await fulfillWebOrder(PUBLIC_SHOWROOM_ID, orderId, fulfillPayload);
+              const saleId = await fulfillWebOrder(PUBLIC_SHOWROOM_ID, orderId, fulfillPayload);
               
-              // 1. Marcar como confirmado en orders oficiales
-              await updateDoc(orderRef, { estado: 'Confirmado' });
-              
-              // 2. Marcar como confirmado en orders del cliente
-              if (data.customerId && data.customerId !== 'GUEST') {
-                 const customerOrderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', data.customerId, 'orders', orderId);
-                 await updateDoc(customerOrderRef, { estado: 'Confirmado' });
-              }
-
               sendSaleConfirmationEmail(
                 {
-                  id: data.saleId || orderId,
+                  id: saleId || data.saleId || orderId,
                   fecha: data.fecha,
                   metodoPago: data.metodoPago,
                   costoEnvio: data.costoEnvio,

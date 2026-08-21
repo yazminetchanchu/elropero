@@ -26,12 +26,9 @@ service cloud.firestore {
       // Prohibir creación y borrado desde clientes no autorizados
       allow create, delete: if isAdmin();
       
-      // Admins pueden actualizar cualquier campo del showroom.
-      // Usuarios autenticados pueden actualizar campos de sincronización/inventario/ventas.
-      allow update: if isAdmin() || (
-        isAuthenticated() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sales', 'giftCards', 'inventory', 'lastSync'])
-      );
+      // Solo administradores pueden actualizar el showroom directamente.
+      // Clientes y operaciones de checkout deben usar Cloud Functions seguras.
+      allow update: if isAdmin();
 
       // Subcolección de pedidos web directos (/webOrders) - Solo Admin
       match /webOrders/{orderId} {

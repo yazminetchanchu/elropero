@@ -1,8 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import Sales from './Sales';
-import React from 'react';
-import { InventoryItem, WebSettings } from '../types';
+import { InventoryItem, WebSettings, Sale } from '../types';
 
 // Mocks
 vi.mock('lucide-react', () => ({

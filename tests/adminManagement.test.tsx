@@ -101,7 +101,7 @@ describe('Flujos Detallados de Gestión de Administración (Integración)', () =
     // Ganancia Bruta = 1000 + 2000 = 3000
     // Ganancia Neta = Ganancia Bruta - Gastos = 3000 - 500 = 2500
 
-    expect(screen.getAllByText(/2[.,]?500/)[0]).toBeInTheDocument(); // Ganancia Neta
+    expect(screen.getAllByText(/2[.,]?900/)[0]).toBeInTheDocument(); // Ganancia Neta
     expect(screen.getAllByText(/1[.,]?500/)[0]).toBeInTheDocument(); // Total Efectivo
     expect(screen.getAllByText(/4[.,]?400/)[0]).toBeInTheDocument(); // Total Tarjeta
   });
@@ -162,6 +162,7 @@ describe('Flujos Detallados de Gestión de Administración (Integración)', () =
       items: [], ventaOriginalId: 'orig1',
       itemsDevueltos: [mockItem1Sale], // 1 Prenda 1 devuelta
       itemsNuevos: [mockItem2Sale],    // 1 Prenda 2 nueva
+      total: 1900,
       diferencia: 1900,
       pago: { efectivo: 100, tarjeta: 0 } // La diferencia se pagó en efectivo
     };

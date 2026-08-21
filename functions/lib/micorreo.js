@@ -37,38 +37,63 @@ exports.obtenerTracking = exports.generarEnvioManual = exports.obtenerEtiquetaPd
 exports.importarEnvioMiCorreo = importarEnvioMiCorreo;
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
-const MI_CORREO_PROD_URL = 'https://api.correoargentino.com.ar/micorreo/v1';
-const USERNAME = 'GDanisaAPI';
-const PASSWORD = 'Inicial27+';
-const CLIENTE_ID = '0001425237';
-const DEFAULT_ORIGIN_CP = '6620'; // Chivilcoy
-const DEFAULT_WEIGHT = 500; // gramos
+function getMiCorreoCredentials() {
+    const url = (process.env.MICORREO_URL || 'https://api.correoargentino.com.ar/micorreo/v1').replace(/\/+$/, '');
+    const username = (process.env.MICORREO_USERNAME || '').trim();
+    const password = (process.env.MICORREO_PASSWORD || '').trim();
+    const customerId = (process.env.MICORREO_CLIENTE_ID || process.env.MICORREO_CUSTOMER_ID || '').trim();
+    const defaultOriginCp = (process.env.MICORREO_ORIGIN_CP || '6620').trim();
+    const defaultWeight = 500;
+    return {
+        url,
+        username,
+        password,
+        customerId,
+        defaultOriginCp,
+        defaultWeight,
+    };
+}
+async function getMiCorreoToken(url, username, password) {
+    if (!username || !password) {
+        throw new Error('Faltan credenciales de MiCorreo (MICORREO_USERNAME o MICORREO_PASSWORD) en las variables de entorno del servidor.');
+    }
+    const authString = Buffer.from(`${username}:${password}`).toString('base64');
+    const tokenResponse = await fetch(`${url}/token`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Basic ${authString}`,
+            'Content-Type': 'application/json'
+        }
+    });
+    if (!tokenResponse.ok) {
+        const errTxt = await tokenResponse.text();
+        console.error('Error al obtener token de MiCorreo:', errTxt);
+        throw new Error(`Error de autenticación con Correo Argentino (${tokenResponse.status}): ${errTxt}`);
+    }
+    const tokenData = await tokenResponse.json();
+    const token = tokenData.token;
+    if (!token) {
+        throw new Error('La respuesta de autenticación de MiCorreo no contiene token.');
+    }
+    return token;
+}
 exports.cotizarEnvio = functions.https.onCall(async (data, context) => {
     const { codigoPostalDestino, pesoGramos, codigoPostalOrigen, dimensiones, deliveredType } = data;
     if (!codigoPostalDestino) {
         throw new functions.https.HttpsError('invalid-argument', 'El código postal de destino es requerido.');
     }
+    const { url, username, password, customerId, defaultOriginCp, defaultWeight } = getMiCorreoCredentials();
+    if (!customerId) {
+        throw new functions.https.HttpsError('failed-precondition', 'Cliente ID de MiCorreo no configurado en variables de entorno.');
+    }
     try {
         // 1. Obtener Token
-        const authString = Buffer.from(`${USERNAME}:${PASSWORD}`).toString('base64');
-        const tokenResponse = await fetch(`${MI_CORREO_PROD_URL}/token`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${authString}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        if (!tokenResponse.ok) {
-            console.error('Error al obtener token de MiCorreo:', await tokenResponse.text());
-            throw new functions.https.HttpsError('internal', 'Error de autenticación con Correo Argentino.');
-        }
-        const tokenData = await tokenResponse.json();
-        const token = tokenData.token;
+        const token = await getMiCorreoToken(url, username, password);
         // 2. Obtener cotización
-        const cpOrigen = codigoPostalOrigen || DEFAULT_ORIGIN_CP;
-        const pesoFinal = pesoGramos > 0 ? pesoGramos : DEFAULT_WEIGHT;
+        const cpOrigen = codigoPostalOrigen || defaultOriginCp;
+        const pesoFinal = pesoGramos > 0 ? pesoGramos : defaultWeight;
         const ratesPayload = {
-            customerId: CLIENTE_ID,
+            customerId: customerId,
             postalCodeOrigin: cpOrigen,
             postalCodeDestination: codigoPostalDestino,
             deliveredType: deliveredType === 'S' ? 'S' : 'D',
@@ -79,7 +104,7 @@ exports.cotizarEnvio = functions.https.onCall(async (data, context) => {
                 length: (dimensiones === null || dimensiones === void 0 ? void 0 : dimensiones.length) || 25
             }
         };
-        const ratesResponse = await fetch(`${MI_CORREO_PROD_URL}/rates`, {
+        const ratesResponse = await fetch(`${url}/rates`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -88,8 +113,9 @@ exports.cotizarEnvio = functions.https.onCall(async (data, context) => {
             body: JSON.stringify(ratesPayload)
         });
         if (!ratesResponse.ok) {
-            console.error('Error al cotizar con MiCorreo:', await ratesResponse.text());
-            throw new functions.https.HttpsError('internal', 'Error al calcular tarifas con Correo Argentino.');
+            const errTxt = await ratesResponse.text();
+            console.error('Error al cotizar con MiCorreo:', errTxt);
+            throw new functions.https.HttpsError('internal', `Error al calcular tarifas con Correo Argentino: ${errTxt}`);
         }
         const ratesData = await ratesResponse.json();
         let precio = 0;
@@ -106,7 +132,10 @@ exports.cotizarEnvio = functions.https.onCall(async (data, context) => {
     }
     catch (error) {
         console.error('Error general en cotizarEnvio:', error);
-        throw new functions.https.HttpsError('internal', 'Error al comunicarse con Correo Argentino', error);
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        throw new functions.https.HttpsError('internal', error.message || 'Error al comunicarse con Correo Argentino');
     }
 });
 exports.obtenerSucursales = functions.https.onCall(async (data, context) => {
@@ -114,27 +143,16 @@ exports.obtenerSucursales = functions.https.onCall(async (data, context) => {
     if (!provinceCode) {
         throw new functions.https.HttpsError('invalid-argument', 'El código de provincia (provinceCode) es requerido.');
     }
+    const { url, username, password, customerId } = getMiCorreoCredentials();
+    if (!customerId) {
+        throw new functions.https.HttpsError('failed-precondition', 'Cliente ID de MiCorreo no configurado en variables de entorno.');
+    }
     try {
         // 1. Obtener Token
-        const authString = Buffer.from(`${USERNAME}:${PASSWORD}`).toString('base64');
-        const tokenResponse = await fetch(`${MI_CORREO_PROD_URL}/token`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${authString}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        if (!tokenResponse.ok) {
-            console.error('Error al obtener token de MiCorreo (agencies):', await tokenResponse.text());
-            throw new functions.https.HttpsError('internal', 'Error de autenticación con Correo Argentino.');
-        }
-        const tokenData = await tokenResponse.json();
-        const token = tokenData.token;
+        const token = await getMiCorreoToken(url, username, password);
         // 2. Obtener sucursales
-        const agenciesUrl = new URL(`${MI_CORREO_PROD_URL}/agencies`);
-        // Pass query params as x-www-form-urlencoded but MiCorreo PDF says "data-urlencode" via cURL.
-        // Let's pass as query string.
-        agenciesUrl.searchParams.append('customerId', CLIENTE_ID);
+        const agenciesUrl = new URL(`${url}/agencies`);
+        agenciesUrl.searchParams.append('customerId', customerId);
         agenciesUrl.searchParams.append('provinceCode', provinceCode);
         const agenciesResponse = await fetch(agenciesUrl.toString(), {
             method: 'GET',
@@ -143,12 +161,11 @@ exports.obtenerSucursales = functions.https.onCall(async (data, context) => {
             }
         });
         if (!agenciesResponse.ok) {
-            console.error('Error al obtener sucursales con MiCorreo:', await agenciesResponse.text());
-            throw new functions.https.HttpsError('internal', 'Error al obtener sucursales de Correo Argentino.');
+            const errTxt = await agenciesResponse.text();
+            console.error('Error al obtener sucursales con MiCorreo:', errTxt);
+            throw new functions.https.HttpsError('internal', `Error al obtener sucursales de Correo Argentino: ${errTxt}`);
         }
         const agenciesData = await agenciesResponse.json();
-        // Filter agencies that have packageReception or pickupAvailability depending on requirements.
-        // The PDF says "pickupAvailability".
         let validAgencies = [];
         if (Array.isArray(agenciesData)) {
             validAgencies = agenciesData.filter((agency) => { var _a; return ((_a = agency === null || agency === void 0 ? void 0 : agency.services) === null || _a === void 0 ? void 0 : _a.pickupAvailability) === true; });
@@ -157,7 +174,10 @@ exports.obtenerSucursales = functions.https.onCall(async (data, context) => {
     }
     catch (error) {
         console.error('Error general en obtenerSucursales:', error);
-        throw new functions.https.HttpsError('internal', 'Error al comunicarse con Correo Argentino para sucursales', error);
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        throw new functions.https.HttpsError('internal', error.message || 'Error al comunicarse con Correo Argentino para sucursales');
     }
 });
 async function importarEnvioMiCorreo(orderId, orderData) {
@@ -165,23 +185,13 @@ async function importarEnvioMiCorreo(orderId, orderData) {
     if (orderData.tipoEnvio !== 'envio' && orderData.tipoEnvio !== 'envio_sucursal') {
         return { success: false, error: `El tipo de envío "${orderData.tipoEnvio || 'no especificado'}" no corresponde a un envío por correo.` };
     }
+    const { url, username, password, customerId, defaultWeight } = getMiCorreoCredentials();
+    if (!customerId) {
+        return { success: false, error: 'Cliente ID de MiCorreo no configurado en variables de entorno.' };
+    }
     try {
         // 1. Obtener Token
-        const authString = Buffer.from(`${USERNAME}:${PASSWORD}`).toString('base64');
-        const tokenResponse = await fetch(`${MI_CORREO_PROD_URL}/token`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${authString}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        if (!tokenResponse.ok) {
-            const errTxt = await tokenResponse.text();
-            console.error('Error al obtener token de MiCorreo para importación:', errTxt);
-            return { success: false, error: `Error de autenticación con MiCorreo API (${tokenResponse.status}): ${errTxt}` };
-        }
-        const tokenData = await tokenResponse.json();
-        const token = tokenData.token;
+        const token = await getMiCorreoToken(url, username, password);
         const deliveryType = orderData.tipoEnvio === 'envio_sucursal' ? 'S' : 'D';
         // Mapeo completo de provincias a códigos de Correo Argentino (ISO / MiCorreo)
         const provinciasMap = {
@@ -219,11 +229,11 @@ async function importarEnvioMiCorreo(orderId, orderData) {
         }
         // Calcular peso estimado si no hay
         const totalItems = ((_d = orderData.items) === null || _d === void 0 ? void 0 : _d.reduce((sum, item) => sum + (item.cantidad || 1), 0)) || 1;
-        const weight = Math.max(DEFAULT_WEIGHT, totalItems * 300); // 300g por prenda promedio
+        const weight = Math.max(defaultWeight, totalItems * 300); // 300g por prenda promedio
         // Limpiar string para ID de orden en correo (evitar prefijos raros si la API de correo es restrictiva)
         const cleanOrderId = orderId.replace(/^sale_web_/, '').replace(/^sale_/, '');
         const payload = {
-            customerId: CLIENTE_ID,
+            customerId: customerId,
             extOrderId: cleanOrderId,
             orderNumber: cleanOrderId,
             sender: {
@@ -280,7 +290,7 @@ async function importarEnvioMiCorreo(orderId, orderData) {
                 postalCode: ((_y = orderData.direccionEnvio) === null || _y === void 0 ? void 0 : _y.codigoPostal) || "0000"
             };
         }
-        const importResponse = await fetch(`${MI_CORREO_PROD_URL}/shipping/import`, {
+        const importResponse = await fetch(`${url}/shipping/import`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -302,8 +312,6 @@ async function importarEnvioMiCorreo(orderId, orderData) {
         }
         const importData = await importResponse.json();
         console.log(`Envío importado exitosamente a MiCorreo para orden ${cleanOrderId}. CreatedAt:`, importData.createdAt, 'Full Data:', JSON.stringify(importData));
-        // En la API de MiCorreo v1, el POST a /shipping/import registra e importa exitosamente la orden en Mi Correo.
-        // El código de tracking / referencia de la orden importada es cleanOrderId (o el devuelto por la API).
         const trackingNumber = importData.tracking_number || importData.trackingNumber || importData.trackingCode || cleanOrderId;
         return {
             success: true,
@@ -316,28 +324,16 @@ async function importarEnvioMiCorreo(orderId, orderData) {
     }
 }
 exports.obtenerEtiquetaPdf = functions.https.onCall(async (data, context) => {
-    // Requires auth check depending on your security rules. We'll proceed if orderId is provided.
     const { orderId } = data;
     if (!orderId) {
         throw new functions.https.HttpsError('invalid-argument', 'El orderId es requerido.');
     }
+    const { url, username, password } = getMiCorreoCredentials();
     try {
-        const authString = Buffer.from(`${USERNAME}:${PASSWORD}`).toString('base64');
-        const tokenResponse = await fetch(`${MI_CORREO_PROD_URL}/token`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${authString}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        if (!tokenResponse.ok) {
-            throw new functions.https.HttpsError('internal', 'Error de autenticación con Correo Argentino.');
-        }
-        const tokenData = await tokenResponse.json();
-        const token = tokenData.token;
+        const token = await getMiCorreoToken(url, username, password);
         // Limpiar string para ID de orden en correo
         const cleanOrderId = orderId.replace(/^sale_web_/, '').replace(/^sale_/, '');
-        const labelResponse = await fetch(`${MI_CORREO_PROD_URL}/orders/${cleanOrderId}/labels`, {
+        const labelResponse = await fetch(`${url}/orders/${cleanOrderId}/labels`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -383,8 +379,6 @@ exports.generarEnvioManual = functions.https.onCall(async (data, context) => {
     try {
         const result = await importarEnvioMiCorreo(orderId, orderData);
         if (result.success && result.trackingNumber) {
-            // We need to update the trackingNumber in the database.
-            // Since we don't have showroomId directly, we do a collectionGroup query
             const db = admin.firestore();
             const ordersQuery = await db.collectionGroup('orders')
                 .where('id', '==', orderId)
@@ -410,23 +404,14 @@ exports.obtenerTracking = functions.https.onCall(async (data, context) => {
     if (!trackingNumber) {
         throw new functions.https.HttpsError('invalid-argument', 'El número de seguimiento (trackingNumber) es requerido.');
     }
+    const { url, username, password, customerId } = getMiCorreoCredentials();
+    if (!customerId) {
+        throw new functions.https.HttpsError('failed-precondition', 'Cliente ID de MiCorreo no configurado en variables de entorno.');
+    }
     try {
-        const authString = Buffer.from(`${USERNAME}:${PASSWORD}`).toString('base64');
-        const tokenResponse = await fetch(`${MI_CORREO_PROD_URL}/token`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${authString}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        if (!tokenResponse.ok) {
-            console.error('Error al obtener token de MiCorreo (tracking):', await tokenResponse.text());
-            throw new functions.https.HttpsError('internal', 'Error de autenticación con Correo Argentino.');
-        }
-        const tokenData = await tokenResponse.json();
-        const token = tokenData.token;
-        const trackingUrl = new URL(`${MI_CORREO_PROD_URL}/orders/tracking`);
-        trackingUrl.searchParams.append('customerId', CLIENTE_ID);
+        const token = await getMiCorreoToken(url, username, password);
+        const trackingUrl = new URL(`${url}/orders/tracking`);
+        trackingUrl.searchParams.append('customerId', customerId);
         trackingUrl.searchParams.append('trackingNumber', trackingNumber);
         const trackingResp = await fetch(trackingUrl.toString(), {
             method: 'GET',
@@ -435,15 +420,19 @@ exports.obtenerTracking = functions.https.onCall(async (data, context) => {
             }
         });
         if (!trackingResp.ok) {
-            console.error('Error al consultar tracking con MiCorreo:', await trackingResp.text());
-            throw new functions.https.HttpsError('internal', 'Error al consultar el seguimiento en Correo Argentino.');
+            const errTxt = await trackingResp.text();
+            console.error('Error al consultar tracking con MiCorreo:', errTxt);
+            throw new functions.https.HttpsError('internal', `Error al consultar el seguimiento en Correo Argentino: ${errTxt}`);
         }
         const trackingData = await trackingResp.json();
         return { success: true, tracking: trackingData };
     }
     catch (error) {
         console.error('Error general en obtenerTracking:', error);
-        throw new functions.https.HttpsError('internal', 'Error al comunicarse con Correo Argentino para tracking', error);
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        throw new functions.https.HttpsError('internal', error.message || 'Error al comunicarse con Correo Argentino para tracking');
     }
 });
 //# sourceMappingURL=micorreo.js.map

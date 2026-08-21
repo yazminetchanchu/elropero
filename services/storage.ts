@@ -3,13 +3,13 @@ import { db } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot, runTransaction } from "firebase/firestore";
 
 export interface DatabaseState {
-  inventory: InventoryItem[];
-  sales: Sale[];
-  expenses: Expense[];
-  giftCards: GiftCard[];
+  inventory?: InventoryItem[];
+  sales?: Sale[];
+  expenses?: Expense[];
+  giftCards?: GiftCard[];
   closures?: MonthlyClosure[];
   webSettings?: import('../types').WebSettings;
-  lastSync?: number
+  lastSync?: number;
 }
 
 // Cambiar keys fuerza "reset" local (evita cache viejo)

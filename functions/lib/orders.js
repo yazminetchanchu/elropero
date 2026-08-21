@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.fulfillWebCambioServer = exports.releaseExpiredReservationsCron = exports.reserveWebOrder = void 0;
+exports.fulfillWebOrderServer = exports.fulfillWebCambioServer = exports.releaseExpiredReservationsCron = exports.reserveWebOrder = void 0;
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 // db will be initialized inside the functions to prevent app/no-app error during module loading.
@@ -579,6 +579,187 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
             throw error;
         }
         throw new functions.https.HttpsError('internal', error.message || 'Error interno al procesar el cambio web.');
+    }
+});
+// 4. fulfillWebOrderServer (Callable)
+// Procesa el fulfillment de una orden web de forma atómica en el backend
+// usando Firebase Admin SDK, evitando errores de permisos al actualizar /showrooms/{showroomId}.
+exports.fulfillWebOrderServer = functions.https.onCall(async (data, context) => {
+    try {
+        const db = admin.firestore();
+        const { showroomId, orderId, order, orderData } = data || {};
+        const payload = order || orderData;
+        if (!showroomId || !orderId || !payload || !Array.isArray(payload.items)) {
+            throw new functions.https.HttpsError('invalid-argument', 'Faltan campos requeridos: showroomId, orderId o items del pedido.');
+        }
+        const saleId = `sale_web_${orderId}`;
+        const showroomRef = db.collection('showrooms').doc(showroomId);
+        const orderRef = showroomRef.collection('orders').doc(orderId);
+        const customerId = payload.customerId;
+        const customerOrderRef = (customerId && customerId !== 'GUEST')
+            ? showroomRef.collection('customers').doc(customerId).collection('orders').doc(orderId)
+            : null;
+        const emailsToSend = [];
+        await db.runTransaction(async (transaction) => {
+            // 1. Lecturas
+            const snap = await transaction.get(showroomRef);
+            if (!snap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Showroom no encontrado en la base de datos.');
+            }
+            const orderSnap = await transaction.get(orderRef);
+            const existingOrder = orderSnap.exists ? (orderSnap.data() || {}) : null;
+            const srData = snap.data() || {};
+            const sales = srData.sales || [];
+            const inventory = srData.inventory || [];
+            const giftCards = srData.giftCards || [];
+            // Idempotencia: si la venta ya existe o la orden ya fue procesada
+            if (sales.some((s) => s.id === saleId)) {
+                console.log(`[fulfillWebOrderServer] Venta ${saleId} ya existe en el showroom. Omitiendo duplicación.`);
+                return;
+            }
+            // 2. Construir la Venta
+            const saleItems = payload.items.map((oi) => {
+                var _a, _b, _c, _d, _e, _f, _g;
+                const inv = inventory.find((i) => i.id === (oi.productId || oi.id));
+                const variant = [oi.talle && `T:${oi.talle}`, oi.color && `C:${oi.color}`].filter(Boolean).join(' ') || '';
+                const descripcion = variant ? `${oi.descripcion} (${variant})` : oi.descripcion;
+                return {
+                    id: oi.productId || oi.id,
+                    sku: oi.sku || (inv === null || inv === void 0 ? void 0 : inv.sku) || '---',
+                    descripcion,
+                    cantidad: oi.cantidad || 1,
+                    costo: (_a = inv === null || inv === void 0 ? void 0 : inv.costo) !== null && _a !== void 0 ? _a : 0,
+                    precioEfectivo: (_d = (_c = (_b = oi.precioUnitario) !== null && _b !== void 0 ? _b : oi.precioEfectivo) !== null && _c !== void 0 ? _c : oi.precio) !== null && _d !== void 0 ? _d : 0,
+                    precioTarjeta: (_g = (_f = (_e = oi.precioUnitario) !== null && _e !== void 0 ? _e : oi.precioTarjeta) !== null && _f !== void 0 ? _f : oi.precio) !== null && _g !== void 0 ? _g : 0,
+                    descuento: oi.descuento || 0,
+                    talle: oi.talle,
+                    color: oi.color,
+                };
+            });
+            const isTarjeta = payload.items.some((oi) => oi.payMethod === 'tarjeta') ||
+                (payload.metodoPago && (payload.metodoPago.toLowerCase().includes('tarjeta') || payload.metodoPago.toLowerCase().includes('ualá') || payload.metodoPago.toLowerCase().includes('uala')));
+            const saleRecord = {
+                id: saleId,
+                fecha: payload.fecha || new Date().toISOString(),
+                tipo: 'venta',
+                items: saleItems,
+                total: payload.total || 0,
+                pago: isTarjeta ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 },
+            };
+            if (payload.giftCardUsada !== undefined) {
+                saleRecord.giftCardUsada = payload.giftCardUsada;
+            }
+            // 3. Procesar Gift Card usada si aplica
+            let nextGiftCards = [...giftCards];
+            if (payload.giftCardUsada && payload.giftCardUsada.codigo) {
+                const usedCode = String(payload.giftCardUsada.codigo).toUpperCase().trim();
+                nextGiftCards = nextGiftCards.map((gc) => {
+                    if (gc.codigo && gc.codigo.toUpperCase().trim() === usedCode) {
+                        const montoUsado = Number(payload.giftCardUsada.montoUsado) || 0;
+                        const nuevoSaldo = Math.max(0, (gc.saldo || 0) - montoUsado);
+                        return Object.assign(Object.assign({}, gc), { saldo: nuevoSaldo, estado: nuevoSaldo <= 0 ? 'AGOTADA' : 'ACTIVA' });
+                    }
+                    return gc;
+                });
+            }
+            // 4. Crear Gift Cards virtuales compradas si aplica
+            emailsToSend.length = 0;
+            for (const item of payload.items) {
+                if (item.isVirtualGiftCard && item.giftCardData) {
+                    const giftCodigo = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+                    const newGC = {
+                        id: `gift_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+                        codigo: giftCodigo,
+                        destinatario: item.giftCardData.destinatario,
+                        montoInicial: item.precioUnitario,
+                        saldo: item.precioUnitario,
+                        estado: 'ACTIVA',
+                        fechaCreacion: new Date().toISOString(),
+                    };
+                    nextGiftCards.push(newGC);
+                    emailsToSend.push({
+                        email: item.giftCardData.email,
+                        destinatario: item.giftCardData.destinatario,
+                        deParteDe: item.giftCardData.deParteDe,
+                        monto: item.precioUnitario,
+                        codigo: giftCodigo,
+                        mensaje: item.giftCardData.mensaje || '',
+                    });
+                }
+            }
+            // 5. Deducción de inventario (evitar doble deducción si ya estaba reservado)
+            const isAlreadyReserved = existingOrder && (existingOrder.estado === 'PENDING_PAYMENT' || existingOrder.estado === 'Pendiente');
+            let confirmedInventory = [...inventory];
+            if (!isAlreadyReserved) {
+                const nonGiftItems = payload.items.filter((oi) => !oi.isVirtualGiftCard);
+                for (const sold of nonGiftItems) {
+                    const prodId = sold.productId || sold.id;
+                    const qty = sold.cantidad || 1;
+                    const parsed = parseVariantFromDescripcion(sold.descripcion || '');
+                    const color = sold.color || parsed.color;
+                    const talle = sold.talle || parsed.talle;
+                    confirmedInventory = confirmedInventory.map((inv) => adjustStockLine(inv, prodId, qty, color, talle, 'subtract'));
+                }
+            }
+            // Helper sanitize para evitar undefined en Firestore
+            const sanitize = (obj) => JSON.parse(JSON.stringify(obj, (k, v) => v === undefined ? null : v));
+            // 6. Escrituras atómicas
+            transaction.update(showroomRef, sanitize({
+                sales: [...sales, saleRecord],
+                giftCards: nextGiftCards,
+                inventory: confirmedInventory,
+                lastSync: Date.now(),
+            }));
+            const orderUpdatePayload = sanitize({
+                saleId,
+                estado: 'Confirmado',
+                fulfilledAt: new Date().toISOString(),
+            });
+            transaction.set(orderRef, orderUpdatePayload, { merge: true });
+            if (customerOrderRef) {
+                transaction.set(customerOrderRef, orderUpdatePayload, { merge: true });
+            }
+        });
+        // 7. Encolar emails de Gift Cards generadas si las hubiera
+        for (const em of emailsToSend) {
+            try {
+                await db.collection('mail').add({
+                    to: em.email.trim().toLowerCase(),
+                    message: {
+                        subject: `¡Tenés una Gift Card de regalo de ${em.deParteDe}!`,
+                        text: `¡Hola ${em.destinatario}!\n\n${em.deParteDe} te envió una Gift Card de El Ropero Showroom por un valor de $${em.monto.toLocaleString('es-AR')}.\n\nTu código es: ${em.codigo}\n\nMensaje: ${em.mensaje}\n\nPodés usarla en nuestra tienda online: https://elropero.ar o presencialmente en nuestro showroom.\n\nEl Ropero Showroom`,
+                        html: `
+              <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; border: 1px solid #eaeaea; border-radius: 16px; overflow: hidden; color: #1a1a1a;">
+                <div style="background-color: #0a0a0a; padding: 32px 24px; text-align: center; border-bottom: 3px solid #8f8d85;">
+                  <h1 style="margin: 0; font-size: 24px; letter-spacing: 6px; text-transform: uppercase; color: #ffffff;">EL ROPERO</h1>
+                </div>
+                <div style="padding: 32px 24px;">
+                  <h2 style="font-size: 20px; color: #111111;">¡Tenés un regalo de ${em.deParteDe}!</h2>
+                  <p>Hola <strong>${em.destinatario}</strong>, te enviaron una Gift Card para usar en nuestra tienda.</p>
+                  ${em.mensaje ? `<p style="font-style: italic; background-color: #f8f9fa; padding: 12px; border-radius: 8px;">"${em.mensaje}"</p>` : ''}
+                  <div style="background-color: #111; color: #fff; padding: 24px; border-radius: 12px; text-align: center; margin: 20px 0;">
+                    <div style="font-size: 32px; font-weight: 700; margin-bottom: 12px;">$${em.monto.toLocaleString('es-AR')}</div>
+                    <div style="font-size: 18px; font-family: monospace; letter-spacing: 2px;">${em.codigo}</div>
+                  </div>
+                  <p style="text-align: center; font-size: 14px; color: #666;">Ingresá el código en el checkout de nuestra tienda online.</p>
+                </div>
+              </div>
+            `,
+                    },
+                });
+            }
+            catch (mailErr) {
+                console.error('[fulfillWebOrderServer] Error encolando correo de Gift Card:', mailErr);
+            }
+        }
+        return { success: true, saleId };
+    }
+    catch (error) {
+        functions.logger.error("Error en fulfillWebOrderServer:", error);
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        throw new functions.https.HttpsError('internal', error.message || 'Error interno al procesar el fulfillment de la orden.');
     }
 });
 //# sourceMappingURL=orders.js.map

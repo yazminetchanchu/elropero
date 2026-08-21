@@ -108,6 +108,9 @@ export interface GiftCard {
   saldo: number;
   estado: 'ACTIVA' | 'AGOTADA' | 'ANULADA';
   fechaCreacion: string;
+  fechaEmision?: string;
+  email?: string;
+  mensaje?: string;
   medioPagoOrigen?: 'efectivo' | 'tarjeta' | 'mixto' | string;
   ventaOrigenId?: string;
   //saleId?: string;
@@ -149,3 +152,5 @@ export interface WebSettings {
   shippingRateResto?: number;
   shippingExtraKgCost?: number;
 }
+
+export type { DatabaseState } from './services/storage';

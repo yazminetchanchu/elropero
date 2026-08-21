@@ -44,6 +44,8 @@ describe('webOrderFulfillment stock tests', () => {
       categoria: 'PANTALONES',
       ventaEfectivo: 400,
       ventaTarjeta: 450,
+      talles: ['M'],
+      colores: ['NEGRO'],
       imagenes: [],
       coloresStock: {
         'NEGRO': 8
@@ -59,6 +61,8 @@ describe('webOrderFulfillment stock tests', () => {
       categoria: 'ACCESORIOS',
       ventaEfectivo: 100,
       ventaTarjeta: 120,
+      talles: ['U'],
+      colores: ['NEGRO'],
       imagenes: [],
     }
   ];

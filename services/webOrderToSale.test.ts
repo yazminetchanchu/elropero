@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { buildSaleItemsFromOrder, getOrderSaleId, isOrderEligibleForExchange, isGiftCardOrder } from './webOrderToSale';
 import { CustomerOrder } from '../contexts/AuthContext';
 import { InventoryItem } from '../types';
@@ -16,6 +17,7 @@ describe('webOrderToSale Service', () => {
       ventaTarjeta: 2500,
       talles: ['M'],
       colores: ['NEGRO'],
+      imagenes: [],
     },
   ];
 
@@ -25,7 +27,7 @@ describe('webOrderToSale Service', () => {
     total: 4000,
     subtotal: 4000,
     costoEnvio: 0,
-    tipoEntrega: 'envio',
+    tipoEnvio: 'envio',
     metodoPago: 'transferencia',
     estado: 'Entregado',
     items: [
@@ -69,6 +71,7 @@ describe('webOrderToSale Service', () => {
         items: [
           {
             productId: 'unknown_999',
+            sku: '',
             descripcion: 'Producto Desconocido',
             cantidad: 1,
             precioUnitario: 1000,

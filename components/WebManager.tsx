@@ -189,10 +189,11 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
       ? "¿Estás seguro de poner en vista (hacer visibles en la web) TODOS los productos del catálogo?"
       : "¿Estás seguro de sacar de vista (ocultar de la web) TODOS los productos del catálogo?";
 
-    const confirmed = await showConfirm(confirmMsg, confirmTitle, {
-      confirmText: targetVisible ? "Sí, poner visibles todos" : "Sí, ocultar todos",
-      type: targetVisible ? 'info' : 'warning'
-    });
+    const confirmed = await showConfirm(
+      confirmMsg,
+      confirmTitle,
+      targetVisible ? 'info' : 'warning'
+    );
 
     if (!confirmed) return;
 

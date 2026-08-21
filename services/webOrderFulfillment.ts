@@ -71,7 +71,7 @@ export function getAvailableStock(product: InventoryItem, talle?: string, color?
 
 export function deductInventory(inventory: InventoryItem[], items: (WebOrderItem | { productId?: string; id?: string; descripcion?: string; sku?: string; cantidad: number; talle?: string; color?: string; isVirtualGiftCard?: boolean })[]): InventoryItem[] {
   return inventory.map((item) => {
-    const soldLines = items.filter((oi) => !oi.isVirtualGiftCard && ((oi.productId && oi.productId === item.id) || (oi.id && oi.id === item.id)));
+    const soldLines = items.filter((oi: any) => !oi.isVirtualGiftCard && ((oi.productId && oi.productId === item.id) || (oi.id && oi.id === item.id)));
     if (!soldLines.length) return item;
 
     let updated: InventoryItem = { ...item };
@@ -117,7 +117,7 @@ export function deductInventory(inventory: InventoryItem[], items: (WebOrderItem
 
 export function restoreInventory(inventory: InventoryItem[], items: (WebOrderItem | { productId?: string; id?: string; descripcion?: string; sku?: string; cantidad: number; talle?: string; color?: string; isVirtualGiftCard?: boolean })[]): InventoryItem[] {
   return inventory.map((item) => {
-    const soldLines = items.filter((oi) => !oi.isVirtualGiftCard && ((oi.productId && oi.productId === item.id) || (oi.id && oi.id === item.id)));
+    const soldLines = items.filter((oi: any) => !oi.isVirtualGiftCard && ((oi.productId && oi.productId === item.id) || (oi.id && oi.id === item.id)));
     if (!soldLines.length) return item;
 
     let updated: InventoryItem = { ...item };
@@ -311,118 +311,25 @@ export function buildSaleFromWebOrder(
 }
 
 /**
- * Registra la venta en caja/historial y descuenta stock en el documento del showroom.
+ * Registra la venta en caja/historial y descuenta stock en el backend mediante Cloud Function seguras (Firebase Admin SDK).
  */
 export async function fulfillWebOrder(
   showroomId: string,
   orderId: string,
   order: WebOrderForFulfillment
 ): Promise<string> {
-  const saleId = `sale_web_${orderId}`;
-  const showroomRef = doc(db, 'showrooms', showroomId);
-  const emailsToSend: any[] = [];
-  const orderRef = doc(db, 'showrooms', showroomId, 'orders', orderId);
-  const customerOrderRef = (order.customerId && order.customerId !== 'GUEST') 
-    ? doc(db, 'showrooms', showroomId, 'customers', order.customerId, 'orders', orderId)
-    : null;
+  const fulfillFn = httpsCallable<
+    { showroomId: string; orderId: string; order: WebOrderForFulfillment },
+    { success: boolean; saleId: string }
+  >(functions, 'fulfillWebOrderServer');
 
-  await runTransaction(db, async (transaction) => {
-    const snap = await transaction.get(showroomRef);
-    if (!snap.exists()) {
-      throw new Error('No se encontró el showroom en la base de datos.');
-    }
-
-    const data = snap.data() as DatabaseState;
-    const sales = data.sales || [];
-
-    if (sales.some((s) => s.id === saleId)) {
-      return;
-    }
-
-    const inventory = data.inventory || [];
-    const sale = buildSaleFromWebOrder(order, orderId, inventory);
-
-    const giftCards = data.giftCards || [];
-    let nextGiftCards = [...giftCards];
-    if (order.giftCardUsada) {
-      nextGiftCards = giftCards.map((gc) => {
-        if (gc.codigo.toUpperCase() === order.giftCardUsada!.codigo.toUpperCase()) {
-          const nuevoSaldo = Math.max(0, gc.saldo - order.giftCardUsada!.montoUsado);
-          return {
-            ...gc,
-            saldo: nuevoSaldo,
-            estado: (nuevoSaldo <= 0 ? 'AGOTADA' : 'ACTIVA') as 'AGOTADA' | 'ACTIVA',
-          };
-        }
-        return gc;
-      });
-    }
-
-    emailsToSend.length = 0; // Limpiar emails por si la transacción se reintenta
-    for (const item of order.items) {
-      if (item.isVirtualGiftCard && item.giftCardData) {
-        const giftCodigo = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        const newGC: GiftCard = {
-          id: `gift_${Date.now()}_${Math.random().toString(36).substring(2,5)}`,
-          codigo: giftCodigo,
-          destinatario: item.giftCardData.destinatario,
-          montoInicial: item.precioUnitario,
-          saldo: item.precioUnitario,
-          estado: 'ACTIVA',
-          fechaCreacion: new Date().toISOString()
-        };
-        nextGiftCards.push(newGC);
-        emailsToSend.push({
-          email: item.giftCardData.email,
-          destinatario: item.giftCardData.destinatario,
-          deParteDe: item.giftCardData.deParteDe,
-          monto: item.precioUnitario,
-          codigo: giftCodigo,
-          mensaje: item.giftCardData.mensaje
-        });
-      }
-    }
-
-    // Comprobar el estado previo de la orden para evitar doble deducción:
-    // Si la orden ya estaba en 'PENDING_PAYMENT' o 'Pendiente', el stock ya fue descontado
-    // atómicamente por `reserveWebOrder`. Solo deducir si la orden estaba cancelada o no pasó por reserva.
-    const orderSnap = await transaction.get(orderRef);
-    const existingOrder = orderSnap.exists() ? (orderSnap.data() as any) : null;
-    const isAlreadyReserved = existingOrder && (existingOrder.estado === 'PENDING_PAYMENT' || existingOrder.estado === 'Pendiente');
-
-    const nonGiftItems = order.items.filter((oi) => !oi.isVirtualGiftCard);
-    const confirmedInventory = (!isAlreadyReserved && nonGiftItems.length > 0)
-      ? deductInventory(inventory, nonGiftItems)
-      : inventory;
-
-    transaction.update(showroomRef, {
-      sales: [...sales, sale],
-      giftCards: nextGiftCards,
-      inventory: confirmedInventory,
-      lastSync: Date.now(),
-    });
-
-    transaction.update(orderRef, {
-      saleId,
-      estado: 'Confirmado',
-      fulfilledAt: new Date().toISOString(),
-    });
-
-    if (customerOrderRef) {
-      transaction.set(customerOrderRef, {
-        saleId,
-        estado: 'Confirmado',
-        fulfilledAt: new Date().toISOString(),
-      }, { merge: true });
-    }
-  });
-
-  // Los emails se envían solo si la transacción fue un éxito
-  for (const email of emailsToSend) {
-    await sendGiftCardEmail(email.email, email.destinatario, email.deParteDe, email.monto, email.codigo, email.mensaje);
+  try {
+    const result = await fulfillFn({ showroomId, orderId, order });
+    return result.data.saleId;
+  } catch (error: any) {
+    console.error('Error al ejecutar fulfillWebOrderServer:', error);
+    throw new Error(error.message || 'Error al procesar el fulfillment de la orden.');
   }
-
-  return saleId;
 }
 
 export async function reserveWebOrderStock(
