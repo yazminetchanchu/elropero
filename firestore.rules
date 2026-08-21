@@ -11,7 +11,8 @@ service cloud.firestore {
     // Identificación estricta del Admin por Custom Claim o email autorizado
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.admin == true || 
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'manager' ||
         request.auth.token.email == 'elropero.informacion@gmail.com' ||
         request.auth.token.email == 'yazminetchanchu@gmail.com'
       );
@@ -25,11 +26,12 @@ service cloud.firestore {
       // Prohibir creación y borrado desde clientes no autorizados
       allow create, delete: if isAdmin();
       
-      // Admins pueden actualizar cualquier campo.
-      // Toda reserva de stock del cliente pasa por la Cloud Function `reserveWebOrder` (Admin SDK),
-      // que no requiere estas reglas. Escribir `inventory` directamente desde el cliente queda
-      // bloqueado para evitar manipulación maliciosa.
-      allow update: if isAdmin();
+      // Admins pueden actualizar cualquier campo del showroom.
+      // Usuarios autenticados pueden actualizar campos de sincronización/inventario/ventas.
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sales', 'giftCards', 'inventory', 'lastSync'])
+      );
 
       // Subcolección de pedidos web directos (/webOrders) - Solo Admin
       match /webOrders/{orderId} {
@@ -37,16 +39,26 @@ service cloud.firestore {
         allow write: if isAdmin();
       }
 
-      // Subcolección de clientes y sus pedidos (/customers/{uid}/orders/{orderId})
-      match /customers/{uid} {
-        // Los clientes solo pueden leer y modificar su propio perfil
-        allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
-        allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
+      // Subcolección de perfiles de clientes y sus órdenes asociadas
+      match /customers/{customerId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == customerId || isAdmin());
 
         match /orders/{orderId} {
-          allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
-          allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
+          allow read, write: if isAuthenticated() && (request.auth.uid == customerId || isAdmin());
         }
+      }
+
+      // Subcolección de órdenes del showroom (web orders)
+      match /orders/{orderId} {
+        allow read, create, update, delete: if isAuthenticated();
+      }
+    }
+
+    // Colección root de clientes para retrocompatibilidad
+    match /customers/{customerId} {
+      allow read, write: if isAuthenticated() && (request.auth.uid == customerId || isAdmin());
+      match /orders/{orderId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == customerId || isAdmin());
       }
     }
 

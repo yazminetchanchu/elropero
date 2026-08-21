@@ -2,9 +2,9 @@ import React from 'react';
 import { db, functions } from '../services/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { database } from '../services/storage';
-import { collection, getDocs, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { Search, ShoppingBag, Eye, X, MessageSquare, CheckCircle, Clock, Truck, Loader2, Receipt, Package, FileText, Activity, Download, ExternalLink } from 'lucide-react';
-import { fulfillWebOrder, releaseExpiredReservations, isOrderExpired } from '../services/webOrderFulfillment';
+import { collection, getDocs, doc, updateDoc, writeBatch, runTransaction } from 'firebase/firestore';
+import { Search, ShoppingBag, Eye, X, MessageSquare, CheckCircle, Clock, Truck, Loader2, Receipt, Package, FileText, Activity, Download, ExternalLink, RefreshCw, Gift } from 'lucide-react';
+import { fulfillWebOrder, releaseExpiredReservations, isOrderExpired, restoreInventory } from '../services/webOrderFulfillment';
 import { sendNotificationEmail, sendSaleConfirmationEmail, sendOrderCancelledEmail } from '../services/emailService';
 import { useModal } from '../contexts/ModalContext';
 import { generarEnvioManual, obtenerEtiquetaPdf } from '../services/correoArgentinoService';
@@ -26,6 +26,7 @@ interface WebOrder {
     talle?: string;
     color?: string;
     payMethod?: string;
+    cantidadDevuelta?: number;
   }[];
   total: number;
   tipoEnvio: 'retiro' | 'envio' | 'envio_sucursal';
@@ -40,7 +41,7 @@ interface WebOrder {
     codigoPostal: string;
     indicaciones?: string;
   };
-  estado: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado' | 'PENDING_PAYMENT' | 'PAID' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'FAILED' | 'REFUNDED';
+  estado: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado' | 'PENDING_PAYMENT' | 'PAID' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'FAILED' | 'REFUNDED' | 'parcialmente_cambiado' | 'Completado';
   costoEnvio?: number;
   metodoPago?: string;
   saleId?: string;
@@ -54,6 +55,19 @@ interface WebOrder {
     codigo: string;
     montoUsado: number;
   };
+  tipoPedido?: 'compra' | 'cambio_web';
+  ordenOrigenId?: string;
+  itemsDevueltos?: {
+    productId?: string;
+    descripcion: string;
+    sku?: string;
+    cantidad: number;
+    talle?: string;
+    color?: string;
+  }[];
+  itemsNuevos?: any[];
+  giftCardGenerada?: string;
+  isExchanged?: boolean;
 }
 
 interface WebOrdersManagerProps {
@@ -100,7 +114,11 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
     for (const id of selectedOrderIds) {
       const ord = orders.find(o => o.id === id);
       if (ord) {
-        await handleUpdateStatus(ord.id, ord.customerId, newStatus);
+        if (newStatus === 'Confirmado') {
+          await handleConfirmSale(ord);
+        } else {
+          await handleUpdateStatus(ord.id, ord.customerId, newStatus);
+        }
       }
     }
     setSelectedOrderIds([]);
@@ -243,48 +261,75 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
   ) => {
     try {
       const showroomId = database.getShowroomID();
-      const batch = writeBatch(db);
-      
-      // 1. Actualizar en colección global
-      const orderRef = doc(db, 'showrooms', showroomId, 'orders', orderId);
-      batch.update(orderRef, { estado: newStatus });
+      const orderToUpdate = orders.find(o => o.id === orderId);
 
-      // 2. Actualizar en la subcolección del cliente si está registrado
-      if (customerId && customerId !== 'GUEST') {
-        const customerOrderRef = doc(db, 'showrooms', showroomId, 'customers', customerId, 'orders', orderId);
-        batch.set(customerOrderRef, { estado: newStatus }, { merge: true });
-      }
+      if (newStatus === 'Cancelado') {
+        const isAlreadyCancelled = orderToUpdate && ['Cancelado', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(orderToUpdate.estado);
+        
+        if (orderToUpdate && !isAlreadyCancelled) {
+          const showroomRef = doc(db, 'showrooms', showroomId);
+          await runTransaction(db, async (transaction) => {
+            const srSnap = await transaction.get(showroomRef);
+            if (srSnap.exists()) {
+              const srData = srSnap.data() || {};
+              const currentInv = srData.inventory || [];
+              const nextInv = restoreInventory(currentInv, orderToUpdate.items || []);
+              transaction.update(showroomRef, { inventory: nextInv, lastSync: Date.now() });
+            }
+            const orderRef = doc(db, 'showrooms', showroomId, 'orders', orderId);
+            transaction.update(orderRef, { estado: 'Cancelado' });
+            if (customerId && customerId !== 'GUEST') {
+              const customerOrderRef = doc(db, 'showrooms', showroomId, 'customers', customerId, 'orders', orderId);
+              transaction.set(customerOrderRef, { estado: 'Cancelado' }, { merge: true });
+            }
+          });
 
-      await batch.commit();
-
-      if (newStatus === 'Confirmado') {
-        const orderToConfirm = orders.find(o => o.id === orderId);
-        if (orderToConfirm && orderToConfirm.estado !== 'Confirmado') {
-          await sendSaleConfirmationEmail(
-            {
-              id: orderToConfirm.saleId || orderToConfirm.id,
-              fecha: orderToConfirm.fecha,
-              metodoPago: orderToConfirm.metodoPago,
-              costoEnvio: orderToConfirm.costoEnvio,
-              items: orderToConfirm.items || [],
-              total: orderToConfirm.total || 0,
-              giftCardUsada: orderToConfirm.giftCardUsada
-            },
-            orderToConfirm.customerNombre,
-            orderToConfirm.customerEmail,
-            'web'
-          );
-        }
-      } else if (newStatus === 'Cancelado') {
-        const orderToCancel = orders.find(o => o.id === orderId);
-        if (orderToCancel && orderToCancel.estado !== 'Cancelado') {
           await sendOrderCancelledEmail(
-            orderToCancel.id,
-            orderToCancel.customerNombre,
-            orderToCancel.customerEmail,
-            orderToCancel.items || [],
-            orderToCancel.total
+            orderToUpdate.id,
+            orderToUpdate.customerNombre,
+            orderToUpdate.customerEmail,
+            orderToUpdate.items || [],
+            orderToUpdate.total
           );
+        } else {
+          const batch = writeBatch(db);
+          const orderRef = doc(db, 'showrooms', showroomId, 'orders', orderId);
+          batch.update(orderRef, { estado: newStatus });
+          if (customerId && customerId !== 'GUEST') {
+            const customerOrderRef = doc(db, 'showrooms', showroomId, 'customers', customerId, 'orders', orderId);
+            batch.set(customerOrderRef, { estado: newStatus }, { merge: true });
+          }
+          await batch.commit();
+        }
+      } else {
+        const batch = writeBatch(db);
+        const orderRef = doc(db, 'showrooms', showroomId, 'orders', orderId);
+        batch.update(orderRef, { estado: newStatus });
+
+        if (customerId && customerId !== 'GUEST') {
+          const customerOrderRef = doc(db, 'showrooms', showroomId, 'customers', customerId, 'orders', orderId);
+          batch.set(customerOrderRef, { estado: newStatus }, { merge: true });
+        }
+
+        await batch.commit();
+
+        if (newStatus === 'Confirmado') {
+          if (orderToUpdate && orderToUpdate.estado !== 'Confirmado') {
+            await sendSaleConfirmationEmail(
+              {
+                id: orderToUpdate.saleId || orderToUpdate.id,
+                fecha: orderToUpdate.fecha,
+                metodoPago: orderToUpdate.metodoPago,
+                costoEnvio: orderToUpdate.costoEnvio,
+                items: orderToUpdate.items || [],
+                total: orderToUpdate.total || 0,
+                giftCardUsada: orderToUpdate.giftCardUsada
+              },
+              orderToUpdate.customerNombre,
+              orderToUpdate.customerEmail,
+              'web'
+            );
+          }
         }
       }
 
@@ -328,7 +373,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
 
       await sendSaleConfirmationEmail(
         {
-          id: saleId || order.id,
+          id: order.id,
           fecha: order.fecha,
           metodoPago: order.metodoPago,
           costoEnvio: order.costoEnvio,
@@ -382,13 +427,26 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
         statusFilter === 'todos' || 
         o.estado === statusFilter || 
         (statusFilter === 'Pendiente' && o.estado === 'PENDING_PAYMENT') ||
-        (statusFilter === 'Cancelado' && ['CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(o.estado));
+        (statusFilter === 'Cancelado' && ['CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(o.estado)) ||
+        (statusFilter === 'parcialmente_cambiado' && o.estado === 'parcialmente_cambiado');
       return matchesSearch && matchesStatus;
     });
   }, [orders, searchTerm, statusFilter]);
 
   const getStatusBadge = (status: WebOrder['estado']) => {
     switch (status) {
+      case 'parcialmente_cambiado':
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-amber-300">
+            <RefreshCw size={11} /> Parcialmente Cambiado
+          </span>
+        );
+      case 'Completado':
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-neutral-100 text-neutral-800 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-neutral-300">
+            <CheckCircle size={11} /> Totalmente Cambiado
+          </span>
+        );
       case 'Confirmado':
       case 'PAID':
         return (
@@ -462,11 +520,12 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
 
         <div className="flex items-center gap-2 w-full md:w-auto justify-end">
           <span className="text-[9px] font-semibold tracking-[0.18em] text-stone-400 uppercase">Filtrar por:</span>
-          <div className="flex border border-stone-200/70 rounded-xl overflow-hidden p-0.5 bg-stone-50/50">
+          <div className="flex border border-stone-200/70 rounded-xl overflow-hidden p-0.5 bg-stone-50/50 flex-wrap">
             {[
               { id: 'todos', label: 'Todos' },
               { id: 'Pendiente', label: 'Pendientes' },
               { id: 'Confirmado', label: 'Confirmados' },
+              { id: 'parcialmente_cambiado', label: 'Parcialmente Cambiados' },
               { id: 'Cancelado', label: 'Cancelados' }
             ].map(tab => (
               <button
@@ -567,6 +626,16 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                   <span className="font-mono text-xs font-semibold text-stone-900 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     #{order.id.substring(0, 8).toUpperCase()}
                   </span>
+                  {order.tipoPedido === 'cambio_web' && (
+                    <span className="flex items-center gap-1 px-2.5 py-0.5 bg-purple-100 text-purple-800 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-purple-300">
+                      <RefreshCw size={10} /> Cambio Web
+                    </span>
+                  )}
+                  {order.ordenOrigenId && (
+                    <span className="font-mono text-[9px] font-semibold text-stone-500 bg-stone-50 px-2 py-0.5 rounded border border-stone-200">
+                      Ref: #{order.ordenOrigenId.substring(0, 8).toUpperCase()}
+                    </span>
+                  )}
                   <span className="text-[10px] tracking-[0.5px] text-stone-400 font-normal font-mono">
                     {new Date(order.fecha).toLocaleString('es-AR')}
                   </span>
@@ -633,6 +702,34 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
             {/* Modal Content */}
             <div className="p-6 sm:p-8 space-y-8 overflow-y-auto">
               
+              {/* Cambio Web Info Banner */}
+              {selectedOrder.tipoPedido === 'cambio_web' && (
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-purple-100 text-purple-700 rounded-lg">
+                      <RefreshCw size={18} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-purple-900 tracking-wider">Pedido generado por Cambio Web</p>
+                      <p className="text-[10px] text-purple-700">Este pedido fue creado a partir del canje/cambio de prendas de una compra previa.</p>
+                    </div>
+                  </div>
+                  {selectedOrder.ordenOrigenId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const orig = orders.find(o => o.id === selectedOrder.ordenOrigenId || (o.saleId && o.saleId === selectedOrder.ordenOrigenId));
+                        if (orig) setSelectedOrder(orig);
+                        else showAlert(`Orden original asociada: #${selectedOrder.ordenOrigenId.toUpperCase()}`, 'Orden Original', 'info');
+                      }}
+                      className="px-3 py-1.5 bg-purple-700 text-white text-[9px] font-bold uppercase tracking-wider rounded-lg hover:bg-purple-800 transition-colors self-start sm:self-auto flex items-center gap-1 cursor-pointer"
+                    >
+                      <ExternalLink size={11} /> Ver Orden Origen #{selectedOrder.ordenOrigenId.substring(0, 8).toUpperCase()}
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Order Status Action Panel */}
               <div className="bg-neutral-50 p-6 rounded-xl border border-black/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
@@ -645,7 +742,13 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                     {(['Pendiente', 'Confirmado', 'Cancelado'] as const).map(status => (
                       <button
                         key={status}
-                        onClick={() => handleUpdateStatus(selectedOrder.id, selectedOrder.customerId, status)}
+                        onClick={() => {
+                          if (status === 'Confirmado') {
+                            handleConfirmSale(selectedOrder);
+                          } else {
+                            handleUpdateStatus(selectedOrder.id, selectedOrder.customerId, status);
+                          }
+                        }}
                         className={`px-3 py-2 text-[9px] tracking-[1px] uppercase font-bold transition-all ${
                           selectedOrder.estado === status || 
                           (status === 'Pendiente' && selectedOrder.estado === 'PENDING_PAYMENT') ||
@@ -737,28 +840,84 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                 </div>
               </div>
 
+              {/* Prendas Devueltas (si es un pedido de cambio) */}
+              {selectedOrder.itemsDevueltos && selectedOrder.itemsDevueltos.length > 0 && (
+                <div className="space-y-3 bg-red-50/50 p-4 rounded-xl border border-red-100">
+                  <h4 className="text-[10px] tracking-[2px] uppercase text-red-800 font-bold border-b border-red-200/60 pb-1.5 flex items-center gap-1.5">
+                    <RefreshCw size={12} /> Prendas Devueltas por el Cliente
+                  </h4>
+                  <div className="divide-y divide-red-100">
+                    {selectedOrder.itemsDevueltos.map((item, idx) => (
+                      <div key={idx} className="py-2.5 flex justify-between items-center text-[11px] uppercase tracking-[0.5px]">
+                        <div className="space-y-0.5 text-left">
+                          <p className="font-semibold text-stone-900">{item.descripcion}</p>
+                          <p className="text-stone-500 text-[9px] font-mono">
+                            {item.sku && `SKU: ${item.sku}`}
+                            {item.talle && ` · TALLE: ${item.talle}`}
+                            {item.color && ` · COLOR: ${item.color}`}
+                          </p>
+                        </div>
+                        <div className="text-right font-bold text-red-700">
+                          {item.cantidad} u. devuelta(s)
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Items Desglose */}
               <div className="space-y-3">
-                <h4 className="text-[10px] tracking-[2px] uppercase text-black/40 font-bold border-b border-black/5 pb-2">Prendas Reservadas</h4>
+                <h4 className="text-[10px] tracking-[2px] uppercase text-black/40 font-bold border-b border-black/5 pb-2">
+                  {selectedOrder.tipoPedido === 'cambio_web' ? 'Prendas Nuevas Seleccionadas (Cambio)' : 'Prendas Reservadas'}
+                </h4>
                 <div className="divide-y divide-black/5">
-                  {selectedOrder.items.map((item, idx) => (
-                    <div key={idx} className="py-4 flex justify-between items-center text-[12px] uppercase tracking-[0.5px]">
-                      <div className="space-y-1">
-                        <p className="font-semibold text-black">{item.descripcion}</p>
-                        <p className="text-black/40 text-[9px] font-bold font-mono">
-                          SKU: {item.sku}
-                          {item.talle && ` · TALLE: ${item.talle}`}
-                          {item.color && ` · COLOR: ${item.color}`}
-                        </p>
+                  {selectedOrder.items.map((item, idx) => {
+                    const cantDev = item.cantidadDevuelta || 0;
+                    const cantDisp = item.cantidad - cantDev;
+
+                    return (
+                      <div key={idx} className="py-4 flex justify-between items-center text-[12px] uppercase tracking-[0.5px]">
+                        <div className="space-y-1 text-left">
+                          <p className="font-semibold text-black">{item.descripcion}</p>
+                          <p className="text-black/40 text-[9px] font-bold font-mono">
+                            SKU: {item.sku}
+                            {item.talle && ` · TALLE: ${item.talle}`}
+                            {item.color && ` · COLOR: ${item.color}`}
+                          </p>
+                          {cantDev > 0 && (
+                            <div className="mt-1">
+                              <span className="text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-100 text-amber-900 rounded border border-amber-200 inline-block">
+                                {cantDisp === 0 ? 'Cambiada totalmente' : `Cambiadas: ${cantDev} u. · Disponibles: ${cantDisp} u.`}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-black">{item.cantidad} u. × ${item.precioUnitario.toLocaleString()}</p>
+                          <p className="text-[10px] text-black/50 font-semibold font-mono">${(item.cantidad * item.precioUnitario).toLocaleString()}</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold text-black">{item.cantidad} u. × ${item.precioUnitario.toLocaleString()}</p>
-                        <p className="text-[10px] text-black/50 font-semibold font-mono">${(item.cantidad * item.precioUnitario).toLocaleString()}</p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
+
+              {/* Gift Card Generada si aplica */}
+              {selectedOrder.giftCardGenerada && (
+                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Gift size={16} className="text-emerald-700" />
+                    <div>
+                      <p className="text-[10px] uppercase font-bold tracking-wider text-emerald-900">Gift Card Emitida a Favor</p>
+                      <p className="text-[9px] text-emerald-700">Se generó crédito a favor por la diferencia del cambio.</p>
+                    </div>
+                  </div>
+                  <span className="font-mono text-xs font-bold text-emerald-800 bg-white px-3 py-1.5 rounded-lg border border-emerald-300 self-start sm:self-auto">
+                    {selectedOrder.giftCardGenerada}
+                  </span>
+                </div>
+              )}
 
               {/* Desglose de Totales */}
               <div className="space-y-2 pt-6 border-t border-black/10 text-[11px] tracking-[1px] uppercase">
@@ -806,20 +965,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
             <div className="p-6 bg-neutral-50/50 border-t border-black/5 flex flex-col gap-3">
               
               <div className="flex flex-col sm:flex-row gap-3">
-                {!selectedOrder.saleId && (
-                  <button
-                    onClick={() => handleConfirmSale(selectedOrder)}
-                    disabled={isConfirmingSale}
-                    className="flex-1 bg-black hover:bg-neutral-800 disabled:opacity-40 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
-                  >
-                    {isConfirmingSale ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Receipt size={13} />
-                    )}
-                    Confirmar venta (caja)
-                  </button>
-                )}
+                
                 <button
                   onClick={() => handleContactCustomer(selectedOrder)}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2"

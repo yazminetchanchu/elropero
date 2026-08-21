@@ -67,12 +67,13 @@ export interface CustomerOrder {
     precioUnitario: number;
     talle?: string;
     color?: string;
+    cantidadDevuelta?: number;
   }[];
   total: number;
   metodoPago: string;
   tipoEnvio: 'retiro' | 'envio';
   direccionEnvio?: ShippingAddress;
-  estado: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado';
+  estado: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado' | 'parcialmente_cambiado' | 'Completado';
   saleId?: string;
   costoEnvio?: number;
   ualaPlan?: {
@@ -81,6 +82,18 @@ export interface CustomerOrder {
     totalConRecargo: number;
   } | null;
   isExchanged?: boolean;
+  tipoPedido?: 'compra' | 'cambio_web';
+  ordenOrigenId?: string;
+  itemsDevueltos?: {
+    productId?: string;
+    descripcion: string;
+    sku?: string;
+    cantidad: number;
+    talle?: string;
+    color?: string;
+  }[];
+  itemsNuevos?: any[];
+  giftCardGenerada?: string;
 }
 
 interface AuthContextType {

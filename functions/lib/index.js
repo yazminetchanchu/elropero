@@ -1,10 +1,43 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyAdmin2FACode = exports.sendAdmin2FACode = exports.requestWelcomeEmail = exports.sendCustomWelcomeEmail = exports.requestPasswordReset = exports.sendCustomPasswordResetEmail = exports.processEmailQueue = exports.createUalaCheckout = exports.ualaWebhook = exports.fulfillWebCambioServer = exports.releaseExpiredReservationsCron = exports.reserveWebOrder = exports.obtenerTracking = exports.generarEnvioManual = exports.obtenerEtiquetaPdf = exports.importarEnvioMiCorreo = exports.obtenerSucursales = exports.cotizarEnvio = void 0;
-const functions = require("firebase-functions");
-const admin = require("firebase-admin");
-const nodemailer = require("nodemailer");
-const crypto = require("crypto");
+const functions = __importStar(require("firebase-functions/v1"));
+const admin = __importStar(require("firebase-admin"));
+const nodemailer = __importStar(require("nodemailer"));
+const crypto = __importStar(require("crypto"));
 // Importar y exportar los endpoints de MiCorreo
 var micorreo_1 = require("./micorreo");
 Object.defineProperty(exports, "cotizarEnvio", { enumerable: true, get: function () { return micorreo_1.cotizarEnvio; } });
@@ -22,7 +55,15 @@ Object.defineProperty(exports, "fulfillWebCambioServer", { enumerable: true, get
 if (!admin.apps.length) {
     admin.initializeApp();
 }
-const db = admin.firestore();
+let _db = null;
+const db = new Proxy({}, {
+    get: (target, prop) => {
+        if (!_db)
+            _db = admin.firestore();
+        const val = _db[prop];
+        return typeof val === 'function' ? val.bind(_db) : val;
+    }
+});
 // Assume Ualá Webhook sends data as a POST request
 // Payload usually contains { id: "payment_id", status: "APPROVED", external_reference: "orderId" }
 // Or might be nested. We parse it safely and verify signatures.
@@ -213,6 +254,8 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
                     precioEfectivo: oi.precioUnitario,
                     precioTarjeta: oi.precioUnitario,
                     descuento: 0,
+                    talle: oi.talle,
+                    color: oi.color,
                 };
             });
             const isTarjeta = items.some((oi) => oi.payMethod === 'tarjeta');

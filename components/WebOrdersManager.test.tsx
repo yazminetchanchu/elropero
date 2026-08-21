@@ -130,7 +130,7 @@ describe('WebOrdersManager', () => {
 
     expect(screen.getByText(/Detalle del Pedido/i)).toBeInTheDocument();
 
-    const confirmBtn = screen.getByRole('button', { name: /Confirmar venta/i });
+    const confirmBtn = screen.getByRole('button', { name: 'Confirmado' });
     fireEvent.click(confirmBtn);
 
     expect(confirmSpy).toHaveBeenCalled();

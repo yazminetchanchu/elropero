@@ -14,7 +14,7 @@ export function buildSaleItemsFromOrder(
       .filter(Boolean)
       .join(' ');
 
-    return {
+    const saleItem: SaleItem = {
       id: item.productId,
       sku: item.sku || inv?.sku || '---',
       descripcion: variant ? `${item.descripcion} (${variant})` : item.descripcion,
@@ -23,7 +23,13 @@ export function buildSaleItemsFromOrder(
       precioEfectivo,
       precioTarjeta,
       descuento: 0,
+      talle: item.talle,
+      color: item.color,
     };
+    if ((item as any).cantidadDevuelta) {
+      (saleItem as any).cantidadDevuelta = (item as any).cantidadDevuelta;
+    }
+    return saleItem;
   });
 }
 
@@ -46,9 +52,17 @@ export function isOrderEligibleForExchange(order: CustomerOrder): boolean {
   if (isGiftCardOrder(order)) return false;
 
   const registradoEnCaja =
-    !!order.saleId || order.estado === 'Confirmado' || order.estado === 'Entregado';
+    !!order.saleId || order.estado === 'Confirmado' || order.estado === 'Entregado' || order.estado === 'parcialmente_cambiado';
   if (!registradoEnCaja) return false;
   if (order.isExchanged) return false;
+
+  if (order.items && order.items.length > 0) {
+    const hasRemainingItems = order.items.some(
+      (item) => (item.cantidad - (item.cantidadDevuelta || 0)) > 0
+    );
+    if (!hasRemainingItems) return false;
+  }
+
   const days = Math.floor((Date.now() - new Date(order.fecha).getTime()) / 86400000);
   return days <= 15;
 }

@@ -58,6 +58,8 @@ describe('webOrderToSale Service', () => {
         precioEfectivo: 2000,
         precioTarjeta: 2500,
         descuento: 0,
+        talle: 'M',
+        color: 'NEGRO',
       });
     });
 

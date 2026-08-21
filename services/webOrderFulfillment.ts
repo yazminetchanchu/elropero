@@ -287,6 +287,8 @@ export function buildSaleFromWebOrder(
       precioEfectivo: oi.precioUnitario,
       precioTarjeta: oi.precioUnitario,
       descuento: 0,
+      talle: oi.talle,
+      color: oi.color,
     };
   });
 
@@ -381,12 +383,15 @@ export async function fulfillWebOrder(
       }
     }
 
-    // El stock ya fue decrementado atómicamente por `reserveWebOrder` (Cloud Function).
-    // Aquí re-escritura el inventario desde el snapshot actual (ya descontado) para:
-    //  a) Garantizar idempotencia: si por algún motivo no pasó por reserveWebOrder, se descuenta ahora.
-    //  b) Forzar que `lastSync` se actualice y que el onSnapshot propague a todos los clientes.
+    // Comprobar el estado previo de la orden para evitar doble deducción:
+    // Si la orden ya estaba en 'PENDING_PAYMENT' o 'Pendiente', el stock ya fue descontado
+    // atómicamente por `reserveWebOrder`. Solo deducir si la orden estaba cancelada o no pasó por reserva.
+    const orderSnap = await transaction.get(orderRef);
+    const existingOrder = orderSnap.exists() ? (orderSnap.data() as any) : null;
+    const isAlreadyReserved = existingOrder && (existingOrder.estado === 'PENDING_PAYMENT' || existingOrder.estado === 'Pendiente');
+
     const nonGiftItems = order.items.filter((oi) => !oi.isVirtualGiftCard);
-    const confirmedInventory = nonGiftItems.length > 0
+    const confirmedInventory = (!isAlreadyReserved && nonGiftItems.length > 0)
       ? deductInventory(inventory, nonGiftItems)
       : inventory;
 
@@ -474,10 +479,8 @@ export async function releaseExpiredReservations(showroomId: string) {
         if (!sr.exists()) return;
         const srData = sr.data() as DatabaseState;
         
-        // Devolver el stock
-        const nextInventory = restoreInventory(srData.inventory || [], data.items || []);
-        
-        transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
+        const nextInv = restoreInventory(srData.inventory || [], data.items || []);
+        transaction.update(showroomRef, { inventory: nextInv, lastSync: Date.now() });
         transaction.update(d.ref, { estado: 'Cancelado', cancelReason: 'expired' });
         
         // Update in customer profile if exists
@@ -486,7 +489,7 @@ export async function releaseExpiredReservations(showroomId: string) {
            transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired' }, { merge: true });
         }
       });
-      console.log(`Reserva ${d.id} expirada, stock liberado y pedido cancelado.`);
+      console.log(`Reserva ${d.id} expirada, pedido cancelado y stock restaurado.`);
     } catch (e) {
       console.error(`Error liberando reserva ${d.id}:`, e);
     }

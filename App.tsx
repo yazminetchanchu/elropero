@@ -15,7 +15,7 @@ import StorefrontPage from './components/StorefrontPage';
 import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import WebOrdersManager from './components/WebOrdersManager';
 import InnovativeLoader from './components/InnovativeLoader';
-import { computeSaleBreakdown, isMonth } from './services/finance';
+import { computeSaleBreakdown, isMonth, getItemSnapshot } from './services/finance';
 import { deductSaleFromInventory, restoreSaleToInventory } from './services/webOrderFulfillment';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
@@ -890,15 +890,6 @@ const App: React.FC = () => {
     // =======================
     let giftGenerada: GiftCard | undefined;
     if (saleData.tipo === 'cambio' && (saleData.diferencia ?? 0) < 0) {
-      const montoGift = Math.abs(saleData.diferencia!);
-      // Generate gift card only for full returns (all items returned)
-      const originalSale = sales.find(s => s.id === saleData.ventaOriginalId);
-      const allReturned = originalSale?.items?.every(origItem => {
-        const devuelto = (saleData.itemsDevueltos ?? []).find(d => d.id === origItem.id && d.talle === origItem.talle && d.color === origItem.color);
-        return devuelto && devuelto.cantidad === origItem.cantidad;
-      }) ?? false;
-      if (allReturned) {
-        const montoGift = Math.abs(saleData.diferencia!);
         const codigoGift = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
         const ventaOrig = sales.find(s => s.id === saleData.ventaOriginalId);
@@ -907,7 +898,15 @@ const App: React.FC = () => {
           if (ventaOrig.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
           else if (ventaOrig.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
           else medioPagoOrigen = 'mixto';
+        } else if (ventaOrig?.metodoPago) {
+          const mp = String(ventaOrig.metodoPago).toLowerCase();
+          if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
+            medioPagoOrigen = 'tarjeta';
+          }
         }
+
+        // El monto a favor de la Gift Card es el valor neto de la diferencia negativa
+        const montoGift = Math.abs(saleData.diferencia ?? 0);
 
         giftGenerada = {
           id: saleData.giftGeneradaId || `gift_${Date.now()}`,
@@ -921,7 +920,6 @@ const App: React.FC = () => {
           ventaOrigenId: saleData.ventaOriginalId,
         };
       }
-    }
 
     // Los emails se enviarán después de persistir correctamente
     const saleId = `sale_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;

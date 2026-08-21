@@ -1,4 +1,4 @@
-import * as functions from "firebase-functions";
+import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 
 // db will be initialized inside the functions to prevent app/no-app error during module loading.
@@ -199,8 +199,8 @@ export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5
           nextInventory[idx] = item;
         }
 
-        // Marcar como Cancelado
-        transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
+        // Marcar como Cancelado sin devolver stock
+        transaction.update(showroomRef, { lastSync: Date.now() });
         transaction.update(docSnap.ref, { estado: 'Cancelado', cancelReason: 'expired' });
 
         if (data.customerId && data.customerId !== 'GUEST') {
@@ -208,7 +208,7 @@ export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5
            transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired' }, { merge: true });
         }
       });
-      console.log(`[Cron] Reserva ${docSnap.id} cancelada. Stock devuelto.`);
+        console.log(`[Cron] Reserva ${docSnap.id} cancelada. Stock no devuelto.`);
     } catch (e) {
       console.error(`[Cron] Error al cancelar reserva ${docSnap.id}:`, e);
     }
@@ -285,219 +285,408 @@ function adjustStockLine(
 // Procesa un cambio web de forma atómica en el backend, evitando restricciones
 // de security rules que impiden que usuarios no-admin modifiquen sales y giftCards.
 export const fulfillWebCambioServer = functions.https.onCall(async (data, context) => {
-  const db = admin.firestore();
-  const { showroomId, payload } = data;
+  try {
+    const db = admin.firestore();
+    const { showroomId, payload } = data;
 
-  if (!showroomId || !payload) {
-    throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: showroomId or payload.');
-  }
-
-  const {
-    ventaOriginalId,
-    itemsDevueltos,
-    itemsNuevos,
-    diferencia,
-    giftDestinatario,
-  } = payload;
-
-  if (!itemsDevueltos || !itemsDevueltos.length) {
-    throw new functions.https.HttpsError('invalid-argument', 'Debés seleccionar al menos una prenda a devolver.');
-  }
-
-  const showroomRef = db.collection('showrooms').doc(showroomId);
-  const saleId = `sale_cambio_web_${Date.now()}`;
-  let giftCodigo: string | undefined;
-
-  await db.runTransaction(async (transaction) => {
-    const snap = await transaction.get(showroomRef);
-    if (!snap.exists) {
-      throw new functions.https.HttpsError('not-found', 'Showroom no encontrado.');
+    if (!showroomId || !payload) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: showroomId or payload.');
     }
 
-    const srData = snap.data() || {};
-    const sales = srData.sales || [];
-    const inventory = srData.inventory || [];
-    const giftCards = srData.giftCards || [];
-
-    // Validate original sale exists
-    const ventaOriginal = sales.find((s: any) => s.id === ventaOriginalId);
-    if (!ventaOriginal) {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'No se encontró la venta original en caja. Confirmá el pedido desde el panel si aún está pendiente.'
-      );
-    }
-
-    // Validate 15-day window
-    const diasTranscurridos = Math.floor(
-      (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
-    );
-    if (diasTranscurridos > 15) {
-      throw new functions.https.HttpsError('failed-precondition', 'Ya han pasado 15 días desde la compra.');
-    }
-
-    // Validate returned items belong to original sale
-    const itemsOriginales = ventaOriginal.items ?? [];
-    for (const devuelto of itemsDevueltos) {
-      const enOriginal = itemsOriginales.find(
-        (i: any) => i.id === devuelto.id && i.talle === devuelto.talle && i.color === devuelto.color
-      );
-      if (!enOriginal) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          `La prenda "${devuelto.descripcion}" no pertenece a la venta original.`
-        );
-      }
-      if (devuelto.cantidad > enOriginal.cantidad) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          `La cantidad devuelta de "${devuelto.descripcion}" no puede superar la comprada (${enOriginal.cantidad}).`
-        );
-      }
-
-      const yaDevueltaEn = sales
-        .filter((s: any) => s.tipo === 'cambio' && s.ventaOriginalId === ventaOriginalId)
-        .reduce((sum: number, s: any) => {
-          const matches = (s.itemsDevueltos ?? []).filter(
-            (i: any) => i.id === devuelto.id && i.talle === devuelto.talle && i.color === devuelto.color
-          );
-          return sum + matches.reduce((acc: number, m: any) => acc + (m.cantidad ?? 0), 0);
-        }, 0);
-
-      const disponible = enOriginal.cantidad - yaDevueltaEn;
-      if (devuelto.cantidad > disponible) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          `"${devuelto.descripcion}": solo podés devolver ${disponible} unidad(es).`
-        );
-      }
-    }
-
-    // Validate stock for new items
-    const safeItemsNuevos = itemsNuevos || [];
-    for (const itemNuevo of safeItemsNuevos) {
-      const invItem = inventory.find((i: any) => i.id === itemNuevo.id);
-      if (!invItem) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          `Producto no encontrado en stock: ${itemNuevo.descripcion}`
-        );
-      }
-
-      const { color, talle } = parseVariantFromDescripcion(itemNuevo.descripcion);
-
-      if (invItem.stockPorVariante && talle && color) {
-        const varKey = `${talle}-${color}`;
-        const matchKey = Object.keys(invItem.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase());
-        if (matchKey) {
-          if ((invItem.stockPorVariante[matchKey] || 0) < itemNuevo.cantidad) {
-            throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para variante ${matchKey} de ${itemNuevo.descripcion}`);
-          }
-        } else {
-          if (invItem.cantidad < itemNuevo.cantidad) {
-            throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para ${itemNuevo.descripcion}`);
-          }
-        }
-      } else {
-        const colorKey = color?.trim().toUpperCase();
-        if (colorKey && invItem.coloresStock && invItem.coloresStock[colorKey] !== undefined) {
-          if ((invItem.coloresStock[colorKey] || 0) < itemNuevo.cantidad) {
-            throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para el color ${colorKey} de ${itemNuevo.descripcion}`);
-          }
-        } else {
-          if (invItem.cantidad < itemNuevo.cantidad) {
-            throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para ${itemNuevo.descripcion}`);
-          }
-        }
-      }
-    }
-
-    // Generate gift card if diferencia < 0
-    let giftGenerada: any;
-    let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
-    if (ventaOriginal?.pago) {
-      if (ventaOriginal.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
-      else if (ventaOriginal.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
-      else medioPagoOrigen = 'mixto';
-    } else if (ventaOriginal?.metodoPago) {
-      const mp = String(ventaOriginal.metodoPago).toLowerCase();
-      if (mp.includes('tarjeta') || mp.includes('uala') || mp.includes('crédito') || mp.includes('debito')) {
-        medioPagoOrigen = 'tarjeta';
-      } else {
-        medioPagoOrigen = 'efectivo';
-      }
-    }
-
-    if (diferencia < 0) {
-      const montoGift = Math.abs(diferencia);
-      giftCodigo = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-
-      giftGenerada = {
-        id: `gift_${Date.now()}`,
-        codigo: giftCodigo,
-        destinatario: giftDestinatario?.trim() || 'Cambio web',
-        montoInicial: montoGift,
-        saldo: montoGift,
-        estado: 'ACTIVA',
-        fechaCreacion: new Date().toISOString(),
-        medioPagoOrigen,
-        ventaOrigenId: ventaOriginalId,
-      };
-    }
-
-    // Default payment from original sale if diferencia <= 0
-    const pagoDefaultOrig = ventaOriginal?.pago || (medioPagoOrigen === 'tarjeta' ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 });
-
-    // Build the sale record
-    const newSale: any = {
-      id: saleId,
-      fecha: new Date().toISOString(),
-      tipo: 'cambio',
+    const {
       ventaOriginalId,
       itemsDevueltos,
-      itemsNuevos: safeItemsNuevos,
-      items: [],
-      total: Math.max(0, diferencia),
+      itemsNuevos,
       diferencia,
-      pago: diferencia <= 0 ? pagoDefaultOrig : (payload.pago || { efectivo: 100, tarjeta: 0 }),
-      pagoDevolucion: pagoDefaultOrig,
-      giftDestinatario: giftDestinatario?.trim() || 'Cambio web',
-      ...(giftGenerada?.id ? { giftGeneradaId: giftGenerada.id } : {}),
-      costoEnvio: payload.costoEnvio ?? 0,
-      costoEnvioDevolucion: payload.costoEnvioDevolucion ?? 0,
-      costoEnvioNuevo: payload.costoEnvioNuevo ?? 0,
-      tipoEnvioDevolucion: payload.tipoEnvioDevolucion,
-      tipoEnvioNuevo: payload.tipoEnvioNuevo,
-      codigoPostalCliente: payload.codigoPostalCliente,
-    };
+      giftDestinatario,
+      originalOrderId,
+      customerId,
+    } = payload;
 
-    // Apply inventory changes
-    let nextInventory = [...inventory];
-    for (const dev of itemsDevueltos) {
-      const parsed = parseVariantFromDescripcion(dev.descripcion);
-      const color = dev.color || parsed.color;
-      const talle = dev.talle || parsed.talle;
-      nextInventory = nextInventory.map((inv: any) => adjustStockLine(inv, dev.id, dev.cantidad, color, talle, 'add'));
-    }
-    for (const neu of safeItemsNuevos) {
-      const parsed = parseVariantFromDescripcion(neu.descripcion);
-      const color = neu.color || parsed.color;
-      const talle = neu.talle || parsed.talle;
-      nextInventory = nextInventory.map((inv: any) => adjustStockLine(inv, neu.id, neu.cantidad, color, talle, 'subtract'));
+    if (!itemsDevueltos || !itemsDevueltos.length) {
+      throw new functions.https.HttpsError('invalid-argument', 'Debés seleccionar al menos una prenda a devolver.');
     }
 
-    const nextGiftCards = giftGenerada ? [...giftCards, giftGenerada] : giftCards;
+    const showroomRef = db.collection('showrooms').doc(showroomId);
+    const saleId = `sale_cambio_web_${Date.now()}`;
+    let giftCodigo: string | undefined;
 
-    // Remove undefined values (Firestore doesn't accept them)
-    const sanitize = (obj: any): any => JSON.parse(JSON.stringify(obj));
+    await db.runTransaction(async (transaction) => {
+      // ─────────────────────────────────────────────────────────────────
+      // 1. TODAS LAS LECTURAS (READS) AL INICIO DE LA TRANSACCIÓN
+      // ─────────────────────────────────────────────────────────────────
+      const snap = await transaction.get(showroomRef);
+      if (!snap.exists) {
+        throw new functions.https.HttpsError('not-found', 'Showroom no encontrado.');
+      }
 
-    transaction.update(showroomRef, sanitize({
-      inventory: nextInventory,
-      sales: [...sales, newSale],
-      giftCards: nextGiftCards,
-      lastSync: Date.now(),
-    }));
-  });
+      let originalOrderData: any = null;
+      let rootOrderRef: any = null;
+      let custOrderRef: any = null;
 
-  return { saleId, giftCodigo: giftCodigo || null };
+      if (originalOrderId) {
+        rootOrderRef = showroomRef.collection('orders').doc(originalOrderId);
+        let orderSnap: any = await transaction.get(rootOrderRef);
+
+        // Fallback: si no está en la colección raíz de orders, buscar en la subcolección del cliente
+        if (!orderSnap.exists && customerId && customerId !== 'GUEST') {
+          const custDocRef = showroomRef.collection('customers').doc(customerId).collection('orders').doc(originalOrderId);
+          const custSnap: any = await transaction.get(custDocRef);
+          if (custSnap.exists) {
+            orderSnap = custSnap;
+          }
+        }
+
+        if (orderSnap.exists) {
+          originalOrderData = orderSnap.data() || {};
+          const targetCustId = customerId || originalOrderData.customerId;
+          if (targetCustId && targetCustId !== 'GUEST') {
+            custOrderRef = showroomRef.collection('customers').doc(targetCustId).collection('orders').doc(originalOrderId);
+          }
+        }
+      }
+
+      // ─────────────────────────────────────────────────────────────────
+      // 2. VALIDACIONES Y CÁLCULOS
+      // ─────────────────────────────────────────────────────────────────
+      const srData = snap.data() || {};
+      const sales = srData.sales || [];
+      const inventory = srData.inventory || [];
+      const giftCards = srData.giftCards || [];
+
+      // Validate original sale exists
+      const ventaOriginal = sales.find((s: any) => s.id === ventaOriginalId);
+      if (!ventaOriginal) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'No se encontró la venta original en caja. Confirmá el pedido desde el panel si aún está pendiente.'
+        );
+      }
+
+      // Validate 15-day window
+      const diasTranscurridos = Math.floor(
+        (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      if (diasTranscurridos > 15) {
+        throw new functions.https.HttpsError('failed-precondition', 'Ya han pasado 15 días desde la compra.');
+      }
+
+      // Validate returned items belong to original sale
+      const itemsOriginales = ventaOriginal.items ?? [];
+      for (const devuelto of itemsDevueltos) {
+        const matchItem = (candidate: any) => {
+          const candId = candidate.productId || candidate.id;
+          const devId = devuelto.productId || devuelto.id;
+
+          let isIdMatch = false;
+          if (devId && candId && devId === candId) {
+            isIdMatch = true;
+          }
+
+          if (!isIdMatch) {
+            const candDesc = (candidate.descripcion || '').toLowerCase().trim();
+            const devDesc = (devuelto.descripcion || '').toLowerCase().trim();
+            
+            const baseCandDesc = candDesc.replace(/\(.*\)/, '').trim();
+            const baseDevDesc = devDesc.replace(/\(.*\)/, '').trim();
+
+            if (baseCandDesc !== baseDevDesc && candDesc !== devDesc) {
+              return false;
+            }
+          }
+
+          const devVariant = parseVariantFromDescripcion(devuelto.descripcion || '');
+          const devTalle = devuelto.talle || devVariant.talle;
+          const devColor = devuelto.color || devVariant.color;
+          const candVariant = parseVariantFromDescripcion(candidate.descripcion || '');
+          const candTalle = candidate.talle || candVariant.talle;
+          const candColor = candidate.color || candVariant.color;
+          const talleOk = (!devTalle && !candTalle) || (devTalle && candTalle && devTalle.toLowerCase() === candTalle.toLowerCase());
+          const colorOk = (!devColor && !candColor) || (devColor && candColor && devColor.toLowerCase() === candColor.toLowerCase());
+          return talleOk && colorOk;
+        };
+
+        const matchingOriginals = itemsOriginales.filter(matchItem);
+        const totalOriginalQty = matchingOriginals.reduce((sum: number, i: any) => sum + (i.cantidad ?? i.quantity ?? i.cant ?? 0), 0);
+        if (totalOriginalQty === 0) {
+          throw new functions.https.HttpsError('failed-precondition', `La prenda "${devuelto.descripcion}" no se encontró en la venta original o su cantidad es 0.`);
+        }
+
+        const yaDevueltaEn = sales
+          .filter((s: any) => s.tipo === 'cambio' && s.ventaOriginalId === ventaOriginalId)
+          .reduce((sum: number, s: any) => {
+            const matches = (s.itemsDevueltos ?? []).filter(matchItem);
+            return sum + matches.reduce((acc: number, m: any) => acc + (m.cantidad ?? m.quantity ?? m.cant ?? 0), 0);
+          }, 0);
+
+        const disponible = totalOriginalQty - yaDevueltaEn;
+        if (devuelto.cantidad > disponible) {
+          throw new functions.https.HttpsError('failed-precondition', `"${devuelto.descripcion}": solo podés devolver ${disponible} unidad(es).`);
+        }
+      }
+
+      // Validate stock for new items
+      const safeItemsNuevos = itemsNuevos || [];
+      for (const itemNuevo of safeItemsNuevos) {
+        const invItem = inventory.find((i: any) => i.id === itemNuevo.id);
+        if (!invItem) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            `Producto no encontrado en stock: ${itemNuevo.descripcion}`
+          );
+        }
+
+        const { color, talle } = parseVariantFromDescripcion(itemNuevo.descripcion);
+
+        if (invItem.stockPorVariante && talle && color) {
+          const varKey = `${talle}-${color}`;
+          const matchKey = Object.keys(invItem.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase());
+          if (matchKey) {
+            if ((invItem.stockPorVariante[matchKey] || 0) < itemNuevo.cantidad) {
+              throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para variante ${matchKey} de ${itemNuevo.descripcion}`);
+            }
+          } else {
+            if (invItem.cantidad < itemNuevo.cantidad) {
+              throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para ${itemNuevo.descripcion}`);
+            }
+          }
+        } else {
+          const colorKey = color?.trim().toUpperCase();
+          if (colorKey && invItem.coloresStock && invItem.coloresStock[colorKey] !== undefined) {
+            if ((invItem.coloresStock[colorKey] || 0) < itemNuevo.cantidad) {
+              throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para el color ${colorKey} de ${itemNuevo.descripcion}`);
+            }
+          } else {
+            if (invItem.cantidad < itemNuevo.cantidad) {
+              throw new functions.https.HttpsError('failed-precondition', `Stock insuficiente para ${itemNuevo.descripcion}`);
+            }
+          }
+        }
+      }
+
+      // Generate gift card if diferencia < 0
+      let giftGenerada: any = null;
+      let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
+      if (ventaOriginal?.pago) {
+        if (ventaOriginal.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
+        else if (ventaOriginal.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
+        else medioPagoOrigen = 'mixto';
+      } else if (ventaOriginal?.metodoPago) {
+        const mp = String(ventaOriginal.metodoPago).toLowerCase();
+        if (mp.includes('transferencia') || mp.includes('efectivo')) {
+          medioPagoOrigen = 'efectivo';
+        } else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
+          medioPagoOrigen = 'tarjeta';
+        }
+      }
+
+      if (diferencia < 0) {
+        let montoGift = Math.abs(diferencia);
+        if (isNaN(montoGift)) montoGift = 0;
+
+        giftCodigo = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+        giftGenerada = {
+          id: `gift_${Date.now()}`,
+          codigo: giftCodigo,
+          destinatario: giftDestinatario?.trim() || 'Cambio web',
+          montoInicial: montoGift,
+          saldo: montoGift,
+          estado: 'ACTIVA',
+          fechaCreacion: new Date().toISOString(),
+          medioPagoOrigen,
+          ventaOrigenId: ventaOriginalId,
+        };
+      }
+
+      // Default payment from original sale if diferencia <= 0
+      const pagoDefaultOrig = ventaOriginal?.pago || (medioPagoOrigen === 'tarjeta' ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 });
+
+      // Build the sale record
+      const newSale: any = {
+        id: saleId,
+        fecha: new Date().toISOString(),
+        tipo: 'cambio',
+        ventaOriginalId,
+        itemsDevueltos,
+        itemsNuevos: safeItemsNuevos,
+        items: [],
+        total: Math.max(0, diferencia) || 0,
+        diferencia: diferencia || 0,
+        pago: diferencia <= 0 ? pagoDefaultOrig : (payload.pago || { efectivo: 100, tarjeta: 0 }),
+        pagoDevolucion: pagoDefaultOrig,
+        giftDestinatario: giftDestinatario?.trim() || 'Cambio web',
+        ...(giftGenerada?.id ? { giftGeneradaId: giftGenerada.id } : {}),
+        costoEnvio: payload.costoEnvio || 0,
+        costoEnvioDevolucion: payload.costoEnvioDevolucion || 0,
+        costoEnvioNuevo: payload.costoEnvioNuevo || 0,
+        tipoEnvioDevolucion: payload.tipoEnvioDevolucion || null,
+        tipoEnvioNuevo: payload.tipoEnvioNuevo || null,
+        codigoPostalCliente: payload.codigoPostalCliente || null,
+      };
+
+      // Apply inventory changes
+      let nextInventory = [...inventory];
+      for (const dev of itemsDevueltos) {
+        const parsed = parseVariantFromDescripcion(dev.descripcion);
+        const color = dev.color || parsed.color;
+        const talle = dev.talle || parsed.talle;
+        nextInventory = nextInventory.map((inv: any) => adjustStockLine(inv, dev.id, dev.cantidad, color, talle, 'add'));
+      }
+      for (const neu of safeItemsNuevos) {
+        const parsed = parseVariantFromDescripcion(neu.descripcion);
+        const color = neu.color || parsed.color;
+        const talle = neu.talle || parsed.talle;
+        nextInventory = nextInventory.map((inv: any) => adjustStockLine(inv, neu.id, neu.cantidad, color, talle, 'subtract'));
+      }
+
+      const nextGiftCards = giftGenerada ? [...giftCards, giftGenerada] : giftCards;
+
+      // Remove undefined values and replace with null (Firestore doesn't accept undefined)
+      const sanitize = (obj: any): any => JSON.parse(JSON.stringify(obj, (k, v) => v === undefined ? null : v));
+
+      // Preparar actualización de orden original si existe
+      let updatedOriginalOrderPayload: any = null;
+      if (originalOrderData) {
+        let allExchanged = true;
+
+        const matchOrderItem = (item: any, dev: any) => {
+          const candId = item.productId || item.id;
+          const devId = dev.productId || dev.id;
+          const candSku = item.sku;
+          const devSku = dev.sku;
+
+          const devVariant = parseVariantFromDescripcion(dev.descripcion || '');
+          const devTalle = (dev.talle || devVariant.talle || '').toLowerCase().trim();
+          const devColor = (dev.color || devVariant.color || '').toLowerCase().trim();
+
+          const candVariant = parseVariantFromDescripcion(item.descripcion || '');
+          const candTalle = (item.talle || candVariant.talle || '').toLowerCase().trim();
+          const candColor = (item.color || candVariant.color || '').toLowerCase().trim();
+
+          const talleOk = (!devTalle && !candTalle) || (devTalle === candTalle);
+          const colorOk = (!devColor && !candColor) || (devColor === candColor);
+
+          if ((candId && devId && candId === devId) || (candSku && devSku && candSku !== '---' && candSku === devSku)) {
+            if (talleOk && colorOk) return true;
+            if (!devTalle && !candTalle && !devColor && !candColor) return true;
+          }
+
+          const candDesc = (item.descripcion || '').toLowerCase().replace(/\(.*\)/, '').trim();
+          const devDesc = (dev.descripcion || '').toLowerCase().replace(/\(.*\)/, '').trim();
+          if (candDesc && devDesc && candDesc === devDesc && talleOk && colorOk) {
+            return true;
+          }
+
+          return false;
+        };
+
+        const nextItems = (originalOrderData.items || []).map((item: any) => {
+          const dev = itemsDevueltos.find((d: any) => matchOrderItem(item, d));
+          if (dev) {
+             item.cantidadDevuelta = (item.cantidadDevuelta || 0) + dev.cantidad;
+          }
+          if ((item.cantidadDevuelta || 0) < item.cantidad) {
+             allExchanged = false;
+          }
+          return item;
+        });
+        
+        updatedOriginalOrderPayload = sanitize({
+           items: nextItems,
+           isExchanged: allExchanged,
+           estado: allExchanged ? 'Completado' : 'parcialmente_cambiado'
+        });
+      }
+
+      // Preparar nueva orden de cambio si se eligieron prendas nuevas
+      let newCambioOrderPayload: any = null;
+      let cambioOrderId: string | null = null;
+      let targetCustomerId: string = customerId || originalOrderData?.customerId || 'GUEST';
+
+      if (safeItemsNuevos.length > 0) {
+        cambioOrderId = `order_cambio_${Date.now()}`;
+        const targetCustomerEmail = payload.customerEmail || originalOrderData?.customerEmail || '';
+        const targetCustomerNombre = payload.customerNombre || originalOrderData?.customerNombre || giftDestinatario?.trim() || 'Cliente';
+        const targetCustomerTelefono = payload.customerTelefono || originalOrderData?.customerTelefono || '';
+
+        newCambioOrderPayload = sanitize({
+          id: cambioOrderId,
+          customerId: targetCustomerId,
+          customerEmail: targetCustomerEmail,
+          customerNombre: targetCustomerNombre,
+          customerTelefono: targetCustomerTelefono,
+          fecha: new Date().toISOString(),
+          tipoPedido: 'cambio_web',
+          ordenOrigenId: originalOrderId || ventaOriginalId || null,
+          saleId: saleId,
+          items: safeItemsNuevos.map((item: any) => {
+            const parsed = parseVariantFromDescripcion(item.descripcion || '');
+            return {
+              sku: item.sku || '---',
+              cantidad: item.cantidad,
+              precioUnitario: item.precioEfectivo || item.precioTarjeta || item.precio || 0,
+              talle: item.talle || parsed.talle || '',
+              color: item.color || parsed.color || '',
+            };
+          }),
+          itemsDevueltos: itemsDevueltos.map((item: any) => {
+            const parsed = parseVariantFromDescripcion(item.descripcion || '');
+            return {
+              productId: item.id || item.productId,
+              descripcion: item.descripcion,
+              sku: item.sku || '---',
+              cantidad: item.cantidad,
+              talle: item.talle || parsed.talle || '',
+              color: item.color || parsed.color || '',
+            };
+          }),
+          itemsNuevos: safeItemsNuevos,
+          total: Math.max(0, diferencia) || 0,
+          tipoEnvio: payload.tipoEnvioNuevo === 'recoleta' ? 'retiro' : payload.tipoEnvioNuevo === 'local' ? 'retiro' : (originalOrderData?.tipoEnvio || 'retiro'),
+          ...(originalOrderData?.direccionEnvio ? { direccionEnvio: originalOrderData.direccionEnvio } : {}),
+          costoEnvio: payload.costoEnvioNuevo || payload.costoEnvio || 0,
+          metodoPago: diferencia > 0 ? (payload.pago?.tarjeta === 100 ? 'Tarjeta / Ualá Bis' : 'Transferencia') : 'Cambio Directo',
+          estado: 'Confirmado',
+          giftCardGenerada: giftCodigo || null,
+          isExchanged: false,
+        });
+      }
+
+      // ─────────────────────────────────────────────────────────────────
+      // 3. TODAS LAS ESCRITURAS (WRITES) AL FINAL DE LA TRANSACCIÓN
+      // ─────────────────────────────────────────────────────────────────
+      transaction.update(showroomRef, sanitize({
+        inventory: nextInventory,
+        sales: [...sales, newSale],
+        giftCards: nextGiftCards,
+        lastSync: Date.now(),
+      }));
+
+      if (updatedOriginalOrderPayload && rootOrderRef) {
+        transaction.set(rootOrderRef, updatedOriginalOrderPayload, { merge: true });
+        if (custOrderRef) {
+          transaction.set(custOrderRef, updatedOriginalOrderPayload, { merge: true });
+        }
+      }
+
+      if (newCambioOrderPayload && cambioOrderId) {
+        const newOrderRef = showroomRef.collection('orders').doc(cambioOrderId);
+        transaction.set(newOrderRef, newCambioOrderPayload);
+
+        if (targetCustomerId && targetCustomerId !== 'GUEST') {
+          const custNewOrderRef = showroomRef.collection('customers').doc(targetCustomerId).collection('orders').doc(cambioOrderId);
+          transaction.set(custNewOrderRef, newCambioOrderPayload);
+        }
+      }
+    });
+
+    return { saleId, giftCodigo: giftCodigo || null };
+  } catch (error: any) {
+    functions.logger.error("Error en fulfillWebCambioServer:", error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError('internal', error.message || 'Error interno al procesar el cambio web.');
+  }
 });

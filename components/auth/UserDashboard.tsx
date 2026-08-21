@@ -318,10 +318,22 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
 
                 return activeOrders.map(order => (
                   <div key={order.id} className="border border-neutral-200 p-4 space-y-4 rounded-none bg-white animate-in fade-in duration-200">
-                    <div className="flex justify-between items-baseline pb-2.5 border-b border-neutral-100">
-                      <span className="text-[8px] tracking-[0.15em] uppercase text-neutral-400 font-light">
-                        {new Date(order.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                      </span>
+                    <div className="flex flex-wrap justify-between items-center gap-2 pb-2.5 border-b border-neutral-100">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[8px] tracking-[0.15em] uppercase text-neutral-400 font-light">
+                          {new Date(order.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        </span>
+                        {order.tipoPedido === 'cambio_web' && (
+                          <span className="text-[8px] tracking-[1px] uppercase px-2 py-0.5 font-bold bg-purple-50 text-purple-700 border border-purple-200 rounded">
+                            Producto de Cambio
+                          </span>
+                        )}
+                        {order.ordenOrigenId && (
+                          <span className="text-[8px] tracking-[1px] uppercase text-black/40 font-mono">
+                            Ref: #{order.ordenOrigenId.substring(0, 8).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[8px] tracking-[0.2em] uppercase px-2 py-0.5 font-light border border-black/20 text-black">
                         {isCancelledOrder(order.estado)
                           ? 'CANCELADO'
@@ -329,6 +341,10 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                           ? 'PENDIENTE'
                           : order.estado === 'PAID'
                           ? 'PAGADO'
+                          : order.estado === 'parcialmente_cambiado'
+                          ? 'CAMBIO PARCIAL'
+                          : order.estado === 'Completado'
+                          ? 'COMPLETADO'
                           : order.estado}
                       </span>
                     </div>
@@ -337,6 +353,8 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                       {order.items.map((item, idx) => {
                         const matchingProduct = inventory.find(inv => inv.id === item.productId || inv.sku === item.sku || inv.descripcion === item.descripcion);
                         const thumbnail = matchingProduct?.imagenes?.[0];
+                        const cantDev = item.cantidadDevuelta || 0;
+                        const cantDisp = item.cantidad - cantDev;
 
                         return (
                           <div key={idx} className="flex gap-4 items-center">
@@ -354,9 +372,16 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                               <p className="text-[9px] text-black/40 uppercase tracking-[1px] font-medium">
                                 {item.talle && `Talle ${item.talle}`} {item.color && `— ${item.color}`}
                               </p>
-                              <p className="text-[10px] text-black/60 font-semibold mt-0.5">
-                                {item.cantidad} x ${item.precioUnitario.toLocaleString('es-AR')}
-                              </p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <p className="text-[10px] text-black/60 font-semibold">
+                                  {item.cantidad} x ${item.precioUnitario.toLocaleString('es-AR')}
+                                </p>
+                                {cantDev > 0 && (
+                                  <span className="text-[8px] font-bold uppercase px-1.5 py-0.2 bg-amber-50 text-amber-800 border border-amber-200 rounded">
+                                    {cantDisp === 0 ? 'Cambiada' : `Cambiadas: ${cantDev} / Disp: ${cantDisp}`}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <div className="text-[12px] font-bold text-black flex-shrink-0">
                               ${(item.precioUnitario * item.cantidad).toLocaleString('es-AR')}
@@ -404,28 +429,41 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                           </a>
                         </div>
                       )}
-                      {!isGiftCardOrder(order) && (!!order.saleId || order.estado === 'Confirmado' || order.estado === 'Entregado') && (
-                        <button
-                          type="button"
-                          disabled={!!order.isExchanged}
-                          onClick={() => {
-                            if (order.isExchanged) return;
-                            const days = Math.floor((Date.now() - new Date(order.fecha).getTime()) / 86400000);
-                            if (days > 15) {
-                              showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
-                              return;
+                      {!isGiftCardOrder(order) && (!!order.saleId || order.estado === 'Confirmado' || order.estado === 'Entregado' || order.estado === 'parcialmente_cambiado') && (() => {
+                        const totalUnits = order.items.reduce((sum, i) => sum + i.cantidad, 0);
+                        const returnedUnits = order.items.reduce((sum, i) => sum + (i.cantidadDevuelta || 0), 0);
+                        const remainingUnits = totalUnits - returnedUnits;
+                        const isFullyExchanged = order.isExchanged || remainingUnits <= 0;
+
+                        return (
+                          <button
+                            type="button"
+                            disabled={isFullyExchanged}
+                            onClick={() => {
+                              if (isFullyExchanged) return;
+                              const days = Math.floor((Date.now() - new Date(order.fecha).getTime()) / 86400000);
+                              if (days > 15) {
+                                showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
+                                return;
+                              }
+                              onRequestExchange(order);
+                            }}
+                            className={`w-full mt-4 border py-3 text-[10px] tracking-[3px] uppercase font-bold transition-colors flex items-center justify-center gap-2 ${
+                              isFullyExchanged 
+                                ? 'border-black/20 text-black/30 bg-neutral-100 cursor-not-allowed' 
+                                : 'border-black hover:bg-black hover:text-white'
+                            }`}
+                          >
+                            <RefreshCw size={12} /> {
+                              isFullyExchanged
+                                ? 'Cambio Realizado'
+                                : returnedUnits > 0
+                                ? `Solicitar cambio (${remainingUnits} prenda${remainingUnits > 1 ? 's' : ''} restante${remainingUnits > 1 ? 's' : ''})`
+                                : 'Solicitar cambio'
                             }
-                            onRequestExchange(order);
-                          }}
-                          className={`w-full mt-4 border py-3 text-[10px] tracking-[3px] uppercase font-bold transition-colors flex items-center justify-center gap-2 ${
-                            order.isExchanged 
-                              ? 'border-black/20 text-black/30 bg-neutral-100 cursor-not-allowed' 
-                              : 'border-black hover:bg-black hover:text-white'
-                          }`}
-                        >
-                          <RefreshCw size={12} /> {order.isExchanged ? 'Cambio Realizado' : 'Solicitar cambio'}
-                        </button>
-                      )}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 ));

@@ -354,7 +354,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       const unsubscribe = onSnapshot(orderRef, (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          if (['PAID', 'APPROVED', 'Confirmada'].includes(data.estado)) {
+          if (['PAID', 'APPROVED', 'Confirmado', 'Confirmada'].includes(data.estado)) {
             localStorage.removeItem('ropero_last_pending_order');
             setPendingPaymentOrder(null);
             showAlert('¡Excelente! Tu pago ha sido acreditado y confirmado con éxito.', '¡Pago Exitoso!', 'success');
@@ -397,7 +397,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             const snap = await getDoc(cambioRef);
             if (snap.exists()) {
               const data = snap.data();
-              if (data.estado === 'Pendiente') {
+              if (data.estado === 'Pendiente' || data.estado === 'PENDING_PAYMENT') {
                 const { saleId, giftCodigo } = await fulfillWebCambio(PUBLIC_SHOWROOM_ID, data.payload);
                 await updateDoc(cambioRef, { estado: 'Confirmado', saleId });
 
@@ -417,14 +417,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                   }
                 }
 
-                if (data.originalOrderId && data.customerId) {
-                  try {
-                    const customerOrderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', data.customerId, 'orders', data.originalOrderId);
-                    await updateDoc(customerOrderRef, { isExchanged: true });
-                  } catch (err) {
-                    console.error('Error al actualizar isExchanged:', err);
-                  }
-                }
+                // The backend now handles updating the order's partial exchange state.
 
                 showAlert('¡Tu pago de la diferencia fue acreditado correctamente! El cambio fue procesado exitosamente.', '¡Pago y Cambio Exitoso!', 'success');
                 await refreshOrders();
@@ -454,7 +447,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           
           if (snap.exists()) {
             const data = snap.data();
-            if (data.estado === 'Pendiente') {
+            if (data.estado === 'Pendiente' || data.estado === 'PENDING_PAYMENT') {
               const fulfillPayload: any = {
                 fecha: data.fecha,
                 items: data.items,
@@ -466,13 +459,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
               await fulfillWebOrder(PUBLIC_SHOWROOM_ID, orderId, fulfillPayload);
               
-              // 1. Marcar como confirmada en orders oficiales
-              await updateDoc(orderRef, { estado: 'Confirmada' });
+              // 1. Marcar como confirmado en orders oficiales
+              await updateDoc(orderRef, { estado: 'Confirmado' });
               
-              // 2. Marcar como confirmada en orders del cliente
+              // 2. Marcar como confirmado en orders del cliente
               if (data.customerId && data.customerId !== 'GUEST') {
                  const customerOrderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', data.customerId, 'orders', orderId);
-                 await updateDoc(customerOrderRef, { estado: 'Confirmada' });
+                 await updateDoc(customerOrderRef, { estado: 'Confirmado' });
               }
 
               sendSaleConfirmationEmail(
@@ -496,8 +489,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
              // Verificar si ya estaba confirmado (por si recarga la pagina)
              const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', orderId);
              const snap = await getDoc(orderRef);
-             if (snap.exists() && snap.data().estado === 'Confirmada') {
-               // Ya está confirmada, no hacer nada más que un feedback silente
+             if (snap.exists() && (snap.data().estado === 'Confirmado' || snap.data().estado === 'Confirmada')) {
+               // Ya está confirmado, no hacer nada más que un feedback silente
                console.log('El pedido ya había sido confirmado.');
              }
           }
@@ -517,7 +510,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           const snap = await getDoc(orderRef);
           if (snap.exists()) {
             const data = snap.data();
-            if (data.estado === 'Confirmada') {
+            if (data.estado === 'Confirmado' || data.estado === 'Confirmada') {
               localStorage.removeItem('ropero_last_pending_order');
               showAlert('¡Tu pago fue acreditado exitosamente! El pedido ya está confirmado.', '¡Pago Exitoso!', 'success');
             } else {
@@ -775,7 +768,20 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
       return;
     }
+    const totalUnits = order.items.reduce((sum, i) => sum + i.cantidad, 0);
+    const returnedUnits = order.items.reduce((sum, i) => sum + (i.cantidadDevuelta || 0), 0);
+    if (order.isExchanged || (totalUnits > 0 && returnedUnits >= totalUnits)) {
+      showAlert('Todas las prendas de este pedido ya fueron cambiadas.', 'Cambio no disponible', 'info');
+      return;
+    }
+
     const originalItems = buildSaleItemsFromOrder(order, inventory);
+    const metodoPagoOriginal = order?.metodoPago?.toLowerCase() || '';
+    const isTransferenciaOrig = (order as any)?.pago 
+      ? (order as any).pago.efectivo === 100 
+      : (metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo'));
+    setExchangePaymentMethod(isTransferenciaOrig ? 'transferencia' : 'tarjeta');
+
     setExchangeSession({
       order,
       originalItems,
@@ -800,7 +806,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     setExchangeSuccessMsg(null);
   };
 
-  const toggleDevuelto = (item: SaleItem) => {
+  const toggleDevuelto = (item: SaleItem, disponible: number) => {
     if (!exchangeSession) return;
     setExchangeSession((prev) => {
       if (!prev) return prev;
@@ -817,14 +823,14 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       const qty = prev.cantDevueltasInput[item.id] ?? 1;
       return {
         ...prev,
-        itemsDevueltos: [...prev.itemsDevueltos, { ...item, cantidad: Math.min(qty, item.cantidad) }],
+        itemsDevueltos: [...prev.itemsDevueltos, { ...item, cantidad: Math.min(qty, disponible) }],
       };
     });
   };
 
-  const updateDevueltoQty = (item: SaleItem, qty: number) => {
+  const updateDevueltoQty = (item: SaleItem, qty: number, disponible: number) => {
     if (!exchangeSession) return;
-    const val = Math.min(Math.max(1, qty), item.cantidad);
+    const val = Math.min(Math.max(1, qty), disponible);
     setExchangeSession((prev) => {
       if (!prev) return prev;
       return {
@@ -845,7 +851,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     }
 
     const metodoPagoOriginal = exchangeSession.order?.metodoPago?.toLowerCase() || '';
-    const isTransferenciaDev = metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo');
+    const isTransferenciaDev = (exchangeSession.order as any)?.pago
+      ? (exchangeSession.order as any).pago.efectivo === 100
+      : (metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo'));
     const totalDev = sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaDev);
 
     const isTransferenciaNuevo = exchangePaymentMethod === 'transferencia';
@@ -875,6 +883,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     const diferencia = totalNuevo - totalDev + costoEnvioTotal;
 
     const ventaOriginalId = getOrderSaleId(exchangeSession.order)!;
+    const currentCustomerId = user?.uid || customerProfile?.id || exchangeSession.order.customerId;
+    const currentCustomerEmail = customerProfile?.email || user?.email || (exchangeSession.order as any)?.customerEmail || '';
+    const currentCustomerNombre = customerProfile?.nombre || user?.displayName || (exchangeSession.order as any)?.customerNombre || 'Cliente';
+    const currentCustomerTelefono = customerProfile?.telefono || (exchangeSession.order as any)?.customerTelefono || '';
 
     // CASO 0: Carrito vacío -> Canje directo por Gift Card (sin logística ni medio de pago)
     if (cart.length === 0) {
@@ -890,8 +902,12 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           itemsNuevos: [],
           diferencia: -totalDev,
           giftDestinatario: exchangeSession.giftDestinatario.trim(),
-          customerNombre: customerProfile?.nombre || user?.displayName || 'Cliente',
+          customerNombre: currentCustomerNombre,
+          customerEmail: currentCustomerEmail,
+          customerTelefono: currentCustomerTelefono,
           pago: isTransferenciaDev ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
+          originalOrderId: exchangeSession.order.id,
+          customerId: currentCustomerId,
         });
 
         let msg = `Cambio registrado en caja (${saleId}).`;
@@ -921,18 +937,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         }
 
         sendNotificationEmail(
-          `Canje por Gift Card - ${customerProfile?.nombre || 'Cliente'}`,
+          `Canje por Gift Card - ${currentCustomerNombre}`,
           `Se ha registrado un cambio por Gift Card.\nID de Venta (Caja): ${saleId}\nMonto Gift Card: $${totalDev}\n${giftCodigo ? `Gift Card generada: ${giftCodigo}` : ''}`
         );
-
-        if (user) {
-          try {
-            const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', user.uid, 'orders', exchangeSession.order.id);
-            await updateDoc(orderRef, { isExchanged: true });
-          } catch (err) {
-            console.error('Error al marcar orden como cambiada:', err);
-          }
-        }
 
         setExchangeSuccessMsg(msg);
         setExchangeSession(null);
@@ -979,7 +986,11 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           itemsNuevos,
           diferencia,
           giftDestinatario: exchangeSession.giftDestinatario,
-          customerNombre: customerProfile?.nombre || user?.displayName || 'Cliente',
+          customerNombre: currentCustomerNombre,
+          customerEmail: currentCustomerEmail,
+          customerTelefono: currentCustomerTelefono,
+          originalOrderId: exchangeSession.order.id,
+          customerId: currentCustomerId,
           pago: { efectivo: 0, tarjeta: 100 },
           ...shippingPayloadMeta,
         };
@@ -989,7 +1000,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           id: pendingCambioId,
           estado: 'Pendiente',
           originalOrderId: exchangeSession.order.id,
-          customerId: user?.uid || 'GUEST',
+          customerId: currentCustomerId,
           payload,
           fecha: new Date().toISOString(),
           totalDiferencia: diferencia,
@@ -998,9 +1009,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         const orderForUala = {
           id: pendingCambioId,
           total: Math.round(diferencia),
-          customerEmail: customerProfile?.email || user?.email || 'cambio@elropero.ar',
-          customerNombre: customerProfile?.nombre || user?.displayName || 'Cliente',
-          customerTelefono: customerProfile?.telefono || '',
+          customerEmail: currentCustomerEmail || 'cambio@elropero.ar',
+          customerNombre: currentCustomerNombre,
+          customerTelefono: currentCustomerTelefono,
         };
 
         const ualaPayment = await createUalaPayment(orderForUala, successUrl, failUrl);
@@ -1032,19 +1043,14 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           itemsNuevos,
           diferencia,
           giftDestinatario: exchangeSession.giftDestinatario,
-          customerNombre: customerProfile?.nombre,
+          customerNombre: currentCustomerNombre,
+          customerEmail: currentCustomerEmail,
+          customerTelefono: currentCustomerTelefono,
+          originalOrderId: exchangeSession.order.id,
+          customerId: currentCustomerId,
           pago: { efectivo: 100, tarjeta: 0 },
           ...shippingPayloadMeta,
         });
-
-        if (user) {
-          try {
-            const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', user.uid, 'orders', exchangeSession.order.id);
-            await updateDoc(orderRef, { isExchanged: true });
-          } catch (err) {
-            console.error('Error al marcar orden como cambiada:', err);
-          }
-        }
 
         const aliasStr = webSettings.mercadoPagoAlias ? `Alias: ${webSettings.mercadoPagoAlias}` : '';
         const cbuStr = webSettings.cbuData ? `CBU: ${webSettings.cbuData}` : '';
@@ -1063,7 +1069,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           : '\nLogística: Local Chivilcoy';
 
         sendNotificationEmail(
-          `Nuevo Cambio Web (Transferencia) - ${customerProfile?.nombre || 'Cliente'}`,
+          `Nuevo Cambio Web (Transferencia) - ${currentCustomerNombre}`,
           `Se ha registrado un cambio web por transferencia.\nID Venta: ${saleId}\nDiferencia: $${diferencia}${logisticaNotifStr}`
         );
 
@@ -1092,8 +1098,12 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         itemsNuevos,
         diferencia,
         giftDestinatario: exchangeSession.giftDestinatario,
-        customerNombre: customerProfile?.nombre,
-        pago: isTransferencia ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
+        customerNombre: currentCustomerNombre,
+        customerEmail: currentCustomerEmail,
+        customerTelefono: currentCustomerTelefono,
+        originalOrderId: exchangeSession.order.id,
+        customerId: currentCustomerId,
+        pago: isTransferenciaNuevo ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
         ...shippingPayloadMeta,
       });
 
@@ -1106,7 +1116,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
         const targetEmail = customerProfile?.email || user?.email;
         if (targetEmail) {
-          const destinatario = exchangeSession.giftDestinatario || customerProfile?.nombre || user?.displayName || 'Cliente';
+          const destinatario = exchangeSession.giftDestinatario || currentCustomerNombre;
           const montoGift = Math.abs(diferencia);
           sendGiftCardEmail(
             targetEmail,
@@ -1130,18 +1140,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         : 'Local Chivilcoy';
 
       sendNotificationEmail(
-        `Nuevo Cambio Web - ${customerProfile?.nombre || 'Cliente'}`,
+        `Nuevo Cambio Web - ${currentCustomerNombre}`,
         `Se ha registrado un nuevo cambio web.\nID de Venta (Caja): ${saleId}\nDiferencia: $${diferencia}\nLogística: ${logisticaNotifStr}\n${giftCodigo ? `Gift Card generada: ${giftCodigo}` : ''}`
       );
-
-      if (user) {
-        try {
-          const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'customers', user.uid, 'orders', exchangeSession.order.id);
-          await updateDoc(orderRef, { isExchanged: true });
-        } catch (err) {
-          console.error('Error al marcar orden como cambiada:', err);
-        }
-      }
 
       setExchangeSuccessMsg(msg);
       setExchangeSession(null);
@@ -1456,7 +1457,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const totalDevueltoExchange = React.useMemo(() => {
     if (!exchangeSession) return 0;
     const metodoPagoOriginal = exchangeSession.order?.metodoPago?.toLowerCase() || '';
-    const isTransferenciaDev = metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo');
+    const isTransferenciaDev = (exchangeSession.order as any)?.pago
+      ? (exchangeSession.order as any).pago.efectivo === 100
+      : (metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo'));
     return sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaDev);
   }, [exchangeSession]);
 
@@ -2720,33 +2723,40 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                   <p className="text-[9px] tracking-[1px] uppercase text-black/50">Pedido {new Date(exchangeSession.order.fecha).toLocaleDateString('es-AR')}</p>
                   <div className="space-y-2 mt-3 max-h-[220px] overflow-y-auto visible-scrollbar pr-1">
                     {exchangeSession.originalItems.map((item) => {
+                      const disponible = item.cantidad - ((item as any).cantidadDevuelta || 0);
+                      const isYaCambiada = disponible <= 0;
+                      
                       const sel = exchangeSession.itemsDevueltos.find((i) => i.id === item.id);
                       const qty = exchangeSession.cantDevueltasInput[item.id] ?? sel?.cantidad ?? 0;
                       return (
                         <label
                           key={item.id}
-                          className={`flex items-center gap-3 p-3 rounded border cursor-pointer text-[10px] uppercase tracking-[0.5px] transition-all ${
+                          className={`flex items-center gap-3 p-3 rounded border ${isYaCambiada ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} text-[10px] uppercase tracking-[0.5px] transition-all ${
                             sel ? 'border-black bg-black/5' : 'border-black/10 hover:border-black/30'
                           }`}
                         >
                           <input
                             type="checkbox"
                             checked={!!sel}
-                            onChange={() => toggleDevuelto(item)}
+                            disabled={isYaCambiada}
+                            onChange={() => !isYaCambiada && toggleDevuelto(item, disponible)}
                             className="accent-black"
                           />
-                          <span className="flex-1 truncate font-semibold text-black">{item.descripcion}</span>
+                          <span className="flex-1 truncate font-semibold text-black">
+                            {item.descripcion}
+                            {isYaCambiada && <span className="ml-2 text-[9px] text-red-500 lowercase">(Ya cambiada)</span>}
+                          </span>
                           <input
                             type="number"
                             min={1}
-                            max={item.cantidad}
-                            disabled={!sel}
+                            max={disponible}
+                            disabled={!sel || isYaCambiada}
                             value={qty || ''}
                             onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => updateDevueltoQty(item, parseInt(e.target.value, 10) || 1)}
+                            onChange={(e) => updateDevueltoQty(item, parseInt(e.target.value, 10) || 1, disponible)}
                             className="w-10 bg-transparent border border-black/20 rounded text-center text-[10px] text-black disabled:opacity-30"
                           />
-                          <span className="text-black/40">/ {item.cantidad}</span>
+                          <span className="text-black/40">/ {disponible}</span>
                         </label>
                       );
                     })}

@@ -121,7 +121,8 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
         items: orderItems,
         total: finalPrice, 
         tipoEnvio: 'retiro',
-        metodoPago: paymentMethod === 'transferencia' ? 'Ualá Bis' : 'Ualá Bis',
+        metodoPago: paymentMethod === 'transferencia' ? 'Transferencia' : 'Tarjeta / Ualá Bis',
+        pago: paymentMethod === 'transferencia' ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
         ualaPlan: null,
         estado: 'Pendiente' as const
       };

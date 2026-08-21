@@ -16,6 +16,10 @@ export interface WebCambioPayload {
   tipoEnvioDevolucion?: 'S' | 'D' | 'local' | 'recoleta';
   tipoEnvioNuevo?: 'S' | 'D' | 'local' | 'recoleta';
   codigoPostalCliente?: string;
+  originalOrderId?: string;
+  customerId?: string;
+  customerEmail?: string;
+  customerTelefono?: string;
 }
 
 /**

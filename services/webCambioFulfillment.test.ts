@@ -78,10 +78,10 @@ vi.mock('firebase/functions', () => ({
           else medioPagoOrigen = 'mixto';
         } else if (ventaOriginal?.metodoPago) {
           const mp = String(ventaOriginal.metodoPago).toLowerCase();
-          if (mp.includes('tarjeta') || mp.includes('uala') || mp.includes('crédito') || mp.includes('debito')) {
-            medioPagoOrigen = 'tarjeta';
-          } else {
+          if (mp.includes('transferencia') || mp.includes('efectivo')) {
             medioPagoOrigen = 'efectivo';
+          } else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
+            medioPagoOrigen = 'tarjeta';
           }
         }
 

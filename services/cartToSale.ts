@@ -27,6 +27,8 @@ export function cartLinesToSaleItems(
       precioEfectivo: c.product.ventaEfectivo,
       precioTarjeta: c.product.ventaTarjeta,
       descuento: disc,
+      talle: c.selectedTalle,
+      color: c.selectedColor,
     };
   });
 }

@@ -13,7 +13,15 @@ export { reserveWebOrder, releaseExpiredReservationsCron, fulfillWebCambioServer
 if (!admin.apps.length) {
   admin.initializeApp();
 }
-const db = admin.firestore();
+
+let _db: admin.firestore.Firestore | null = null;
+const db = new Proxy({}, {
+  get: (target, prop) => {
+    if (!_db) _db = admin.firestore();
+    const val = (_db as any)[prop];
+    return typeof val === 'function' ? val.bind(_db) : val;
+  }
+}) as admin.firestore.Firestore;
 
 // Assume Ualá Webhook sends data as a POST request
 // Payload usually contains { id: "payment_id", status: "APPROVED", external_reference: "orderId" }
@@ -232,6 +240,8 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
           precioEfectivo: oi.precioUnitario,
           precioTarjeta: oi.precioUnitario,
           descuento: 0,
+          talle: oi.talle,
+          color: oi.color,
         };
       });
 

@@ -351,7 +351,16 @@ const Sales: React.FC<SalesProps> = ({
   const totalDevuelto = React.useMemo(() => {
     if (!modoCambio || !ventaOriginal) return 0;
 
-    const pagoOriginalCalc = ventaOriginal.pago || { efectivo: 100, tarjeta: 0 };
+    let pagoOriginalCalc = ventaOriginal.pago;
+    if (!pagoOriginalCalc && ventaOriginal.metodoPago) {
+      const mp = String(ventaOriginal.metodoPago).toLowerCase();
+      if (mp.includes('transferencia') || mp.includes('efectivo')) {
+        pagoOriginalCalc = { efectivo: 100, tarjeta: 0 };
+      } else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
+        pagoOriginalCalc = { efectivo: 0, tarjeta: 100 };
+      }
+    }
+    pagoOriginalCalc = pagoOriginalCalc || { efectivo: 100, tarjeta: 0 };
     const efePerc = pagoOriginalCalc.efectivo ?? 100;
     const tarPerc = pagoOriginalCalc.tarjeta ?? 0;
 
@@ -390,15 +399,15 @@ const Sales: React.FC<SalesProps> = ({
   const diferenciaAbs = Math.abs(diferenciaCambio);
 
   // Label del medio de pago usado para el valor devuelto
-const pagoOriginal = ventaOriginal?.pago;
+  const pagoOriginal = ventaOriginal?.pago || (ventaOriginal?.metodoPago?.toLowerCase().includes('tarjeta') ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 });
 
-const devolucionLabel = pagoOriginal
-  ? pagoOriginal.efectivo === 100
-    ? 'E'
-    : pagoOriginal.tarjeta === 100
-    ? 'T'
-    : `E ${pagoOriginal.efectivo}% / T ${pagoOriginal.tarjeta}%`
-  : '';
+  const devolucionLabel = pagoOriginal
+    ? pagoOriginal.efectivo === 100
+      ? 'E'
+      : pagoOriginal.tarjeta === 100
+      ? 'T'
+      : `E ${pagoOriginal.efectivo}% / T ${pagoOriginal.tarjeta}%`
+    : '';
 
   const etiquetaDiferencia =
     diferenciaCambio > 0 ? 'A PAGAR' : diferenciaCambio < 0 ? 'A FAVOR (GIFT)' : 'SIN DIFERENCIA';
@@ -1373,8 +1382,18 @@ const devolucionLabel = pagoOriginal
                       setItemsDevueltos([]);
                       setCantDevueltasInput({});
                       setCart([]);
-                      setPagoEfectivo(100);
-                      setPagoTarjeta(0);
+                      let origPago = s.pago;
+                      if (!origPago && s.metodoPago) {
+                        const mp = String(s.metodoPago).toLowerCase();
+                        if (mp.includes('transferencia') || mp.includes('efectivo')) {
+                          origPago = { efectivo: 100, tarjeta: 0 };
+                        } else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
+                          origPago = { efectivo: 0, tarjeta: 100 };
+                        }
+                      }
+                      origPago = origPago || { efectivo: 100, tarjeta: 0 };
+                      setPagoEfectivo(origPago.efectivo ?? 100);
+                      setPagoTarjeta(origPago.tarjeta ?? 0);
                       setGiftCardSeleccionada(null);
                       setGiftDestinatario('');
                     }}
