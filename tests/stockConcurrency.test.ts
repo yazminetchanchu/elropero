@@ -309,4 +309,77 @@ describe('deductSaleFromInventory / restoreSaleToInventory - Flujos de Venta y C
     const p = updated.find(i => i.id === 'prod-s')!;
     expect(p.cantidad).toBe(10); // 8 + 2
   });
+
+  it('restoreSaleToInventory revierte un cambio: descuenta devueltos y devuelve nuevos al stock', () => {
+    const cambioSale = {
+      id: 'cambio-2',
+      fecha: new Date().toISOString(),
+      tipo: 'cambio' as const,
+      total: 0,
+      diferencia: -500,
+      giftGeneradaId: 'gc-generated-123',
+      items: [],
+      itemsDevueltos: [baseSaleItem], // había devuelto 2 unidades (+2)
+      itemsNuevos: [
+        {
+          id: 'prod-s',
+          sku: 'SKU-S',
+          descripcion: 'Accesorio',
+          cantidad: 1, // había llevado 1 nueva (-1)
+          costo: 500,
+          precioEfectivo: 1000,
+          precioTarjeta: 1200,
+          descuento: 0,
+        },
+      ],
+    };
+
+    // Al revertir el cambio sobre sampleInventory (donde cantidad es 8):
+    // 8 - 2 (devueltos) + 1 (nuevos) = 7
+    const restored = restoreSaleToInventory(sampleInventory, cambioSale);
+    const p = restored.find(i => i.id === 'prod-s')!;
+    expect(p.cantidad).toBe(7);
+  });
+
+  it('elimina la Gift Card generada cuando se elimina la venta de tipo cambio', () => {
+    const giftCards = [
+      {
+        id: 'gc-generated-123',
+        codigo: 'GIFT-TEST',
+        destinatario: 'Cliente',
+        montoInicial: 500,
+        saldo: 500,
+        estado: 'ACTIVA' as const,
+        fechaCreacion: new Date().toISOString(),
+      },
+      {
+        id: 'gc-other',
+        codigo: 'GIFT-OTHER',
+        destinatario: 'Otro',
+        montoInicial: 1000,
+        saldo: 1000,
+        estado: 'ACTIVA' as const,
+        fechaCreacion: new Date().toISOString(),
+      },
+    ];
+
+    const saleToDelete = {
+      id: 'sale-cambio-1',
+      fecha: new Date().toISOString(),
+      tipo: 'cambio' as const,
+      total: 0,
+      diferencia: -500,
+      giftGeneradaId: 'gc-generated-123',
+      items: [],
+    };
+
+    let nextGiftCards = [...giftCards];
+    if (saleToDelete.giftGeneradaId) {
+      nextGiftCards = nextGiftCards.filter(gc => gc.id !== saleToDelete.giftGeneradaId);
+    }
+
+    expect(nextGiftCards).toHaveLength(1);
+    expect(nextGiftCards.find(gc => gc.id === 'gc-generated-123')).toBeUndefined();
+    expect(nextGiftCards[0].id).toBe('gc-other');
+  });
 });

@@ -2421,9 +2421,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                             ? 'Añadir al carrito'
                             : 'Seleccioná opciones'}
                       </button>
-                      {hasSelection && liveVariantStock > 0 && liveVariantStock <= 3 && (
-                        <p className="text-center text-[9px] tracking-[0.15em] uppercase text-amber-600 font-light">
-                          ¡Quedan solo {liveVariantStock} {liveVariantStock === 1 ? 'unidad' : 'unidades'}!
+                      {hasSelection && liveVariantStock > 0 && liveVariantStock <= 2 && (
+                        <p className="text-center text-[9px] tracking-[0.15em] uppercase text-[#7C5A3E] font-medium">
+                          ¡Quedan pocas unidades!
                         </p>
                       )}
                     </>
@@ -2735,7 +2735,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                           />
                           <span className="flex-1 truncate font-semibold text-black">
                             {item.descripcion}
-                            {isYaCambiada && <span className="ml-2 text-[9px] text-red-500 lowercase">(Ya cambiada)</span>}
+                            {isYaCambiada && <span className="ml-2 text-[9px] text-[#7C5A3E] lowercase font-medium">(Ya cambiada)</span>}
                           </span>
                           <input
                             type="number"

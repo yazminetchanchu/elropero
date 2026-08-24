@@ -925,7 +925,8 @@ const App: React.FC = () => {
     const saleId = `sale_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const newSale: Sale = {
       ...saleData,
-      id: saleId
+      id: saleId,
+      ...(giftGenerada?.id ? { giftGeneradaId: giftGenerada.id } : {})
     };
   
     const nextInv = deductSaleFromInventory(inventory, newSale);
@@ -972,11 +973,10 @@ const App: React.FC = () => {
   // =======================
   // 🗑️ DELETE SALE (REVERSA CONTABLE COMPLETA)
   // =======================
-const handleDeleteSale = (saleId: string) => {
-  setSales(prevSales => {
-    const sale = prevSales.find(s => s.id === saleId);
-    if (!sale) return prevSales;
-    
+  const handleDeleteSale = async (saleId: string) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+
     // 1. Devolver stock de forma atómica y completa
     const nextInv = restoreSaleToInventory(inventory, sale);
 
@@ -1004,14 +1004,20 @@ const handleDeleteSale = (saleId: string) => {
     }
 
     // 4. Si se generó una gift card en este cambio, eliminarla
-    // 4. Eliminar la venta
-    const nextSales = prevSales.filter(s => s.id !== saleId);
+    if (sale.giftGeneradaId) {
+      nextGiftCards = nextGiftCards.filter(gc => gc.id !== sale.giftGeneradaId);
+    }
 
-    // 5. Guardar todo
-    handleDataChange(nextInv, nextSales, expenses, nextGiftCards).catch(console.error);
-    return nextSales;
-  });
-};
+    // 5. Eliminar la venta
+    const nextSales = sales.filter(s => s.id !== saleId);
+
+    // 6. Guardar todo y sincronizar de forma asíncrona fuera de setters
+    try {
+      await handleDataChange(nextInv, nextSales, expenses, nextGiftCards);
+    } catch (error) {
+      console.error('❌ Error al sincronizar la eliminación de venta:', error);
+    }
+  };
 
   // =======================
   // EXPENSES

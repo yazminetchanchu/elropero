@@ -114,11 +114,8 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
   return { success: true, message: 'Stock reservado con éxito.' };
 });
 
-// 2. releaseExpiredReservationsCron (PubSub Cron)
-// Ejecuta cada 5 minutos para buscar órdenes expiradas y devolver el stock.
-export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5 minutes').onRun(async (context) => {
-  const db = admin.firestore();
-  const showroomId = process.env.SHOWROOM_ID || 'ROPERO';
+// ── Core: Liberación de reservas vencidas (compartida entre Cron y Callable) ──
+export async function executeReleaseExpiredReservations(db: admin.firestore.Firestore, showroomId: string) {
   const showroomRef = db.collection('showrooms').doc(showroomId);
   const ordersCol = showroomRef.collection('orders');
   
@@ -144,19 +141,25 @@ export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5
   });
 
   if (expiredDocs.length === 0) {
-    console.log('[Cron] No hay reservas expiradas.');
-    return null;
+    console.log(`[ReleaseExpired] No hay reservas expiradas para el showroom ${showroomId}.`);
+    return { releasedCount: 0, success: true };
   }
 
-  console.log(`[Cron] Encontradas ${expiredDocs.length} reservas expiradas. Procesando...`);
+  console.log(`[ReleaseExpired] Encontradas ${expiredDocs.length} reservas expiradas en ${showroomId}. Procesando...`);
+  let releasedCount = 0;
 
   // Devolvemos el stock orden por orden usando transacciones
   for (const docSnap of expiredDocs) {
-
     const data = docSnap.data();
     
     try {
       await db.runTransaction(async (transaction) => {
+        const freshDoc = await transaction.get(docSnap.ref);
+        if (!freshDoc.exists) return;
+        const freshData = freshDoc.data() || {};
+        const isStillPending = freshData.estado === 'PENDING_PAYMENT' || freshData.estado === 'Pendiente';
+        if (!isStillPending) return;
+
         const srSnap = await transaction.get(showroomRef);
         if (!srSnap.exists) return;
 
@@ -199,8 +202,8 @@ export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5
           nextInventory[idx] = item;
         }
 
-        // Marcar como Cancelado sin devolver stock
-        transaction.update(showroomRef, { lastSync: Date.now() });
+        // Marcar como Cancelado y devolver stock restaurado al showroom
+        transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
         transaction.update(docSnap.ref, { estado: 'Cancelado', cancelReason: 'expired' });
 
         if (data.customerId && data.customerId !== 'GUEST') {
@@ -208,13 +211,32 @@ export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5
            transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired' }, { merge: true });
         }
       });
-        console.log(`[Cron] Reserva ${docSnap.id} cancelada. Stock no devuelto.`);
+      releasedCount++;
+      console.log(`[ReleaseExpired] Reserva ${docSnap.id} cancelada y stock restaurado.`);
     } catch (e) {
-      console.error(`[Cron] Error al cancelar reserva ${docSnap.id}:`, e);
+      console.error(`[ReleaseExpired] Error al cancelar reserva ${docSnap.id}:`, e);
     }
   }
 
+  return { releasedCount, success: true };
+}
+
+// 2. releaseExpiredReservationsCron (PubSub Cron)
+// Ejecuta cada 5 minutos para buscar órdenes expiradas y devolver el stock.
+export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5 minutes').onRun(async (context) => {
+  const db = admin.firestore();
+  const showroomId = process.env.SHOWROOM_ID || 'ROPERO';
+  await executeReleaseExpiredReservations(db, showroomId);
   return null;
+});
+
+// 2b. releaseExpiredReservationsServer (Callable HTTPS)
+// Endpoint seguro bajo demanda para clientes frontend (evita violaciones de reglas de seguridad de Firestore)
+export const releaseExpiredReservationsServer = functions.https.onCall(async (data, context) => {
+  const db = admin.firestore();
+  const showroomId = data?.showroomId || process.env.SHOWROOM_ID || 'ROPERO';
+  const result = await executeReleaseExpiredReservations(db, showroomId);
+  return result;
 });
 
 // ── Helper: parse variant from description (replicates frontend cartToSale.ts) ──

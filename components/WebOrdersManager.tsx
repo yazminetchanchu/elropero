@@ -437,7 +437,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
     switch (status) {
       case 'parcialmente_cambiado':
         return (
-          <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-amber-300">
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-[#F5F0EB] text-[#7C5A3E] text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-[#E3D7CB]">
             <RefreshCw size={11} /> Parcialmente Cambiado
           </span>
         );
@@ -627,7 +627,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                     #{order.id.substring(0, 8).toUpperCase()}
                   </span>
                   {order.tipoPedido === 'cambio_web' && (
-                    <span className="flex items-center gap-1 px-2.5 py-0.5 bg-purple-100 text-purple-800 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-purple-300">
+                    <span className="flex items-center gap-1 px-2.5 py-0.5 bg-[#F5F0EB] text-[#7C5A3E] text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-[#E3D7CB]">
                       <RefreshCw size={10} /> Cambio Web
                     </span>
                   )}
@@ -704,14 +704,14 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
               
               {/* Cambio Web Info Banner */}
               {selectedOrder.tipoPedido === 'cambio_web' && (
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="bg-[#FAF7F2] border border-[#E8DFD5] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="p-2 bg-purple-100 text-purple-700 rounded-lg">
+                    <div className="p-2 bg-[#F3ECE4] text-[#7C5A3E] rounded-lg">
                       <RefreshCw size={18} />
                     </div>
                     <div>
-                      <p className="text-xs font-bold uppercase text-purple-900 tracking-wider">Pedido generado por Cambio Web</p>
-                      <p className="text-[10px] text-purple-700">Este pedido fue creado a partir del canje/cambio de prendas de una compra previa.</p>
+                      <p className="text-xs font-bold uppercase text-[#5C3F28] tracking-wider">Pedido generado por Cambio Web</p>
+                      <p className="text-[10px] text-[#7C5A3E]">Este pedido fue creado a partir del canje/cambio de prendas de una compra previa.</p>
                     </div>
                   </div>
                   {selectedOrder.ordenOrigenId && (
@@ -722,7 +722,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                         if (orig) setSelectedOrder(orig);
                         else showAlert(`Orden original asociada: #${selectedOrder.ordenOrigenId.toUpperCase()}`, 'Orden Original', 'info');
                       }}
-                      className="px-3 py-1.5 bg-purple-700 text-white text-[9px] font-bold uppercase tracking-wider rounded-lg hover:bg-purple-800 transition-colors self-start sm:self-auto flex items-center gap-1 cursor-pointer"
+                      className="px-3 py-1.5 bg-[#7C5A3E] text-white text-[9px] font-bold uppercase tracking-wider rounded-lg hover:bg-[#684930] transition-colors self-start sm:self-auto flex items-center gap-1 cursor-pointer"
                     >
                       <ExternalLink size={11} /> Ver Orden Origen #{selectedOrder.ordenOrigenId.substring(0, 8).toUpperCase()}
                     </button>
@@ -887,7 +887,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                           </p>
                           {cantDev > 0 && (
                             <div className="mt-1">
-                              <span className="text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-100 text-amber-900 rounded border border-amber-200 inline-block">
+                              <span className="text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 bg-[#F5F0EB] text-[#7C5A3E] rounded border border-[#E3D7CB] inline-block">
                                 {cantDisp === 0 ? 'Cambiada totalmente' : `Cambiadas: ${cantDev} u. · Disponibles: ${cantDisp} u.`}
                               </span>
                             </div>

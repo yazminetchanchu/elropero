@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyAdmin2FACode = exports.sendAdmin2FACode = exports.requestWelcomeEmail = exports.sendCustomWelcomeEmail = exports.requestPasswordReset = exports.sendCustomPasswordResetEmail = exports.processEmailQueue = exports.createUalaCheckout = exports.ualaWebhook = exports.fulfillWebOrderServer = exports.fulfillWebCambioServer = exports.releaseExpiredReservationsCron = exports.reserveWebOrder = exports.obtenerTracking = exports.generarEnvioManual = exports.obtenerEtiquetaPdf = exports.importarEnvioMiCorreo = exports.obtenerSucursales = exports.cotizarEnvio = void 0;
+exports.verifyAdmin2FACode = exports.sendAdmin2FACode = exports.requestWelcomeEmail = exports.sendCustomWelcomeEmail = exports.requestPasswordReset = exports.sendCustomPasswordResetEmail = exports.processEmailQueue = exports.createUalaCheckout = exports.ualaWebhook = exports.fulfillWebOrderServer = exports.fulfillWebCambioServer = exports.releaseExpiredReservationsServer = exports.releaseExpiredReservationsCron = exports.reserveWebOrder = exports.obtenerTracking = exports.generarEnvioManual = exports.obtenerEtiquetaPdf = exports.importarEnvioMiCorreo = exports.obtenerSucursales = exports.cotizarEnvio = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const nodemailer = __importStar(require("nodemailer"));
@@ -51,6 +51,7 @@ const micorreo_2 = require("./micorreo");
 var orders_1 = require("./orders");
 Object.defineProperty(exports, "reserveWebOrder", { enumerable: true, get: function () { return orders_1.reserveWebOrder; } });
 Object.defineProperty(exports, "releaseExpiredReservationsCron", { enumerable: true, get: function () { return orders_1.releaseExpiredReservationsCron; } });
+Object.defineProperty(exports, "releaseExpiredReservationsServer", { enumerable: true, get: function () { return orders_1.releaseExpiredReservationsServer; } });
 Object.defineProperty(exports, "fulfillWebCambioServer", { enumerable: true, get: function () { return orders_1.fulfillWebCambioServer; } });
 Object.defineProperty(exports, "fulfillWebOrderServer", { enumerable: true, get: function () { return orders_1.fulfillWebOrderServer; } });
 if (!admin.apps.length) {

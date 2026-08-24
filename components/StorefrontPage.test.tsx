@@ -271,6 +271,52 @@ describe('StorefrontPage', () => {
     // Debe haber eliminado ropero_last_pending_order de localStorage
     expect(localStorage.getItem('ropero_last_pending_order')).toBeNull();
   });
+
+  it('no muestra la cantidad numérica de unidades restantes y muestra el cartel "¡Quedan pocas unidades!" solo cuando quedan 2 o menos', () => {
+    const mockInventory = [
+      {
+        id: 'prod1',
+        sku: 'TEST_STOCK',
+        descripcion: 'Vestido Stock Test',
+        proveedor: 'Prov',
+        categoria: 'VESTIDOS',
+        cantidad: 2,
+        costo: 500,
+        ventaEfectivo: 1000,
+        ventaTarjeta: 1200,
+        talles: ['S', 'M'],
+        colores: ['ROJO'],
+        stockPorVariante: {
+          'S-ROJO': 2,
+          'M-ROJO': 4
+        },
+        imagenes: [],
+        visible: true
+      }
+    ];
+
+    const mockSettings = { storeName: 'EL ROPERO STORE' };
+
+    render(
+      <BrowserRouter>
+        <StorefrontPage inventoryProp={mockInventory as any} settingsProp={mockSettings as any} />
+      </BrowserRouter>
+    );
+
+    // Abrir modal de detalle
+    fireEvent.click(screen.getByText('Ver Detalle'));
+
+    // Para talle S (stock = 2): debe mostrar "¡Quedan pocas unidades!" y NO debe decir "Quedan solo 2 unidades" ni "2 unidades"
+    expect(screen.getByText('¡Quedan pocas unidades!')).toBeInTheDocument();
+    expect(screen.queryByText(/Quedan solo 2/i)).not.toBeInTheDocument();
+
+    // Seleccionar talle M (stock = 4): NO debe mostrar "¡Quedan pocas unidades!" ni la cantidad numérica
+    const btnM = screen.getByRole('button', { name: /^M$/i });
+    fireEvent.click(btnM);
+
+    expect(screen.queryByText('¡Quedan pocas unidades!')).not.toBeInTheDocument();
+    expect(screen.queryByText(/4 unidades/i)).not.toBeInTheDocument();
+  });
 });
 
 

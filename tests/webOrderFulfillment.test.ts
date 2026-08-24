@@ -259,108 +259,32 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
   });
 
   describe('releaseExpiredReservations', () => {
-    it('libera reservas expiradas devolviendo el stock al showroom y cancelando la orden', async () => {
-      const pastExpiresAt = new Date(Date.now() - 100000).toISOString();
-      const mockExpiredOrderDoc = {
-        id: 'ord-expired-1',
-        ref: 'showrooms/ROPERO/orders/ord-expired-1',
-        data: () => ({
-          estado: 'Pendiente',
-          expiresAt: pastExpiresAt,
-          items: [
-            {
-              productId: 'prod-1',
-              cantidad: 2,
-              talle: 'S',
-              color: 'Negro',
-            },
-          ],
-        }),
-      };
-
-      mockGetDocs.mockResolvedValueOnce({
-        docs: [mockExpiredOrderDoc],
-      });
-
-      let updatedInventory: InventoryItem[] = [];
-
-      mockRunTransaction.mockImplementation(async (_db, transactionCallback) => {
-        const transaction = {
-          get: vi.fn().mockResolvedValue({
-            exists: () => true,
-            data: () => ({
-              inventory: JSON.parse(JSON.stringify(sampleInventory)), // S-Negro=3, cantidad=5
-              sales: [],
-            }),
-          }),
-          update: vi.fn((ref, data) => {
-            if (data.inventory) {
-              updatedInventory = data.inventory;
-            }
-          }),
-          set: vi.fn(),
-        };
-        return await transactionCallback(transaction);
+    it('invoca la Cloud Function releaseExpiredReservationsServer con el showroomId especificado', async () => {
+      mockHttpsCallableFn.mockResolvedValueOnce({
+        data: {
+          success: true,
+          releasedCount: 2,
+        },
       });
 
       await releaseExpiredReservations('ROPERO');
 
-      expect(mockRunTransaction).toHaveBeenCalled();
-      // Devuelve 2 unidades al stock de S-Negro (3 + 2 = 5) y cantidad total (5 + 2 = 7)
-      const prod1 = updatedInventory.find((i) => i.id === 'prod-1');
-      expect(prod1?.stockPorVariante?.['S-Negro']).toBe(5);
-      expect(prod1?.cantidad).toBe(7);
+      expect(mockHttpsCallableFn).toHaveBeenCalledWith({
+        showroomId: 'ROPERO',
+      });
     });
 
-    it('libera reservas en estado PENDING_PAYMENT o por fecha mayor a 15 minutos', async () => {
-      const pastFecha = new Date(Date.now() - 20 * 60 * 1000).toISOString();
-      const mockPendingPaymentDoc = {
-        id: 'ord-expired-2',
-        ref: 'showrooms/ROPERO/orders/ord-expired-2',
-        data: () => ({
-          estado: 'PENDING_PAYMENT',
-          fecha: pastFecha,
-          items: [
-            {
-              productId: 'prod-1',
-              cantidad: 1,
-              talle: 'S',
-              color: 'Negro',
-            },
-          ],
-        }),
-      };
+    it('maneja errores gracefully sin lanzar excepciones no controladas al cliente', async () => {
+      mockHttpsCallableFn.mockRejectedValueOnce(new Error('Network error'));
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      mockGetDocs.mockResolvedValueOnce({
-        docs: [mockPendingPaymentDoc],
-      });
+      await expect(releaseExpiredReservations('ROPERO')).resolves.toBeUndefined();
 
-      let updatedInventory: InventoryItem[] = [];
-
-      mockRunTransaction.mockImplementation(async (_db, transactionCallback) => {
-        const transaction = {
-          get: vi.fn().mockResolvedValue({
-            exists: () => true,
-            data: () => ({
-              inventory: JSON.parse(JSON.stringify(sampleInventory)),
-              sales: [],
-            }),
-          }),
-          update: vi.fn((ref, data) => {
-            if (data.inventory) {
-              updatedInventory = data.inventory;
-            }
-          }),
-          set: vi.fn(),
-        };
-        return await transactionCallback(transaction);
-      });
-
-      await releaseExpiredReservations('ROPERO');
-
-      expect(mockRunTransaction).toHaveBeenCalled();
-      const prod1 = updatedInventory.find((i) => i.id === 'prod-1');
-      expect(prod1?.stockPorVariante?.['S-Negro']).toBe(4); // 3 + 1
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Error al invocar releaseExpiredReservationsServer:',
+        expect.any(Error)
+      );
+      consoleSpy.mockRestore();
     });
   });
 

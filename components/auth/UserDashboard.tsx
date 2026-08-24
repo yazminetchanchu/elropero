@@ -324,7 +324,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                           {new Date(order.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                         </span>
                         {order.tipoPedido === 'cambio_web' && (
-                          <span className="text-[8px] tracking-[1px] uppercase px-2 py-0.5 font-bold bg-purple-50 text-purple-700 border border-purple-200 rounded">
+                          <span className="text-[8px] tracking-[1px] uppercase px-2 py-0.5 font-bold bg-[#F5F0EB] text-[#7C5A3E] border border-[#E3D7CB] rounded">
                             Producto de Cambio
                           </span>
                         )}
@@ -377,7 +377,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                                   {item.cantidad} x ${item.precioUnitario.toLocaleString('es-AR')}
                                 </p>
                                 {cantDev > 0 && (
-                                  <span className="text-[8px] font-bold uppercase px-1.5 py-0.2 bg-amber-50 text-amber-800 border border-amber-200 rounded">
+                                  <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 bg-[#F5F0EB] text-[#7C5A3E] border border-[#E3D7CB] rounded">
                                     {cantDisp === 0 ? 'Cambiada' : `Cambiadas: ${cantDev} / Disp: ${cantDisp}`}
                                   </span>
                                 )}

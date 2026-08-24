@@ -365,41 +365,18 @@ export function isOrderExpired(order: { estado?: string; expiresAt?: string; fec
   return false;
 }
 
-export async function releaseExpiredReservations(showroomId: string) {
-  const ordersCol = collection(db, 'showrooms', showroomId, 'orders');
-  const snap = await getDocs(ordersCol);
-  
-  const expiredDocs = snap.docs.filter(d => {
-    const data = d.data();
-    return isOrderExpired(data);
-  });
-
-  if (expiredDocs.length === 0) return;
-
-  for (const d of expiredDocs) {
-    const data = d.data();
-    const showroomRef = doc(db, 'showrooms', showroomId);
-    
-    try {
-      await runTransaction(db, async (transaction) => {
-        const sr = await transaction.get(showroomRef);
-        if (!sr.exists()) return;
-        const srData = sr.data() as DatabaseState;
-        
-        const nextInv = restoreInventory(srData.inventory || [], data.items || []);
-        transaction.update(showroomRef, { inventory: nextInv, lastSync: Date.now() });
-        transaction.update(d.ref, { estado: 'Cancelado', cancelReason: 'expired' });
-        
-        // Update in customer profile if exists
-        if (data.customerId && data.customerId !== 'GUEST') {
-           const customerOrderRef = doc(db, 'showrooms', showroomId, 'customers', data.customerId, 'orders', d.id);
-           transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired' }, { merge: true });
-        }
-      });
-      console.log(`Reserva ${d.id} expirada, pedido cancelado y stock restaurado.`);
-    } catch (e) {
-      console.error(`Error liberando reserva ${d.id}:`, e);
+export async function releaseExpiredReservations(showroomId: string): Promise<void> {
+  const releaseFn = httpsCallable<{ showroomId: string }, { releasedCount: number; success: boolean }>(
+    functions,
+    'releaseExpiredReservationsServer'
+  );
+  try {
+    const result = await releaseFn({ showroomId });
+    if (result.data?.releasedCount && result.data.releasedCount > 0) {
+      console.log(`[releaseExpiredReservations] Se liberaron ${result.data.releasedCount} reservas expiradas en el servidor.`);
     }
+  } catch (e) {
+    console.error('Error al invocar releaseExpiredReservationsServer:', e);
   }
 }
 
