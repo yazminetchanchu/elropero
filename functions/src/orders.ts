@@ -22,7 +22,7 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
     const existingOrderSnap = await transaction.get(orderRef);
     if (existingOrderSnap.exists) {
       const existingData = existingOrderSnap.data() || {};
-      if (existingData.estado === 'PENDING_PAYMENT' || existingData.estado === 'Confirmado') {
+      if (existingData.estado === 'PENDING_PAYMENT' || existingData.estado === 'pending_transfer' || existingData.estado === 'Confirmado') {
         console.log(`[reserveWebOrder] Orden ${orderId} ya está en estado '${existingData.estado}'. Omitiendo reserva duplicada.`);
         return; // Stock ya fue descontado previamente
       }
@@ -45,38 +45,38 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
 
       const idx = nextInventory.findIndex(i => i.id === oi.productId);
       if (idx === -1) {
-        throw new functions.https.HttpsError('failed-precondition', `El producto ${oi.descripcion} no existe en el inventario.`);
+        throw new functions.https.HttpsError('not-found', `El producto ${oi.descripcion} ya no existe en el catálogo.`);
       }
 
       const item = { ...nextInventory[idx] };
       const reqQty = oi.cantidad || 1;
 
-      // Descontar por variante si tiene
+      // Descuento específico por variante
       if (item.stockPorVariante && oi.talle && oi.color) {
         const varKey = `${oi.talle}-${oi.color}`;
         const matchKey = Object.keys(item.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase()) || varKey;
-        
-        const currentQty = item.stockPorVariante[matchKey] || 0;
-        if (currentQty < reqQty) {
-          throw new functions.https.HttpsError('failed-precondition', `No hay suficiente stock de ${oi.descripcion} (Variante: ${matchKey}). Disponible: ${currentQty}, Requerido: ${reqQty}`);
+        const currentVarStock = item.stockPorVariante[matchKey] || 0;
+
+        if (currentVarStock < reqQty) {
+          throw new functions.https.HttpsError('failed-precondition', `No hay suficiente stock para la variante ${oi.talle} / ${oi.color} de ${item.descripcion}. Disponible: ${currentVarStock}, Requerido: ${reqQty}`);
         }
+
         item.stockPorVariante = { ...item.stockPorVariante };
         item.stockPorVariante[matchKey] -= reqQty;
 
         if (item.coloresStock && oi.color) {
           const cKey = Object.keys(item.coloresStock).find(k => k.toLowerCase() === oi.color.trim().toLowerCase()) || oi.color.trim().toUpperCase();
-          if (item.coloresStock[cKey] !== undefined) {
-            item.coloresStock = { ...item.coloresStock };
-            item.coloresStock[cKey] -= reqQty;
-          }
+          item.coloresStock = { ...item.coloresStock };
+          item.coloresStock[cKey] = (item.coloresStock[cKey] || 0) - reqQty;
         }
+
         item.cantidad -= reqQty;
       } else {
-        // Descontar color genérico
+        // Descuento por color o general
         const colorKey = oi.color?.trim().toUpperCase();
         if (colorKey && item.coloresStock && item.coloresStock[colorKey] !== undefined) {
           if (item.coloresStock[colorKey] < reqQty) {
-            throw new functions.https.HttpsError('failed-precondition', `No hay suficiente stock de ${oi.descripcion} en color ${colorKey}. Disponible: ${item.coloresStock[colorKey]}, Requerido: ${reqQty}`);
+            throw new functions.https.HttpsError('failed-precondition', `No hay suficiente stock para el color ${oi.color} de ${item.descripcion}. Disponible: ${item.coloresStock[colorKey]}, Requerido: ${reqQty}`);
           }
           item.coloresStock = { ...item.coloresStock };
           item.coloresStock[colorKey] -= reqQty;
@@ -93,11 +93,16 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
       nextInventory[idx] = item;
     }
 
-    // 2. Establecer expiración a 15 minutos y estado PENDING_PAYMENT
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    // 2. Establecer expiración y estado
+    // Transferencia: 24 horas (pending_transfer). Tarjeta/Ualá Bis: 15 minutos (PENDING_PAYMENT).
+    const isTransfer = orderData.metodoPago === 'Transferencia' || orderData.paymentMethod === 'transferencia' || orderData.estado === 'pending_transfer';
+    const targetEstado = isTransfer ? 'pending_transfer' : (orderData.estado || 'PENDING_PAYMENT');
+    const expirationDurationMs = isTransfer ? 24 * 60 * 60 * 1000 : 15 * 60 * 1000;
+    const expiresAt = new Date(Date.now() + expirationDurationMs).toISOString();
+
     const finalOrderData = {
       ...orderData,
-      estado: 'PENDING_PAYMENT',
+      estado: targetEstado,
       expiresAt
     };
 
@@ -121,11 +126,11 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
   
   const now = Date.now();
   
-  // Buscar órdenes en estado PENDING_PAYMENT o Pendiente
+  // Buscar órdenes en estado PENDING_PAYMENT, pending_transfer o Pendiente
   const allOrdersSnap = await ordersCol.get();
   const expiredDocs = allOrdersSnap.docs.filter(docSnap => {
     const data = docSnap.data();
-    const isPending = data.estado === 'PENDING_PAYMENT' || data.estado === 'Pendiente';
+    const isPending = data.estado === 'PENDING_PAYMENT' || data.estado === 'pending_transfer' || data.estado === 'Pendiente';
     if (!isPending) return false;
 
     if (data.expiresAt) {
@@ -134,7 +139,8 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
     if (data.fecha) {
       const fechaMs = new Date(data.fecha).getTime();
       if (!isNaN(fechaMs)) {
-        return (now - fechaMs) > 15 * 60 * 1000;
+        const durationLimitMs = data.estado === 'pending_transfer' ? 24 * 60 * 60 * 1000 : 15 * 60 * 1000;
+        return (now - fechaMs) > durationLimitMs;
       }
     }
     return false;
@@ -157,7 +163,7 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
         const freshDoc = await transaction.get(docSnap.ref);
         if (!freshDoc.exists) return;
         const freshData = freshDoc.data() || {};
-        const isStillPending = freshData.estado === 'PENDING_PAYMENT' || freshData.estado === 'Pendiente';
+        const isStillPending = freshData.estado === 'PENDING_PAYMENT' || freshData.estado === 'pending_transfer' || freshData.estado === 'Pendiente';
         if (!isStillPending) return;
 
         const srSnap = await transaction.get(showroomRef);
@@ -848,7 +854,7 @@ export const fulfillWebOrderServer = functions.https.onCall(async (data, context
       }
 
       // 5. Deducción de inventario (evitar doble deducción si ya estaba reservado)
-      const isAlreadyReserved = existingOrder && (existingOrder.estado === 'PENDING_PAYMENT' || existingOrder.estado === 'Pendiente');
+      const isAlreadyReserved = existingOrder && (existingOrder.estado === 'PENDING_PAYMENT' || existingOrder.estado === 'pending_transfer' || existingOrder.estado === 'Pendiente');
       let confirmedInventory = [...inventory];
 
       if (!isAlreadyReserved) {

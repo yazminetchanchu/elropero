@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ArrowRight, ArrowLeft, Loader2, CheckCircle, Smartphone, MapPin, ShoppingBag, Send, AlertCircle, Lock, Gift, Clock } from 'lucide-react';
+import { X, ArrowRight, ArrowLeft, Loader2, CheckCircle, Smartphone, MapPin, ShoppingBag, Send, AlertCircle, Lock, Gift, Clock, Landmark, Copy, Check } from 'lucide-react';
 import { useAuth, ShippingAddress } from '../../contexts/AuthContext';
 import { InventoryItem, WebSettings, GiftCard } from '../../types';
 import { db, auth, functions } from '../../services/firebase';
@@ -214,6 +214,10 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
   const [paymentRedirectUrl, setPaymentRedirectUrl] = React.useState<string | null>(null);
 
   const [paymentMethod, setPaymentMethod] = React.useState<'transferencia' | 'tarjeta'>(initialPaymentMethod);
+
+  const [copiedCbu, setCopiedCbu] = React.useState(false);
+  const [copiedAlias, setCopiedAlias] = React.useState(false);
+  const [copiedOrderId, setCopiedOrderId] = React.useState(false);
 
   // 15-minute stock reservation visual countdown timer (900 seconds)
   const [timeLeft, setTimeLeft] = React.useState<number>(15 * 60);
@@ -549,6 +553,9 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       const addressIsComplete = activeAddress && activeAddress.calle && activeAddress.numero && activeAddress.localidad && activeAddress.provincia && activeAddress.codigoPostal;
       const addressField = (tipoEnvio === 'envio' && addressIsComplete) ? { direccionEnvio: activeAddress as ShippingAddress } : {};
       
+      const isTransfer = paymentMethod === 'transferencia';
+      const orderEstado = isTransfer ? 'pending_transfer' as const : 'PENDING_PAYMENT' as const;
+      
       const orderData = {
         customerId: user ? user.uid : 'GUEST',
         customerEmail: sanitizeInput(email.trim().toLowerCase()),
@@ -561,10 +568,10 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         ...addressField,
         ...(tipoEnvio === 'envio' || tipoEnvio === 'envio_sucursal' ? { costoEnvio: calculatedCostoEnvio } : {}),
         ...(tipoEnvio === 'envio_sucursal' && selectedSucursal ? { sucursalCorreoArgentino: selectedSucursal } : {}),
-        metodoPago: finalTotal === 0 ? 'Gift Card' : (paymentMethod === 'transferencia' ? 'Transferencia' : 'Tarjeta / Ualá Bis'),
-        pago: paymentMethod === 'transferencia' ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
+        metodoPago: finalTotal === 0 ? 'Gift Card' : (isTransfer ? 'Transferencia' : 'Tarjeta / Ualá Bis'),
+        pago: isTransfer ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
         ualaPlan: null,
-        estado: 'PENDING_PAYMENT' as const,
+        estado: orderEstado,
         pesoTotalGramos: calculateCartWeightGrams(cart),
         ...(appliedGiftCard ? {
           giftCardUsada: {
@@ -581,8 +588,9 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       let redirectUrl: string | null = null;
       let ualaPaymentId: string | null = null;
 
-      try {
-        if (finalTotal > 0) {
+      // Generar cobro con Ualá Bis SOLO si es pago con tarjeta
+      if (!isTransfer && finalTotal > 0) {
+        try {
           const successUrl = `${window.location.origin}/?pago=ok&orderId=${orderId}`;
           const failUrl = `${window.location.origin}/?pago=error&orderId=${orderId}`;
           
@@ -597,12 +605,12 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
           const ualaPayment = await createUalaPayment(orderForUala, successUrl, failUrl);
           redirectUrl = ualaPayment.paymentUrl;
           ualaPaymentId = ualaPayment.paymentId;
+        } catch (ualaErr: any) {
+          console.error('Error al generar pago en Ualá:', ualaErr);
+          setErrorMsg('Hubo un problema al generar el pago con Ualá. Tu pedido no ha sido registrado. Por favor, intentá nuevamente o comunicate por WhatsApp.');
+          setIsLoading(false);
+          return;
         }
-      } catch (ualaErr: any) {
-        console.error('Error al generar pago en Ualá:', ualaErr);
-        setErrorMsg('Hubo un problema al generar el pago con Ualá. Tu pedido no ha sido registrado. Por favor, intentá nuevamente o comunicate por WhatsApp.');
-        setIsLoading(false);
-        return;
       }
 
       // Reservar el stock en Firebase (descuenta temporalmente y guarda en pendingOrders)
@@ -640,12 +648,9 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         await refreshOrders();
       }
 
-
-
-
       setPlacedOrderId(orderId);
       const updatedOrderDataWithUala = {
-        ...orderData,
+        ...finalOrderData,
         orderId: orderId,
         ualaPaymentUrl: redirectUrl
       };
@@ -659,7 +664,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       setPaymentRedirectUrl(redirectUrl);
       setStep('success');
 
-      if (redirectUrl) {
+      if (!isTransfer && redirectUrl) {
         window.open(redirectUrl, '_blank', 'noopener,noreferrer');
       }
 
@@ -1164,14 +1169,14 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                       <span className="text-[8px] font-light text-black bg-neutral-100 px-1.5 py-0.5 uppercase border border-black/10">-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
                     </div>
                     <p className="text-[8px] tracking-[0.1em] text-neutral-400 uppercase font-light">
-                      Pasarela segura Ualá Bis por transferencia.
+                      Bonificación del 20% OFF. Reserva de stock activa por 24 horas.
                     </p>
                   </div>
                 ) : (
                   <div className="p-3 border border-neutral-200 bg-white space-y-0.5">
-                    <p className="text-[9px] tracking-[0.2em] font-light text-black uppercase">Tarjeta de Crédito / Débito</p>
+                    <p className="text-[9px] tracking-[0.2em] font-light text-black uppercase">Tarjeta de Crédito / Débito (Ualá Bis)</p>
                     <p className="text-[8px] tracking-[0.1em] text-neutral-400 uppercase font-light">
-                      Precio de lista. Pasarela segura Ualá Bis.
+                      Precio de lista. Pasarela de pago segura Ualá Bis (Crédito, Débito y Cuotas).
                     </p>
                   </div>
                 )}
@@ -1245,55 +1250,211 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
           {/* STEP 4: SUCCESS & CONVERSION */}
           {step === 'success' && (
-            <div className="space-y-8 text-center py-6 animate-in fade-in duration-200">
+            <div className="space-y-6 text-center py-2 animate-in fade-in duration-200">
               
-              <div className="space-y-3">
-                <CheckCircle size={44} className="mx-auto text-black" strokeWidth={1} />
-                <h3 className="text-base tracking-[0.25em] uppercase font-light text-black">¡Pedido Registrado!</h3>
-                <p className="text-[10px] tracking-[0.1em] leading-relaxed uppercase text-neutral-500 max-w-xs mx-auto font-light">
-                  Tu pedido ha sido registrado. 
-                  {paymentRedirectUrl
-                    ? ' Tenés 15 minutos para completar el pago seguro en Ualá Bis (se abrió en una nueva pestaña).'
-                    : ' Podés coordinar el pago por WhatsApp con el showroom.'}
-                </p>
-              </div>
+              {paymentMethod === 'transferencia' ? (
+                <div className="space-y-5">
+                  {/* Header Éxito */}
+                  <div className="space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center mx-auto shadow-sm">
+                      <CheckCircle size={24} strokeWidth={1.4} />
+                    </div>
+                    <h3 className="text-base tracking-[0.25em] uppercase font-light text-black">
+                      ¡Pedido Registrado con Éxito!
+                    </h3>
+                    <p className="text-[10px] tracking-[0.1em] leading-relaxed uppercase text-neutral-500 max-w-sm mx-auto font-light">
+                      Tus prendas han quedado reservadas. Realizá la transferencia bancaria para confirmar tu compra.
+                    </p>
+                  </div>
 
-              {paymentRedirectUrl && (
-                <div className="max-w-xs mx-auto">
-                  <button
-                    type="button"
-                    onClick={() => window.open(paymentRedirectUrl, '_blank', 'noopener,noreferrer')}
-                    className="w-full bg-black text-white py-3 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-all rounded-none"
-                  >
-                    Pagar con Ualá Bis
-                  </button>
+                  {/* Banner 24 Horas */}
+                  <div className="bg-amber-50/80 border border-amber-200/80 p-3.5 flex items-start gap-3 text-amber-900 text-left rounded-none">
+                    <Clock size={16} className="mt-0.5 flex-shrink-0 text-amber-700 animate-pulse" strokeWidth={1.5} />
+                    <div className="space-y-0.5">
+                      <p className="text-[9px] tracking-[0.2em] uppercase font-semibold text-amber-900">
+                        Tenés 24 horas para realizar la transferencia
+                      </p>
+                      <p className="text-[9px] leading-relaxed font-light text-amber-800/90">
+                        Tu stock permanecerá reservado durante 24 horas. Envianos el comprobante por WhatsApp para validar tu compra.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Resumen: ID y Total Bonificado */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                    <div className="bg-neutral-50 border border-neutral-200/80 p-3.5 space-y-1">
+                      <p className="text-[8px] tracking-[0.25em] uppercase font-light text-neutral-400">Identificador de Pedido</p>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-medium tracking-wider text-black">
+                          {placedOrderId ? `#${placedOrderId.toUpperCase()}` : 'REGISTRADO'}
+                        </span>
+                        {placedOrderId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(placedOrderId);
+                              setCopiedOrderId(true);
+                              setTimeout(() => setCopiedOrderId(false), 2000);
+                            }}
+                            className="text-[8px] tracking-[0.15em] uppercase font-light text-neutral-600 hover:text-black flex items-center gap-1"
+                          >
+                            {copiedOrderId ? (
+                              <span className="text-emerald-700 flex items-center gap-0.5 font-medium"><Check size={10} /> Copiado</span>
+                            ) : (
+                              <span className="flex items-center gap-0.5"><Copy size={10} /> Copiar</span>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-neutral-50 border border-neutral-200/80 p-3.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[8px] tracking-[0.25em] uppercase font-light text-neutral-400">Total a Transferir</p>
+                        <span className="text-[7px] tracking-[0.15em] uppercase bg-black text-white px-1.5 py-0.5 font-light">
+                          -20% OFF APLICADO
+                        </span>
+                      </div>
+                      <div className="text-base sm:text-lg font-normal tracking-wide text-black">
+                        ${(placedOrderData?.total !== undefined ? placedOrderData.total : Math.round(finalTotal)).toLocaleString('es-AR')}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Datos Bancarios */}
+                  <div className="border border-neutral-200 p-4 bg-white text-left space-y-3">
+                    <div className="flex items-center gap-2 border-b border-neutral-100 pb-2">
+                      <Landmark size={14} className="text-black" strokeWidth={1.3} />
+                      <h4 className="text-[9px] tracking-[0.25em] uppercase font-medium text-black">
+                        Datos de la Cuenta Bancaria
+                      </h4>
+                    </div>
+
+                    <div className="space-y-2.5 text-[10px] font-light">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-neutral-100/70">
+                        <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400">Titular</span>
+                        <span className="font-normal text-black uppercase tracking-wider">{webSettings?.bankTitular?.trim() || 'EL ROPERO'}</span>
+                      </div>
+
+                      {webSettings?.bankName?.trim() && (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-neutral-100/70">
+                          <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400">Banco</span>
+                          <span className="font-normal text-black uppercase tracking-wider">{webSettings.bankName.trim()}</span>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-neutral-100/70">
+                        <div>
+                          <span className="block text-[8px] tracking-[0.2em] uppercase text-neutral-400">Alias</span>
+                          <span className="font-mono text-[11px] font-medium text-black">{webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'elropero.showroom'}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'elropero.showroom';
+                            navigator.clipboard.writeText(val);
+                            setCopiedAlias(true);
+                            setTimeout(() => setCopiedAlias(false), 2000);
+                          }}
+                          className="w-fit border border-black/20 hover:border-black px-2.5 py-1 text-[8px] tracking-[0.15em] uppercase text-black font-light flex items-center gap-1 transition-all"
+                        >
+                          {copiedAlias ? <><Check size={10} className="text-emerald-500" /> Copiado</> : <><Copy size={10} /> Copiar Alias</>}
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <span className="block text-[8px] tracking-[0.2em] uppercase text-neutral-400">CBU / CVU</span>
+                          <span className="font-mono text-[11px] font-medium text-black break-all">{webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100084729182736'}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100084729182736';
+                            navigator.clipboard.writeText(val);
+                            setCopiedCbu(true);
+                            setTimeout(() => setCopiedCbu(false), 2000);
+                          }}
+                          className="w-fit border border-black/20 hover:border-black px-2.5 py-1 text-[8px] tracking-[0.15em] uppercase text-black font-light flex items-center gap-1 transition-all"
+                        >
+                          {copiedCbu ? <><Check size={10} className="text-emerald-500" /> Copiado</> : <><Copy size={10} /> Copiar CBU</>}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Acciones */}
+                  <div className="space-y-2 pt-2">
+                    <button
+                      onClick={triggerWhatsAppMessage}
+                      className="w-full bg-black text-white hover:bg-neutral-800 py-3.5 px-6 text-[9px] tracking-[0.25em] uppercase font-light transition-all flex items-center justify-center gap-2 shadow-sm rounded-none"
+                    >
+                      <Send size={12} strokeWidth={1.3} />
+                      <span>Enviar Comprobante por WhatsApp</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        onSuccess();
+                        onClose();
+                      }}
+                      className="w-full bg-transparent border border-neutral-300 hover:border-black text-black py-3 px-6 text-[8px] tracking-[0.25em] uppercase font-light transition-all rounded-none"
+                    >
+                      Volver a la Tienda
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  <div className="space-y-3">
+                    <CheckCircle size={44} className="mx-auto text-black" strokeWidth={1} />
+                    <h3 className="text-base tracking-[0.25em] uppercase font-light text-black">¡Pedido Registrado!</h3>
+                    <p className="text-[10px] tracking-[0.1em] leading-relaxed uppercase text-neutral-500 max-w-xs mx-auto font-light">
+                      Tu pedido ha sido registrado. 
+                      {paymentRedirectUrl
+                        ? ' Tenés 15 minutos para completar el pago seguro en Ualá Bis (se abrió en una nueva pestaña).'
+                        : ' Podés coordinar el pago por WhatsApp con el showroom.'}
+                    </p>
+                  </div>
+
+                  {paymentRedirectUrl && (
+                    <div className="max-w-xs mx-auto">
+                      <button
+                        type="button"
+                        onClick={() => window.open(paymentRedirectUrl, '_blank', 'noopener,noreferrer')}
+                        className="w-full bg-black text-white py-3 text-[10px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-all rounded-none"
+                      >
+                        Pagar con Ualá Bis
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="pt-4 border-t border-neutral-100 max-w-xs mx-auto space-y-2">
+                    <p className="text-[9px] tracking-[0.15em] uppercase font-light text-neutral-500">
+                      ¿Dudas sobre tu pago?
+                    </p>
+                    <button
+                      onClick={triggerWhatsAppMessage}
+                      className="w-full bg-black text-white py-2.5 text-[9px] font-light tracking-[0.2em] uppercase transition-all flex items-center justify-center gap-2 rounded-none"
+                    >
+                      <Send size={11} strokeWidth={1.2} /> Contactar por WhatsApp
+                    </button>
+                  </div>
+
+                  {/* Volver a la Tienda */}
+                  <div className="pt-6 flex justify-center">
+                    <button
+                      onClick={() => {
+                        onSuccess();
+                        onClose();
+                      }}
+                      className="border border-black px-8 py-3 text-[9px] tracking-[0.25em] uppercase font-light hover:bg-black hover:text-white transition-all rounded-none"
+                    >
+                      Volver a la Tienda
+                    </button>
+                  </div>
                 </div>
               )}
-
-              <div className="pt-4 border-t border-neutral-100 max-w-xs mx-auto space-y-2">
-                <p className="text-[9px] tracking-[0.15em] uppercase font-light text-neutral-500">
-                  ¿Dudas sobre tu pago?
-                </p>
-                <button
-                  onClick={triggerWhatsAppMessage}
-                  className="w-full bg-black text-white py-2.5 text-[9px] font-light tracking-[0.2em] uppercase transition-all flex items-center justify-center gap-2 rounded-none"
-                >
-                  <Send size={11} strokeWidth={1.2} /> Contactar por WhatsApp
-                </button>
-              </div>
-
-              {/* Volver a la Tienda */}
-              <div className="pt-6 flex justify-center">
-                <button
-                  onClick={() => {
-                    onSuccess();
-                    onClose();
-                  }}
-                  className="border border-black px-8 py-3 text-[9px] tracking-[0.25em] uppercase font-light hover:bg-black hover:text-white transition-all rounded-none"
-                >
-                  Volver a la Tienda
-                </button>
-              </div>
 
             </div>
           )}

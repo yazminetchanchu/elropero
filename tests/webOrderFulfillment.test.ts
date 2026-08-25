@@ -276,13 +276,13 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
 
     it('maneja errores gracefully sin lanzar excepciones no controladas al cliente', async () => {
       mockHttpsCallableFn.mockRejectedValueOnce(new Error('Network error'));
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       await expect(releaseExpiredReservations('ROPERO')).resolves.toBeUndefined();
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        'Error al invocar releaseExpiredReservationsServer:',
-        expect.any(Error)
+        '[releaseExpiredReservations] Aviso al verificar reservas expiradas:',
+        'Network error'
       );
       consoleSpy.mockRestore();
     });

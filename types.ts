@@ -131,6 +131,13 @@ export interface WebSettings {
   mercadoPagoTransferUrl?: string;
   /** Alias MP para mostrar al cliente, ej. elropero.showroom */
   mercadoPagoAlias?: string;
+
+  // Datos bancarios para transferencia
+  bankTitular?: string;
+  bankCbu?: string;
+  bankAlias?: string;
+  bankName?: string;
+
   announcementText?: string;
   aboutUsText?: string;
   locationShowroomAddress?: string;

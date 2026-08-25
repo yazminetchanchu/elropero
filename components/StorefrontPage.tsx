@@ -2366,25 +2366,39 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                     {Array.isArray(selectedProduct.colores) && Array.from(new Set(selectedProduct.colores as string[])).map((c, idx) => {
                       const colorStock = modalTalle ? getVariantStock(selectedProduct, modalTalle, c) : getVariantStock(selectedProduct, undefined, c);
                       const hasStockTracking = selectedProduct.stockPorVariante !== undefined || selectedProduct.coloresStock !== undefined;
-                      const isOutOfStock = modalTalle ? (hasStockTracking && colorStock <= 0) : (hasStockTracking && colorStock <= 0);
+                      const isOutOfStock = hasStockTracking && colorStock <= 0;
                       const isSel = modalColor === c;
+                      const dotStyle = getColorDotStyle(c);
                       
                       return (
                         <button 
                           key={`${c}-${idx}`} 
                           disabled={isOutOfStock}
+                          title={isOutOfStock ? `Sin stock ${modalTalle ? `en talle ${modalTalle}` : ''}` : undefined}
                           onClick={() => {
+                            if (isOutOfStock) return;
                             setModalColor(c);
+                            if (selectedProduct.talles && selectedProduct.talles.length > 0) {
+                              const isCurrentTalleAvailable = modalTalle && getVariantStock(selectedProduct, modalTalle, c) > 0;
+                              if (!isCurrentTalleAvailable) {
+                                const nextTalle = selectedProduct.talles.find(t => getVariantStock(selectedProduct, t, c) > 0);
+                                if (nextTalle) setModalTalle(nextTalle);
+                              }
+                            }
                           }} 
-                          className={`px-3 py-1.5 text-[9px] tracking-[0.18em] uppercase transition-all font-light rounded-none border ${
+                          className={`px-3 py-1.5 text-[9px] tracking-[0.18em] uppercase transition-all font-light rounded-none border flex items-center gap-1.5 ${
                             isSel 
-                              ? 'bg-black text-white border-black' 
+                              ? 'bg-black text-white border-black shadow-xs' 
                               : isOutOfStock
                                 ? 'bg-neutral-50 border-neutral-200 text-neutral-300 opacity-40 cursor-not-allowed line-through'
                                 : 'bg-white border-neutral-300 text-black hover:border-black'
                           }`}
                         >
-                          {c}
+                          <span 
+                            className="w-2.5 h-2.5 rounded-full inline-block shrink-0" 
+                            style={dotStyle} 
+                          />
+                          <span>{c}</span>
                         </button>
                       );
                     })}

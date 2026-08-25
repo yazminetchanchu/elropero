@@ -349,7 +349,7 @@ export async function reserveWebOrderStock(
 
 export function isOrderExpired(order: { estado?: string; expiresAt?: string; fecha?: string }): boolean {
   if (!order) return false;
-  const isPending = order.estado === 'Pendiente' || order.estado === 'PENDING_PAYMENT';
+  const isPending = order.estado === 'Pendiente' || order.estado === 'PENDING_PAYMENT' || order.estado === 'pending_transfer';
   if (!isPending) return false;
 
   const now = Date.now();
@@ -359,24 +359,25 @@ export function isOrderExpired(order: { estado?: string; expiresAt?: string; fec
   if (order.fecha) {
     const fechaMs = new Date(order.fecha).getTime();
     if (!isNaN(fechaMs)) {
-      return (now - fechaMs) > 15 * 60 * 1000;
+      const durationLimitMs = order.estado === 'pending_transfer' ? 24 * 60 * 60 * 1000 : 15 * 60 * 1000;
+      return (now - fechaMs) > durationLimitMs;
     }
   }
   return false;
 }
 
 export async function releaseExpiredReservations(showroomId: string): Promise<void> {
-  const releaseFn = httpsCallable<{ showroomId: string }, { releasedCount: number; success: boolean }>(
-    functions,
-    'releaseExpiredReservationsServer'
-  );
   try {
+    const releaseFn = httpsCallable<{ showroomId: string }, { releasedCount: number; success: boolean }>(
+      functions,
+      'releaseExpiredReservationsServer'
+    );
     const result = await releaseFn({ showroomId });
     if (result.data?.releasedCount && result.data.releasedCount > 0) {
       console.log(`[releaseExpiredReservations] Se liberaron ${result.data.releasedCount} reservas expiradas en el servidor.`);
     }
-  } catch (e) {
-    console.error('Error al invocar releaseExpiredReservationsServer:', e);
+  } catch (e: any) {
+    console.warn('[releaseExpiredReservations] Aviso al verificar reservas expiradas:', e?.message || e);
   }
 }
 

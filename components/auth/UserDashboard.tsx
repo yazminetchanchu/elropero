@@ -337,6 +337,8 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                       <span className="text-[8px] tracking-[0.2em] uppercase px-2 py-0.5 font-light border border-black/20 text-black">
                         {isCancelledOrder(order.estado)
                           ? 'CANCELADO'
+                          : order.estado === 'pending_transfer'
+                          ? 'PENDIENTE TRANSFERENCIA (24H)'
                           : order.estado === 'PENDING_PAYMENT' || order.estado === 'Pendiente'
                           ? 'PENDIENTE'
                           : order.estado === 'PAID'

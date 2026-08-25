@@ -245,7 +245,7 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
 
     const { rerender } = render(
       <ModalProvider>
-        <CheckoutFlow {...defaultProps} />
+        <CheckoutFlow {...defaultProps} initialPaymentMethod="tarjeta" />
       </ModalProvider>
     );
 

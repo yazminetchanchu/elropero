@@ -13,6 +13,7 @@ import GiftCards from './components/GiftCard';
 import WebManager from './components/WebManager';
 import StorefrontPage from './components/StorefrontPage';
 import ResetPasswordPage from './components/auth/ResetPasswordPage';
+import TransferSuccessPage from './components/TransferSuccessPage';
 import WebOrdersManager from './components/WebOrdersManager';
 import InnovativeLoader from './components/InnovativeLoader';
 import { computeSaleBreakdown, isMonth, getItemSnapshot } from './services/finance';
@@ -1219,6 +1220,7 @@ const handleCancelGiftCard = (id: string) => {
 
           <Routes>
             <Route path="/" element={<StorefrontPage inventoryProp={inventory} settingsProp={webSettings} />} />
+            <Route path="/checkout/transferencia-exitosa" element={<TransferSuccessPage webSettings={webSettings} />} />
             <Route path="/reset-password" element={<ResetPasswordPage webSettings={webSettings} />} />
 
             {/* Redireccionar la ruta obsoleta /admin al inicio para evitar escaneo automatizado */}

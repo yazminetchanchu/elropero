@@ -785,6 +785,46 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                 />
               </div>
               <div className="space-y-3">
+                <label className="text-[10px] tracking-[4px] uppercase font-bold text-[#1A1A1A]/70">Titular de la Cuenta (Transferencias)</label>
+                <input
+                  type="text"
+                  value={localSettings?.bankTitular || ''}
+                  onChange={e => setLocalSettings({ ...localSettings, bankTitular: e.target.value })}
+                  className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold uppercase"
+                  placeholder="EL ROPERO SHOWROOM"
+                />
+              </div>
+              <div className="space-y-3">
+                <label className="text-[10px] tracking-[4px] uppercase font-bold text-[#1A1A1A]/70">CBU / CVU (Transferencias)</label>
+                <input
+                  type="text"
+                  value={localSettings?.bankCbu || ''}
+                  onChange={e => setLocalSettings({ ...localSettings, bankCbu: e.target.value })}
+                  className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold font-mono"
+                  placeholder="0000003100084729182736"
+                />
+              </div>
+              <div className="space-y-3">
+                <label className="text-[10px] tracking-[4px] uppercase font-bold text-[#1A1A1A]/70">Alias Bancario (Transferencias)</label>
+                <input
+                  type="text"
+                  value={localSettings?.bankAlias || localSettings?.mercadoPagoAlias || ''}
+                  onChange={e => setLocalSettings({ ...localSettings, bankAlias: e.target.value, mercadoPagoAlias: e.target.value })}
+                  className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold font-mono"
+                  placeholder="elropero.showroom"
+                />
+              </div>
+              <div className="space-y-3">
+                <label className="text-[10px] tracking-[4px] uppercase font-bold text-[#1A1A1A]/70">Banco / Entidad (Opcional)</label>
+                <input
+                  type="text"
+                  value={localSettings?.bankName || ''}
+                  onChange={e => setLocalSettings({ ...localSettings, bankName: e.target.value })}
+                  className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold uppercase"
+                  placeholder="BANCO PROVINCIA / MERCADO PAGO"
+                />
+              </div>
+              <div className="space-y-3">
                 <label className="text-[10px] tracking-[4px] uppercase font-bold text-[#1A1A1A]/70">Link Mercado Pago (transferencia)</label>
                 <input
                   type="url"
@@ -792,16 +832,6 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                   onChange={e => setLocalSettings({ ...localSettings, mercadoPagoTransferUrl: e.target.value })}
                   className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold"
                   placeholder="https://link.mercadopago.com.ar/tu-alias"
-                />
-              </div>
-              <div className="space-y-3">
-                <label className="text-[10px] tracking-[4px] uppercase font-bold text-[#1A1A1A]/70">Alias Mercado Pago (alternativo)</label>
-                <input
-                  type="text"
-                  value={localSettings?.mercadoPagoAlias || ''}
-                  onChange={e => setLocalSettings({ ...localSettings, mercadoPagoAlias: e.target.value })}
-                  className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold"
-                  placeholder="elropero.showroom"
                 />
               </div>
               <div className="space-y-3">

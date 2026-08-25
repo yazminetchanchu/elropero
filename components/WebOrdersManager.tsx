@@ -41,7 +41,7 @@ interface WebOrder {
     codigoPostal: string;
     indicaciones?: string;
   };
-  estado: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado' | 'PENDING_PAYMENT' | 'PAID' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'FAILED' | 'REFUNDED' | 'parcialmente_cambiado' | 'Completado';
+  estado: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado' | 'PENDING_PAYMENT' | 'pending_transfer' | 'PAID' | 'CANCELLED' | 'REJECTED' | 'EXPIRED' | 'FAILED' | 'REFUNDED' | 'parcialmente_cambiado' | 'Completado';
   costoEnvio?: number;
   metodoPago?: string;
   saleId?: string;
@@ -426,7 +426,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
       const matchesStatus = 
         statusFilter === 'todos' || 
         o.estado === statusFilter || 
-        (statusFilter === 'Pendiente' && o.estado === 'PENDING_PAYMENT') ||
+        (statusFilter === 'Pendiente' && (o.estado === 'PENDING_PAYMENT' || o.estado === 'pending_transfer')) ||
         (statusFilter === 'Cancelado' && ['CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(o.estado)) ||
         (statusFilter === 'parcialmente_cambiado' && o.estado === 'parcialmente_cambiado');
       return matchesSearch && matchesStatus;
@@ -435,6 +435,12 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
 
   const getStatusBadge = (status: WebOrder['estado']) => {
     switch (status) {
+      case 'pending_transfer':
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-amber-300">
+            <Clock size={11} /> Pendiente Transferencia (24hs)
+          </span>
+        );
       case 'parcialmente_cambiado':
         return (
           <span className="flex items-center gap-1.5 px-3 py-1 bg-[#F5F0EB] text-[#7C5A3E] text-[9px] font-bold tracking-[1px] uppercase rounded-full border border-[#E3D7CB]">
@@ -751,7 +757,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                         }}
                         className={`px-3 py-2 text-[9px] tracking-[1px] uppercase font-bold transition-all ${
                           selectedOrder.estado === status || 
-                          (status === 'Pendiente' && selectedOrder.estado === 'PENDING_PAYMENT') ||
+                          (status === 'Pendiente' && (selectedOrder.estado === 'PENDING_PAYMENT' || selectedOrder.estado === 'pending_transfer')) ||
                           (status === 'Cancelado' && ['CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(selectedOrder.estado))
                             ? 'bg-black text-white' 
                             : 'bg-white text-black hover:bg-neutral-50'
