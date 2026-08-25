@@ -7,12 +7,13 @@ import { sanitizeInput } from '../../utils/sanitize';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onContinueAsGuest?: () => void; // Si se abre en checkout, permite comprar como invitado
+  customTitle?: string;
+  customSubtitle?: string;
 }
 
 type TabType = 'login' | 'register' | 'forgot';
 
-const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onContinueAsGuest }) => {
+const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, customTitle, customSubtitle }) => {
   const { loginWithEmail, signUpWithEmail, loginWithGoogle, resetPassword } = useAuth();
   
   const [tab, setTab] = React.useState<TabType>('login');
@@ -141,10 +142,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onContinueAsGues
         </button>
 
         {/* Brand / Logo */}
-        <div className="text-center space-y-1 mb-8">
-          <p className="text-[8px] tracking-[0.3em] uppercase text-neutral-400 font-light">Showroom</p>
-          <h2 className="text-sm sm:text-base tracking-[0.25em] uppercase font-light leading-none text-black">
-            MI CUENTA
+        <div className="text-center space-y-1.5 mb-8">
+          <p className="text-[8px] tracking-[0.3em] uppercase text-neutral-400 font-light">
+            {customSubtitle || 'Showroom'}
+          </p>
+          <h2 className="text-sm sm:text-base tracking-[0.25em] uppercase font-light leading-snug text-black">
+            {customTitle || 'MI CUENTA'}
           </h2>
         </div>
 
@@ -335,21 +338,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onContinueAsGues
           </div>
         )}
 
-        {/* Continue as Guest Button (For Checkout Flow) */}
-        {onContinueAsGuest && tab !== 'forgot' && (
-          <div className="mt-6 border-t border-neutral-100 pt-6 text-center space-y-3">
-            <p className="text-[9px] tracking-[0.1em] uppercase text-neutral-400 font-light">
-              ¿Comprar sin iniciar sesión?
-            </p>
-            <button
-              onClick={onContinueAsGuest}
-              disabled={isLoading}
-              className="w-full border border-black/20 text-black py-2.5 text-[9px] tracking-[0.2em] uppercase font-light hover:border-black transition-all flex items-center justify-center rounded-none"
-            >
-              Comprar como Invitado
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

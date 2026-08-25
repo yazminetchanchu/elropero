@@ -70,7 +70,7 @@ describe('StorefrontPage', () => {
     );
 
     // Debe mostrar el nombre de la tienda
-    expect(screen.getByText('EL ROPERO STORE')).toBeInTheDocument();
+    expect(screen.getAllByText('EL ROPERO STORE').length).toBeGreaterThan(0);
 
     // Debe mostrar el producto
     expect(screen.getAllByText('Remera Blanca').length).toBeGreaterThan(0);
@@ -160,7 +160,7 @@ describe('StorefrontPage', () => {
     fireEvent.scroll(window);
 
     // Verificar que el título se achique suavemente
-    const title = screen.getByText('EL ROPERO');
+    const title = header?.querySelector('h1') as HTMLElement;
     expect(title.className).toContain('text-[11px]');
   });
 

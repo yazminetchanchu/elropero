@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ArrowRight, ArrowLeft, Loader2, CheckCircle, Smartphone, MapPin, ShoppingBag, Send, AlertCircle, Lock, Gift } from 'lucide-react';
+import { X, ArrowRight, ArrowLeft, Loader2, CheckCircle, Smartphone, MapPin, ShoppingBag, Send, AlertCircle, Lock, Gift, Clock } from 'lucide-react';
 import { useAuth, ShippingAddress } from '../../contexts/AuthContext';
 import { InventoryItem, WebSettings, GiftCard } from '../../types';
 import { db, auth, functions } from '../../services/firebase';
@@ -215,6 +215,27 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
   const [paymentMethod, setPaymentMethod] = React.useState<'transferencia' | 'tarjeta'>(initialPaymentMethod);
 
+  // 15-minute stock reservation visual countdown timer (900 seconds)
+  const [timeLeft, setTimeLeft] = React.useState<number>(15 * 60);
+
+  React.useEffect(() => {
+    if (!isOpen || step === 'success') return;
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          showAlert('Tu tiempo de reserva de stock (15 minutos) ha expirado. Por favor, verificá nuevamente los productos en tu carrito.', 'Reserva Expirada', 'warning');
+          onClose();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isOpen, step, showAlert, onClose]);
+
   // Gift Card Coupon States
   const [showGiftInput, setShowGiftInput] = React.useState(false);
   const [giftCardCode, setGiftCardCode] = React.useState('');
@@ -269,6 +290,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
     prevIsOpenRef.current = isOpen;
 
     if (justOpened) {
+      setTimeLeft(15 * 60);
       setErrorMsg(null);
       setPlacedOrderId(null);
       setPlacedOrderData(null);
@@ -776,6 +798,28 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
           )}
         </div>
 
+        {/* Banner Temporizador Visual de Reserva */}
+        {step !== 'success' && (
+          <div className={`px-6 py-2.5 flex items-center justify-between transition-colors border-b ${
+            timeLeft < 180 
+              ? 'bg-red-50 text-red-900 border-red-200' 
+              : 'bg-neutral-950 text-neutral-200 border-neutral-800'
+          }`}>
+            <div className="flex items-center gap-2 text-[9px] tracking-[0.2em] uppercase font-light">
+              <Clock size={13} className={timeLeft < 180 ? 'text-red-500 animate-pulse' : 'text-amber-400'} strokeWidth={1.5} />
+              <span>Reserva de stock activa</span>
+            </div>
+            <div className="flex items-center gap-2 font-mono text-[11px]">
+              <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400 font-sans hidden sm:inline">Expira en:</span>
+              <span className={`font-semibold px-2 py-0.5 rounded tracking-widest text-[11px] ${
+                timeLeft < 180 ? 'bg-red-200/80 text-red-900 animate-pulse' : 'bg-white/10 text-amber-300'
+              }`}>
+                {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Banner Modo Pruebas Ualá Bis */}
         {user?.email?.toLowerCase() === 'yazminetchanchu@gmail.com' && (webSettings?.ualaEnvironment === 'stage' || getUalaEnvironment() === 'stage') && (
           <div className="bg-neutral-100 border-b border-neutral-200 px-6 py-2 flex items-center justify-center gap-2 text-[9px] tracking-[0.2em] uppercase font-light text-neutral-800 text-center">
@@ -1237,53 +1281,6 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                   <Send size={11} strokeWidth={1.2} /> Contactar por WhatsApp
                 </button>
               </div>
-
-              {/* GUEST ACCOUNT CONVERSION BOX */}
-              {!user && (
-                <div className="pt-6 border-t border-neutral-100 max-w-xs mx-auto space-y-6">
-                  <div className="space-y-1">
-                    <div className="flex justify-center gap-1.5 items-center text-black">
-                      <Lock size={11} strokeWidth={1.2} />
-                      <span className="text-[10px] tracking-[0.2em] uppercase font-light">Creá tu Cuenta</span>
-                    </div>
-                    <p className="text-[9px] tracking-[0.1em] leading-relaxed uppercase text-neutral-400 font-light">
-                      Escribí una contraseña para guardar tu historial de compras y dirección.
-                    </p>
-                  </div>
-
-                  {conversionSuccess ? (
-                    <div className="flex flex-col items-center gap-2 bg-neutral-50 p-4 border border-black text-black">
-                      <CheckCircle size={16} strokeWidth={1.2} />
-                      <p className="text-[9px] tracking-[0.2em] uppercase font-light">¡Cuenta creada con éxito!</p>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleGuestConversion} className="space-y-3">
-                      <div className="relative group text-left">
-                        <label className="block text-[8px] font-light uppercase tracking-[0.25em] text-neutral-400 mb-1">
-                          Contraseña *
-                        </label>
-                        <input
-                          type="password"
-                          value={guestPassword}
-                          onChange={(e) => setGuestPassword(e.target.value)}
-                          required
-                          disabled={conversionLoading}
-                          placeholder="MÍNIMO 6 CARACTERES"
-                          className="w-full bg-transparent border-b border-neutral-200 py-2 text-[11px] focus:outline-none focus:border-black tracking-[0.2em] text-black text-center font-light"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={conversionLoading}
-                        className="w-full bg-black text-white py-3 text-[9px] tracking-[0.25em] uppercase font-light hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2 rounded-none"
-                      >
-                        {conversionLoading ? <Loader2 className="animate-spin" size={11} /> : 'Guardar y Registrarse'}
-                      </button>
-                    </form>
-                  )}
-                </div>
-              )}
 
               {/* Volver a la Tienda */}
               <div className="pt-6 flex justify-center">

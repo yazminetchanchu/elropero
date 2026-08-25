@@ -4,7 +4,7 @@ import { InventoryItem, WebSettings, GiftCard, SaleItem } from '../types';
 import { db, functions } from '../services/firebase';
 import { doc, onSnapshot, getDoc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle, SlidersHorizontal, MapPin, MessageCircle, PauseCircle } from 'lucide-react';
+import { X, Plus, Minus, ShoppingBag, Search, Menu, ChevronDown, Trash2, Send, ChevronRight, Ruler, ChevronLeft, Instagram, Heart, User, RefreshCw, Loader2, CheckCircle, ArrowRight, Gift, Copy, Check, AlertCircle, SlidersHorizontal, MapPin, MessageCircle, PauseCircle, Clock } from 'lucide-react';
 
 const getColorDotStyle = (colorName: string): React.CSSProperties => {
   const c = colorName.toLowerCase().trim();
@@ -28,6 +28,7 @@ import UserDashboard from './auth/UserDashboard';
 import CheckoutFlow from './auth/CheckoutFlow';
 import SessionExpiryModal from './auth/SessionExpiryModal';
 import BuyGiftCardModal from './BuyGiftCardModal';
+import Footer from './Footer';
 import { CustomerOrder } from '../contexts/AuthContext';
 import { buildSaleItemsFromOrder, getOrderSaleId, isGiftCardOrder } from '../services/webOrderToSale';
 import { sumTransferLines, sumExchangeLines, DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
@@ -2699,6 +2700,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                         {hasStockIssues ? 'Stock insuficiente' : 'Finalizar pedido'}
                         {!hasStockIssues && <ArrowRight size={13} strokeWidth={1.2} />}
                       </button>
+                      <div className="flex items-center justify-center gap-1.5 pt-1 text-[8.5px] tracking-[0.15em] uppercase text-neutral-400 font-light">
+                        <Clock size={11} className="text-neutral-500" strokeWidth={1.5} />
+                        <span>Reserva de 15 min al continuar al pago</span>
+                      </div>
                     </>
                   );
                 })()}
@@ -3140,34 +3145,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         </section>
       )}
 
-          {/* ══════ FOOTER ══════ */}
-      <footer className="border-t border-black/5 px-8 py-20 flex flex-col items-center">
-        <div className="flex flex-wrap justify-center gap-x-12 gap-y-6 mb-16">
-          <button onClick={() => setShowTerms(true)} className="text-[13px] tracking-[3px] uppercase text-black/70 hover:text-black transition-colors font-semibold">Términos</button>
-          {(webSettings.contactWhatsapp || '5492346685836') && (
-            <a href={`https://wa.me/${(webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '')}?text=${encodeURIComponent('Hola El Ropero! Desde la pagina web me surgio una consulta sobre ...')}`} target="_blank" rel="noopener noreferrer" className="text-[13px] tracking-[3px] uppercase text-black/70 hover:text-black transition-colors font-semibold">Contacto</a>
-          )}
-          <button onClick={() => setShowLocation(true)} className="text-[13px] tracking-[3px] uppercase text-black/70 hover:text-black transition-colors font-semibold">Ubicación</button>
-          {instagramUrl && (
-            <a href={instagramUrl} target="_blank" rel="noopener noreferrer" className="text-[13px] tracking-[3px] uppercase text-black/70 hover:text-black transition-colors font-semibold flex items-center gap-1">
-              <Instagram size={14}/>Instagram
-            </a>
-          )}
-        </div>
-        <div className="w-full max-w-4xl flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-8">
-          <p className="text-[11px] tracking-[3px] uppercase text-black/50 font-medium">© 2026 {webSettings.storeName || 'EL ROPERO'} SHOWROOM</p>
-          <span className="hidden sm:inline text-black/20">•</span>
-          <a 
-            href="https://www.instagram.com/siao.tech" 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            className="inline-flex items-center text-[11px] tracking-[2.5px] uppercase text-black/60 hover:text-black transition-all duration-200 group font-medium"
-            title="Ir al Instagram de SIAO Tech (@siao.tech)"
-          >
-            Desarrollado por <span className="font-bold underline underline-offset-4 group-hover:text-black ml-1">SIAO Tech</span>
-          </a>
-        </div>
-      </footer>
+          {/* ══════ FOOTER PROFESIONAL ══════ */}
+      <Footer 
+        webSettings={webSettings}
+        onNavigateCatalog={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        onShowLocation={() => setShowLocation(true)}
+        onShowTerms={() => setShowTerms(true)}
+      />
 
       {/* ══════ TERMS MODAL ══════ */}
       {showTerms && (
@@ -3382,6 +3366,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       {/* ══════ AUTHENTICATION MODALS & FLOWS ══════ */}
       <AuthModal 
         isOpen={showAuthModal} 
+        customTitle={pendingCheckout ? 'INICIAR COMPRA' : pendingBuyGiftCard ? 'COMPRAR GIFT CARD' : undefined}
+        customSubtitle={pendingCheckout ? 'Iniciá sesión o registrate para completar tu pedido' : pendingBuyGiftCard ? 'Iniciá sesión o registrate para continuar' : undefined}
         onClose={() => {
           setShowAuthModal(false);
           if (pendingCheckout && user) {
@@ -3393,13 +3379,6 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           setPendingCheckout(false);
           setPendingBuyGiftCard(false);
         }}
-        onContinueAsGuest={
-          pendingBuyGiftCard ? undefined : () => {
-            setShowAuthModal(false);
-            setPendingCheckout(false);
-            setShowCheckout(true);
-          }
-        }
       />
       <UserDashboard 
         isOpen={showDashboard} 

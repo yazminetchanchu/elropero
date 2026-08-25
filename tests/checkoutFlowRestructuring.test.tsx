@@ -281,4 +281,18 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
     expect(screen.getByText('Pagar con Ualá Bis')).toBeInTheDocument();
     expect(screen.queryByText(/0 prendas/i)).not.toBeInTheDocument();
   });
+
+  it('muestra el banner visual con temporizador de reserva de stock de 15 minutos en checkout activo', () => {
+    currentAuthUser = mockUser;
+    currentCustomerProfile = mockCustomerProfile;
+
+    render(
+      <ModalProvider>
+        <CheckoutFlow {...defaultProps} />
+      </ModalProvider>
+    );
+
+    expect(screen.getByText(/Reserva de stock activa/i)).toBeInTheDocument();
+    expect(screen.getByText('15:00')).toBeInTheDocument();
+  });
 });

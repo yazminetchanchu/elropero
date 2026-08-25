@@ -69,8 +69,8 @@ describe('Restricción de Compra de Gift Card sin Registro', () => {
     const giftCardBtn = screen.getByTitle('Regalar Gift Card');
     fireEvent.click(giftCardBtn);
 
-    // Debe abrir el modal de autenticación ("MI CUENTA") y NO el formulario de regalo
-    expect(await screen.findByText('MI CUENTA')).toBeInTheDocument();
+    // Debe abrir el modal de autenticación ("COMPRAR GIFT CARD" o "MI CUENTA") y NO el formulario de regalo
+    expect(await screen.findByText(/COMPRAR GIFT CARD|MI CUENTA/i)).toBeInTheDocument();
     expect(screen.queryByText('Monto del Regalo')).not.toBeInTheDocument();
   });
 
