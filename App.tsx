@@ -18,6 +18,7 @@ import WebOrdersManager from './components/WebOrdersManager';
 import InnovativeLoader from './components/InnovativeLoader';
 import { computeSaleBreakdown, isMonth, getItemSnapshot } from './services/finance';
 import { deductSaleFromInventory, restoreSaleToInventory } from './services/webOrderFulfillment';
+import { mergeEntities } from './utils/mergeEntities';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import NetworkStatus from './components/NetworkStatus';
@@ -224,14 +225,14 @@ const App: React.FC = () => {
         const serverState: DatabaseState = error.serverState;
 
         try {
-          // Auto-merge: si una sección específica fue modificada por esta llamada, preservamos el cambio del usuario;
-          // para las demás secciones que no cambiaron en esta llamada, usamos los datos más recientes del servidor.
+          // Merge por ID: preserva tanto ventas/datos remotos (e.g. ventas web)
+          // como modificaciones locales sin pisar registros concurrentes.
+          const mergedSales = mergeEntities(newSales, serverState.sales);
+          const mergedGiftCards = mergeEntities(newGift, serverState.giftCards);
+          const mergedInventory = mergeEntities(newInv, serverState.inventory);
+          const mergedExpenses = mergeEntities(newExp, serverState.expenses);
+          const mergedClosures = mergeEntities(newClosures, serverState.closures);
           const mergedWebSettings = newWebSettings !== webSettings ? newWebSettings : (serverState.webSettings || webSettings);
-          const mergedClosures = newClosures !== closures ? newClosures : (serverState.closures || closures);
-          const mergedExpenses = newExp !== expenses ? newExp : (serverState.expenses || expenses);
-          const mergedGiftCards = newGift !== giftCards ? newGift : (serverState.giftCards || giftCards);
-          const mergedSales = newSales !== sales ? newSales : (serverState.sales || sales);
-          const mergedInventory = newInv !== inventory ? newInv : (serverState.inventory || inventory);
 
           const confirmedRetry = await database.persistSafe(
             {

@@ -48,7 +48,7 @@ describe('webOrderToSale Service', () => {
   };
 
   describe('buildSaleItemsFromOrder', () => {
-    it('correctly maps order items to SaleItem structure with inventory prices', () => {
+    it('correctly maps order items to SaleItem structure with historical order prices', () => {
       const saleItems = buildSaleItemsFromOrder(mockOrder, mockInventory);
       expect(saleItems).toHaveLength(1);
       expect(saleItems[0]).toEqual({
@@ -58,14 +58,27 @@ describe('webOrderToSale Service', () => {
         cantidad: 2,
         costo: 1000,
         precioEfectivo: 2000,
-        precioTarjeta: 2500,
+        precioTarjeta: 2000,
         descuento: 0,
         talle: 'M',
         color: 'NEGRO',
       });
     });
 
-    it('uses fallback values if inventory item is not found', () => {
+    it('uses immutable historical priceUnitario even if inventory prices differ', () => {
+      const inventoryWithHigherPrices: InventoryItem[] = [
+        {
+          ...mockInventory[0],
+          ventaEfectivo: 5000,
+          ventaTarjeta: 6500,
+        },
+      ];
+      const saleItems = buildSaleItemsFromOrder(mockOrder, inventoryWithHigherPrices);
+      expect(saleItems[0].precioEfectivo).toBe(2000);
+      expect(saleItems[0].precioTarjeta).toBe(2000);
+    });
+
+    it('uses fallback values if inventory item is not found and sets both prices to precioUnitario', () => {
       const orderUnknown: CustomerOrder = {
         ...mockOrder,
         items: [
@@ -82,8 +95,15 @@ describe('webOrderToSale Service', () => {
       expect(saleItems[0].sku).toBe('---');
       expect(saleItems[0].costo).toBe(0);
       expect(saleItems[0].precioEfectivo).toBe(1000);
-      expect(saleItems[0].precioTarjeta).toBe(1270); // Math.round(1000 * 1.27)
+      expect(saleItems[0].precioTarjeta).toBe(1000);
       expect(saleItems[0].descripcion).toBe('Producto Desconocido');
+    });
+
+    it('supports direct array of order items as argument', () => {
+      const saleItems = buildSaleItemsFromOrder(mockOrder.items);
+      expect(saleItems).toHaveLength(1);
+      expect(saleItems[0].precioEfectivo).toBe(2000);
+      expect(saleItems[0].precioTarjeta).toBe(2000);
     });
   });
 

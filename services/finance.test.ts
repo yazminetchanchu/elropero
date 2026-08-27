@@ -100,6 +100,42 @@ describe('Lógica Financiera Avanzada (finance.ts)', () => {
     expect(totalCobrado).toBe(3000);
   });
 
+  it('Venta 100% Tarjeta con Gift Card: no debe restar dos veces la Gift Card de la ganancia', () => {
+    const item: SaleItem = {
+      id: 'p_card',
+      sku: 'SKU_CARD',
+      descripcion: 'Prenda Tarjeta',
+      cantidad: 1,
+      costo: 10000,
+      precioEfectivo: 20000,
+      precioTarjeta: 25000,
+      descuento: 0
+    };
+
+    const sale: Sale = {
+      id: 's_card_gc',
+      fecha: '2026-04-12T10:00:00',
+      tipo: 'venta',
+      items: [item],
+      total: 25000,
+      pago: { efectivo: 0, tarjeta: 100 },
+      giftCardUsada: { codigo: 'GC10K', montoUsado: 10000 }
+    };
+
+    const { efectivo, tarjeta, totalCobrado, costoTotal, ganancia } = computeSaleBreakdown(sale, []);
+
+    // Tarjeta: 25000 - 10000 = 15000
+    // Efectivo: 0
+    // Total Cobrado: 15000
+    // Costo Total: 10000
+    // Ganancia real: 15000 - 10000 = 5000 (no debe dar 5000 - 10000 = -5000)
+    expect(efectivo).toBe(0);
+    expect(tarjeta).toBe(15000);
+    expect(totalCobrado).toBe(15000);
+    expect(costoTotal).toBe(10000);
+    expect(ganancia).toBe(5000);
+  });
+
   it('calcTrend: calcula tendencia correctamente', () => {
     // de 100 a 150 -> +50%
     const t1 = calcTrend(150, 100);

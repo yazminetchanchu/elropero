@@ -182,9 +182,7 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
   }
 
   const totalCobrado = efectivo + tarjeta;
-  const es100Tarjeta = pctT === 100 && pctE === 0;
-  const ingresoParaGanancia = es100Tarjeta ? Math.max(0, (efectivo + tarjeta) - gift) : totalCobrado;
-  const ganancia = ingresoParaGanancia - costoTotal;
+  const ganancia = totalCobrado - costoTotal;
 
   return { efectivo, tarjeta, totalCobrado, costoTotal, ganancia };
 };

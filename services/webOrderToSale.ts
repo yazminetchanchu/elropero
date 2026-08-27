@@ -1,33 +1,44 @@
 import { CustomerOrder } from '../contexts/AuthContext';
 import { InventoryItem, SaleItem } from '../types';
 
-/** Convierte ítems de un pedido web a SaleItem para cambios (misma base que Caja). */
+export type CustomerOrderItem = CustomerOrder['items'][number];
+
+/**
+ * Convierte ítems de un pedido web a SaleItem para cambios (misma base que Caja y Backend).
+ * El precio devuelto/convertido es inmutable y se basa estrictamente en el precioUnitario transaccionado en la orden.
+ */
 export function buildSaleItemsFromOrder(
-  order: CustomerOrder,
-  inventory: InventoryItem[]
+  orderOrItems: CustomerOrder | { items: CustomerOrderItem[] } | CustomerOrderItem[],
+  inventory?: InventoryItem[]
 ): SaleItem[] {
-  return order.items.map((item) => {
-    const inv = inventory.find((i) => i.id === item.productId);
-    const precioEfectivo = inv?.ventaEfectivo ?? item.precioUnitario;
-    const precioTarjeta = inv?.ventaTarjeta ?? Math.round(precioEfectivo * 1.27);
+  const items = Array.isArray(orderOrItems)
+    ? orderOrItems
+    : (orderOrItems?.items || []);
+
+  return items.map((item: any) => {
+    const inv = inventory?.find((i) => i.id === (item.productId || item.id));
+    const precioCobrado = Number(item.precioUnitario ?? item.precioEfectivo ?? item.precioTarjeta ?? item.precio) || 0;
     const variant = [item.talle && `T:${item.talle}`, item.color && `C:${item.color}`]
       .filter(Boolean)
       .join(' ');
 
+    const baseDesc = item.descripcion || item.nombre || item.nombreProducto || 'Prenda Web';
+    const descripcion = variant && !baseDesc.includes(variant) ? `${baseDesc} (${variant})` : baseDesc;
+
     const saleItem: SaleItem = {
-      id: item.productId,
+      id: item.productId || item.id,
       sku: item.sku || inv?.sku || '---',
-      descripcion: variant ? `${item.descripcion} (${variant})` : item.descripcion,
-      cantidad: item.cantidad,
-      costo: inv?.costo ?? 0,
-      precioEfectivo,
-      precioTarjeta,
-      descuento: 0,
-      talle: item.talle,
-      color: item.color,
+      descripcion,
+      cantidad: item.cantidad || 1,
+      costo: Number(item.costo ?? inv?.costo) || 0,
+      precioEfectivo: precioCobrado,
+      precioTarjeta: precioCobrado,
+      descuento: Number(item.descuento) || 0,
+      talle: item.talle || '',
+      color: item.color || '',
     };
-    if ((item as any).cantidadDevuelta) {
-      (saleItem as any).cantidadDevuelta = (item as any).cantidadDevuelta;
+    if (item.cantidadDevuelta) {
+      (saleItem as any).cantidadDevuelta = item.cantidadDevuelta;
     }
     return saleItem;
   });

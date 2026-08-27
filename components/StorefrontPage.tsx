@@ -3429,6 +3429,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         isOpen={showBuyGiftCard}
         onClose={() => setShowBuyGiftCard(false)}
         onSuccess={() => setShowBuyGiftCard(false)}
+        webSettings={webSettings}
         onRequireAuth={() => {
           setShowBuyGiftCard(false);
           setPendingBuyGiftCard(true);

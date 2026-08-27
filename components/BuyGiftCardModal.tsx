@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Gift, Send, CreditCard, Landmark, Loader2 } from 'lucide-react';
+import { X, Gift, Send, CreditCard, Landmark, Loader2, CheckCircle, Copy, Check, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useModal } from '../contexts/ModalContext';
 import { reserveWebOrderStock } from '../services/webOrderFulfillment';
@@ -7,6 +7,7 @@ import { createUalaPayment } from '../services/ualaApi';
 import { collection, doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
+import { WebSettings } from '../types';
 
 import { getShowroomID } from '../services/storage';
 
@@ -17,6 +18,7 @@ interface BuyGiftCardModalProps {
   onClose: () => void;
   onSuccess: () => void;
   onRequireAuth?: () => void;
+  webSettings?: WebSettings;
 }
 
 const PRESET_AMOUNTS = [80000, 100000, 150000, 180000];
@@ -27,7 +29,13 @@ const PRESET_MESSAGES = [
   "¡Disfrutá tu regalo!"
 ];
 
-const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, onSuccess, onRequireAuth }) => {
+const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSuccess, 
+  onRequireAuth,
+  webSettings 
+}) => {
   const { user, customerProfile } = useAuth();
   const { showAlert } = useModal();
 
@@ -44,6 +52,17 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
   const [isLoading, setIsLoading] = React.useState(false);
   const [placedOrderId, setPlacedOrderId] = React.useState<string | null>(null);
 
+  const [copiedCbu, setCopiedCbu] = React.useState(false);
+  const [copiedAlias, setCopiedAlias] = React.useState(false);
+  const [copiedOrderId, setCopiedOrderId] = React.useState(false);
+
+  const titular = webSettings?.bankTitular?.trim() || 'EL ROPERO';
+  const cbu = webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100084729182736';
+  const alias = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'elropero.showroom';
+  const banco = webSettings?.bankName?.trim() || '';
+  const whatsappNumber = webSettings?.contactWhatsapp?.replace(/\D/g, '') || '5492346685836';
+  const storeName = webSettings?.storeName?.trim() || 'EL ROPERO';
+
   React.useEffect(() => {
     if (isOpen) {
       setStep('form');
@@ -54,6 +73,9 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
       setMensaje('');
       setIsLoading(false);
       setPlacedOrderId(null);
+      setCopiedCbu(false);
+      setCopiedAlias(false);
+      setCopiedOrderId(false);
       if (customerProfile?.nombre) {
         setDeParteDe(customerProfile.nombre);
       } else if (user?.displayName) {
@@ -87,6 +109,33 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
   const finalPrice = paymentMethod === 'transferencia' 
     ? finalMonto
     : Math.round(finalMonto / (1 - (DESCUENTO_BASE_TRANSFERENCIA / 100)));
+
+  const copyToClipboard = (text: string, type: 'cbu' | 'alias' | 'orderId') => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    if (type === 'cbu') {
+      setCopiedCbu(true);
+      setTimeout(() => setCopiedCbu(false), 2000);
+    } else if (type === 'alias') {
+      setCopiedAlias(true);
+      setTimeout(() => setCopiedAlias(false), 2000);
+    } else if (type === 'orderId') {
+      setCopiedOrderId(true);
+      setTimeout(() => setCopiedOrderId(false), 2000);
+    }
+  };
+
+  const handleSendWhatsApp = () => {
+    const orderDisplayId = placedOrderId ? (placedOrderId.startsWith('#') ? placedOrderId.toUpperCase() : `#${placedOrderId.toUpperCase()}`) : '';
+    const totalDisplay = `$${finalPrice.toLocaleString('es-AR')}`;
+    
+    let msg = `Hola ${storeName}! Acabo de registrar la compra de una Gift Card ${orderDisplayId} por transferencia bancaria`;
+    msg += ` por un total de ${totalDisplay} para ${destinatario.trim().toUpperCase()}.`;
+    msg += ` Les adjunto el comprobante de pago para su confirmación. ¡Muchas gracias!`;
+
+    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   const handlePay = async () => {
     if (!user) {
@@ -134,20 +183,22 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
       let redirectUrl: string | null = null;
       let ualaPaymentId: string | null = null;
 
-      const successUrl = `${window.location.origin}/?pago=ok&orderId=${orderId}`;
-      const failUrl = `${window.location.origin}/?pago=error&orderId=${orderId}`;
-      
-      const orderForUala = {
-        id: orderId,
-        total: finalPrice,
-        customerEmail: orderData.customerEmail || emailDestinatario.trim().toLowerCase(),
-        customerNombre: orderData.customerNombre,
-        customerTelefono: '1100000000',
-      };
+      if (paymentMethod === 'tarjeta') {
+        const successUrl = `${window.location.origin}/?pago=ok&orderId=${orderId}`;
+        const failUrl = `${window.location.origin}/?pago=error&orderId=${orderId}`;
+        
+        const orderForUala = {
+          id: orderId,
+          total: finalPrice,
+          customerEmail: orderData.customerEmail || emailDestinatario.trim().toLowerCase(),
+          customerNombre: orderData.customerNombre,
+          customerTelefono: '1100000000',
+        };
 
-      const ualaPayment = await createUalaPayment(orderForUala, successUrl, failUrl);
-      redirectUrl = ualaPayment.paymentUrl;
-      ualaPaymentId = ualaPayment.paymentId;
+        const ualaPayment = await createUalaPayment(orderForUala, successUrl, failUrl);
+        redirectUrl = ualaPayment.paymentUrl;
+        ualaPaymentId = ualaPayment.paymentId;
+      }
 
       const finalOrderData = {
         ...orderData,
@@ -159,10 +210,16 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
 
       await reserveWebOrderStock(PUBLIC_SHOWROOM_ID, orderId, finalOrderData);
 
+      try {
+        localStorage.setItem('ropero_last_pending_order', JSON.stringify(finalOrderData));
+      } catch (storageErr) {
+        console.error('Error al guardar orden pendiente en localStorage:', storageErr);
+      }
+
       setPlacedOrderId(orderId);
       setStep('success');
       
-      if (redirectUrl) {
+      if (paymentMethod === 'tarjeta' && redirectUrl) {
         window.location.href = redirectUrl;
       }
 
@@ -358,26 +415,154 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({ isOpen, onClose, on
                       disabled={isLoading}
                       className="flex-1 bg-black text-white py-3 rounded-none text-[10px] tracking-[0.25em] uppercase font-light flex items-center justify-center gap-2 hover:bg-neutral-800 transition-all disabled:opacity-50"
                     >
-                      {isLoading ? <Loader2 size={14} className="animate-spin" /> : 'Pagar y Enviar'}
+                      {isLoading ? <Loader2 size={14} className="animate-spin" /> : (paymentMethod === 'transferencia' ? 'Confirmar y Ver Datos Bancarios' : 'Pagar con Tarjeta')}
                     </button>
                   </div>
                 </div>
               )}
 
               {step === 'success' && (
-                <div className="py-8 text-center space-y-3">
-                  <Gift size={48} strokeWidth={1} className="mx-auto text-black" />
-                  <h3 className="text-base font-light uppercase tracking-[0.2em]">¡Redirigiendo al Pago!</h3>
-                  <p className="text-[11px] font-light text-neutral-500 max-w-xs mx-auto leading-relaxed">
-                    Se abrirá la ventana de Ualá Bis para completar el pago. Al confirmarse, <strong>{destinatario}</strong> recibirá su Gift Card digital por email.
-                  </p>
-                  <button
-                    onClick={() => { onClose(); onSuccess(); }}
-                    className="mt-6 px-6 py-2.5 bg-black text-white rounded-none text-[10px] tracking-[0.2em] uppercase font-light hover:bg-neutral-800 transition-all"
-                  >
-                    Cerrar
-                  </button>
-                </div>
+                paymentMethod === 'tarjeta' ? (
+                  <div className="py-8 text-center space-y-3">
+                    <Gift size={48} strokeWidth={1} className="mx-auto text-black" />
+                    <h3 className="text-base font-light uppercase tracking-[0.2em]">¡Redirigiendo al Pago!</h3>
+                    <p className="text-[11px] font-light text-neutral-500 max-w-xs mx-auto leading-relaxed">
+                      Se abrirá la ventana de Ualá Bis para completar el pago. Al confirmarse, <strong>{destinatario}</strong> recibirá su Gift Card digital por email.
+                    </p>
+                    <button
+                      onClick={() => { onClose(); onSuccess(); }}
+                      className="mt-6 px-6 py-2.5 bg-black text-white rounded-none text-[10px] tracking-[0.2em] uppercase font-light hover:bg-neutral-800 transition-all"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Header Éxito Transferencia */}
+                    <div className="text-center space-y-2">
+                      <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center mx-auto shadow-sm">
+                        <CheckCircle size={24} strokeWidth={1.4} />
+                      </div>
+                      <p className="text-[9px] tracking-[0.25em] uppercase font-light text-neutral-400">Gift Card Registrada</p>
+                      <h3 className="text-base font-light uppercase tracking-[0.2em] text-black">
+                        ¡Pedido Registrado con Éxito!
+                      </h3>
+                      <p className="text-[11px] text-neutral-500 font-light leading-relaxed max-w-xs mx-auto">
+                        Para enviar la Gift Card a <strong>{destinatario}</strong> ({emailDestinatario}), realizá la transferencia y envianos el comprobante por WhatsApp.
+                      </p>
+                    </div>
+
+                    {/* Banner Temporizador 24h */}
+                    <div className="bg-amber-50/70 border border-amber-200/80 p-3.5 flex items-start gap-3 text-amber-900 rounded-none">
+                      <Clock size={16} className="mt-0.5 flex-shrink-0 text-amber-700 animate-pulse" strokeWidth={1.5} />
+                      <div className="space-y-0.5">
+                        <p className="text-[9px] tracking-[0.15em] uppercase font-semibold text-amber-900">
+                          Tenés 24 horas para transferir
+                        </p>
+                        <p className="text-[9px] leading-relaxed font-light text-amber-800/90">
+                          La Gift Card se activará y enviará al destinatario apenas confirmemos el comprobante de pago.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Resumen del Pedido */}
+                    <div className="grid grid-cols-2 gap-2 text-left">
+                      <div className="bg-neutral-50 border border-neutral-200/70 p-3">
+                        <p className="text-[8px] tracking-[0.2em] uppercase font-light text-neutral-400 mb-0.5">Pedido</p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-xs font-medium text-black">
+                            {placedOrderId ? (placedOrderId.startsWith('#') ? placedOrderId.toUpperCase() : `#${placedOrderId.toUpperCase().slice(0, 10)}`) : 'REGISTRADO'}
+                          </span>
+                          {placedOrderId && (
+                            <button
+                              onClick={() => copyToClipboard(placedOrderId, 'orderId')}
+                              className="text-[8px] uppercase tracking-wider text-neutral-500 hover:text-black"
+                              title="Copiar ID"
+                            >
+                              {copiedOrderId ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="bg-neutral-50 border border-neutral-200/70 p-3">
+                        <p className="text-[8px] tracking-[0.2em] uppercase font-light text-neutral-400 mb-0.5">Total a Transferir</p>
+                        <span className="font-mono text-xs font-semibold text-emerald-700">
+                          ${finalPrice.toLocaleString('es-AR')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Datos Bancarios */}
+                    <div className="bg-white border border-neutral-200/80 p-4 space-y-2.5 text-left">
+                      <div className="flex items-center gap-2 border-b border-neutral-100 pb-2">
+                        <Landmark size={14} strokeWidth={1.3} className="text-neutral-500" />
+                        <span className="text-[9px] tracking-[0.2em] uppercase font-medium text-black">
+                          Datos para la Transferencia
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-[10px]">
+                        <div className="flex justify-between items-center py-1 border-b border-neutral-100/70">
+                          <span className="text-[8px] tracking-[0.15em] uppercase text-neutral-400">Titular</span>
+                          <span className="font-normal text-black uppercase tracking-wider">{titular}</span>
+                        </div>
+
+                        {banco && (
+                          <div className="flex justify-between items-center py-1 border-b border-neutral-100/70">
+                            <span className="text-[8px] tracking-[0.15em] uppercase text-neutral-400">Banco</span>
+                            <span className="font-normal text-black uppercase tracking-wider">{banco}</span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center py-1 border-b border-neutral-100/70">
+                          <div>
+                            <span className="block text-[8px] tracking-[0.15em] uppercase text-neutral-400">Alias</span>
+                            <span className="font-mono text-[11px] font-medium text-black">{alias}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(alias, 'alias')}
+                            className="border border-neutral-300 hover:border-black px-2 py-1 text-[8px] uppercase tracking-wider text-black font-light flex items-center gap-1 transition-all"
+                          >
+                            {copiedAlias ? <><Check size={10} className="text-emerald-500" /> Copiado</> : <><Copy size={10} /> Copiar Alias</>}
+                          </button>
+                        </div>
+
+                        <div className="flex justify-between items-center py-1">
+                          <div>
+                            <span className="block text-[8px] tracking-[0.15em] uppercase text-neutral-400">CBU / CVU</span>
+                            <span className="font-mono text-[11px] font-medium text-black break-all">{cbu}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(cbu, 'cbu')}
+                            className="border border-neutral-300 hover:border-black px-2 py-1 text-[8px] uppercase tracking-wider text-black font-light flex items-center gap-1 transition-all"
+                          >
+                            {copiedCbu ? <><Check size={10} className="text-emerald-500" /> Copiado</> : <><Copy size={10} /> Copiar CBU</>}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Botones de Acción */}
+                    <div className="space-y-2 pt-2">
+                      <button
+                        onClick={handleSendWhatsApp}
+                        className="w-full bg-black text-white hover:bg-neutral-800 py-3 px-6 text-[9px] tracking-[0.25em] uppercase font-light transition-all flex items-center justify-center gap-2 rounded-none"
+                      >
+                        <Send size={12} strokeWidth={1.3} />
+                        <span>Enviar Comprobante por WhatsApp</span>
+                      </button>
+
+                      <button
+                        onClick={() => { onClose(); onSuccess(); }}
+                        className="w-full bg-transparent border border-neutral-300 hover:border-black text-black py-2.5 px-6 text-[8px] tracking-[0.25em] uppercase font-light transition-all rounded-none"
+                      >
+                        Cerrar y Volver a la Tienda
+                      </button>
+                    </div>
+                  </div>
+                )
               )}
             </>
           )}

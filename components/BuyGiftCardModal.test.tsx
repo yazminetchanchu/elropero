@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import BuyGiftCardModal from './BuyGiftCardModal';
 import { ModalProvider } from '../contexts/ModalContext';
@@ -16,6 +16,11 @@ vi.mock('../contexts/AuthContext', () => ({
 
 vi.mock('../services/firebase', () => ({
   db: {},
+}));
+
+vi.mock('firebase/firestore', () => ({
+  collection: vi.fn(() => ({})),
+  doc: vi.fn(() => ({ id: 'mock_order_123' })),
 }));
 
 vi.mock('../services/webOrderFulfillment', async (importOriginal) => ({
@@ -87,5 +92,103 @@ describe('BuyGiftCardModal Component', () => {
     const customInput = screen.getByPlaceholderText(/Otro monto\.\.\./i);
     fireEvent.change(customInput, { target: { value: '250000' } });
     expect(customInput).toHaveValue(250000);
+  });
+
+  it('completes bank transfer purchase without calling createUalaPayment and shows banking details', async () => {
+    const mockWebSettings = {
+      bankTitular: 'EL ROPERO SHOWROOM',
+      bankAlias: 'elropero.alias.test',
+      bankCbu: '0000001234567890123456',
+      bankName: 'Banco Galicia',
+      contactWhatsapp: '5491112345678',
+      storeName: 'EL ROPERO'
+    };
+
+    render(
+      <ModalProvider>
+        <BuyGiftCardModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+          webSettings={mockWebSettings}
+        />
+      </ModalProvider>
+    );
+
+    // Fill form
+    fireEvent.change(screen.getByPlaceholderText(/Nombre y Apellido de quien recibe/i), {
+      target: { value: 'Maria Lopez' }
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Email de quien recibe/i), {
+      target: { value: 'maria@example.com' }
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Tu Nombre/i), {
+      target: { value: 'Ana Perez' }
+    });
+
+    // Advance to payment step
+    fireEvent.click(screen.getByRole('button', { name: /Continuar al Pago/i }));
+
+    expect(await screen.findByText(/Transferencia \/ Dinero en cuenta/i)).toBeInTheDocument();
+
+    // Confirm bank transfer
+    const payBtn = screen.getByRole('button', { name: /Confirmar y Ver Datos Bancarios/i });
+    fireEvent.click(payBtn);
+
+    // Verify createUalaPayment is NOT called
+    const { createUalaPayment } = await import('../services/ualaApi');
+    const { reserveWebOrderStock } = await import('../services/webOrderFulfillment');
+    
+    await waitFor(() => {
+      expect(reserveWebOrderStock).toHaveBeenCalled();
+    });
+    expect(createUalaPayment).not.toHaveBeenCalled();
+
+    // Verify bank transfer data is displayed
+    expect(await screen.findByText(/¡Pedido Registrado con Éxito!/i)).toBeInTheDocument();
+    expect(screen.getByText('elropero.alias.test')).toBeInTheDocument();
+    expect(screen.getByText('0000001234567890123456')).toBeInTheDocument();
+    expect(screen.getByText('EL ROPERO SHOWROOM')).toBeInTheDocument();
+    expect(screen.getByText('Banco Galicia')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Enviar Comprobante por WhatsApp/i })).toBeInTheDocument();
+  });
+
+  it('calls createUalaPayment when card payment method is selected', async () => {
+    render(
+      <ModalProvider>
+        <BuyGiftCardModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      </ModalProvider>
+    );
+
+    // Fill form
+    fireEvent.change(screen.getByPlaceholderText(/Nombre y Apellido de quien recibe/i), {
+      target: { value: 'Maria Lopez' }
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Email de quien recibe/i), {
+      target: { value: 'maria@example.com' }
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Tu Nombre/i), {
+      target: { value: 'Ana Perez' }
+    });
+
+    // Advance to payment step
+    fireEvent.click(screen.getByRole('button', { name: /Continuar al Pago/i }));
+
+    // Select card payment
+    const cardOption = await screen.findByText(/Tarjetas de Crédito \/ Débito/i);
+    fireEvent.click(cardOption);
+
+    // Click pay with card
+    const payBtn = screen.getByRole('button', { name: /Pagar con Tarjeta/i });
+    fireEvent.click(payBtn);
+
+    const { createUalaPayment } = await import('../services/ualaApi');
+    await waitFor(() => {
+      expect(createUalaPayment).toHaveBeenCalled();
+    });
   });
 });
