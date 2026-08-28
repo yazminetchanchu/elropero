@@ -436,6 +436,8 @@ export const fulfillWebCambioServer = functions.https.onCall(async (data, contex
       let originalOrderData: any = null;
       let rootOrderRef: any = null;
       let custOrderRef: any = null;
+      let customerDocRef: any = null;
+      let customerDocSnap: any = null;
 
       if (originalOrderId) {
         rootOrderRef = showroomRef.collection('orders').doc(originalOrderId);
@@ -457,6 +459,12 @@ export const fulfillWebCambioServer = functions.https.onCall(async (data, contex
             custOrderRef = showroomRef.collection('customers').doc(targetCustId).collection('orders').doc(originalOrderId);
           }
         }
+      }
+
+      const targetCustomerId: string = customerId || originalOrderData?.customerId || 'GUEST';
+      if (targetCustomerId && targetCustomerId !== 'GUEST') {
+        customerDocRef = showroomRef.collection('customers').doc(targetCustomerId);
+        customerDocSnap = await transaction.get(customerDocRef);
       }
 
       // ─────────────────────────────────────────────────────────────────
@@ -597,16 +605,33 @@ export const fulfillWebCambioServer = functions.https.onCall(async (data, contex
         let montoGift = Math.abs(diferencia);
         if (isNaN(montoGift)) montoGift = 0;
 
-        giftCodigo = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        const FRIENDLY_GIFT_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+        const existingCodes = new Set((giftCards || []).map((g: any) => (g.codigo || '').trim().toUpperCase()));
+        let code = '';
+        let attempts = 0;
+        do {
+          let p1 = '';
+          let p2 = '';
+          for (let i = 0; i < 4; i++) {
+            p1 += FRIENDLY_GIFT_CHARS[Math.floor(Math.random() * FRIENDLY_GIFT_CHARS.length)];
+            p2 += FRIENDLY_GIFT_CHARS[Math.floor(Math.random() * FRIENDLY_GIFT_CHARS.length)];
+          }
+          code = `GC-${p1}-${p2}`;
+          attempts++;
+        } while (existingCodes.has(code) && attempts < 200);
+
+        giftCodigo = code;
 
         giftGenerada = {
           id: `gift_${Date.now()}`,
           codigo: giftCodigo,
-          destinatario: giftDestinatario?.trim() || 'Cambio web',
+          destinatario: giftDestinatario?.trim() || payload.customerNombre || originalOrderData?.customerNombre || 'Cliente',
           montoInicial: montoGift,
           saldo: montoGift,
           estado: 'ACTIVA',
           fechaCreacion: new Date().toISOString(),
+          email: payload.customerEmail || originalOrderData?.customerEmail || null,
+          customerId: (targetCustomerId && targetCustomerId !== 'GUEST') ? targetCustomerId : null,
           medioPagoOrigen,
           ventaOrigenId: ventaOriginalId,
         };
@@ -715,7 +740,6 @@ export const fulfillWebCambioServer = functions.https.onCall(async (data, contex
       // Preparar nueva orden de cambio si se eligieron prendas nuevas
       let newCambioOrderPayload: any = null;
       let cambioOrderId: string | null = null;
-      let targetCustomerId: string = customerId || originalOrderData?.customerId || 'GUEST';
 
       if (safeItemsNuevos.length > 0) {
         cambioOrderId = `order_cambio_${Date.now()}`;
@@ -775,6 +799,26 @@ export const fulfillWebCambioServer = functions.https.onCall(async (data, contex
         giftCards: nextGiftCards,
         lastSync: Date.now(),
       }));
+
+      if (giftGenerada && customerDocRef && giftCodigo) {
+        if (customerDocSnap && customerDocSnap.exists) {
+          const custData = customerDocSnap.data() || {};
+          const existingGifts = custData.giftCards || [];
+          if (!existingGifts.includes(giftCodigo)) {
+            transaction.update(customerDocRef, sanitize({
+              giftCards: [...existingGifts, giftCodigo],
+              lastUpdate: new Date().toISOString(),
+            }));
+          }
+        } else {
+          transaction.set(customerDocRef, sanitize({
+            uid: targetCustomerId,
+            email: payload.customerEmail || originalOrderData?.customerEmail || '',
+            giftCards: [giftCodigo],
+            createdAt: new Date().toISOString(),
+          }), { merge: true });
+        }
+      }
 
       if (updatedOriginalOrderPayload && rootOrderRef) {
         transaction.set(rootOrderRef, updatedOriginalOrderPayload, { merge: true });

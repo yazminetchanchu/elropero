@@ -293,7 +293,11 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       } catch (err: any) {
         console.error('Error al reservar stock en base de datos al abrir checkout:', err);
         if (isMounted) {
-          showAlert(err.message || 'No hay stock suficiente para algunas prendas en tu carrito.', 'Sin stock disponible', 'error');
+          showAlert(
+            err.message || 'Hubo un inconveniente de conexión al verificar el stock. Tus productos permanecen en tu carrito.',
+            'Aviso de Reserva',
+            'warning'
+          );
           onClose();
         }
       } finally {
@@ -529,6 +533,11 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
   }, [webSettings.mercadoPagoTransferUrl, webSettings.mercadoPagoAlias]);
 
   const validateCurrentStock = React.useCallback((): string | null => {
+    // Si la reserva ya fue tomada exitosamente en el servidor para este checkout, el stock ya está bloqueado a nuestro favor
+    if (isReservationActive) {
+      return null;
+    }
+
     for (const c of cart) {
       const liveProd = (inventory && inventory.length > 0)
         ? inventory.find(i => i.id === c.product.id)
@@ -549,7 +558,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       }
     }
     return null;
-  }, [cart, inventory]);
+  }, [cart, inventory, isReservationActive]);
 
   const handleNextStep = () => {
     setErrorMsg(null);
@@ -1436,7 +1445,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                     <div className="space-y-2.5 text-[10px] font-light">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-neutral-100/70">
                         <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400">Titular</span>
-                        <span className="font-normal text-black uppercase tracking-wider">{webSettings?.bankTitular?.trim() || 'EL ROPERO'}</span>
+                        <span className="font-normal text-black uppercase tracking-wider">{webSettings?.bankTitular?.trim() || 'Danisa Guzman'}</span>
                       </div>
 
                       {webSettings?.bankName?.trim() && (
@@ -1449,12 +1458,12 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-neutral-100/70">
                         <div>
                           <span className="block text-[8px] tracking-[0.2em] uppercase text-neutral-400">Alias</span>
-                          <span className="font-mono text-[11px] font-medium text-black">{webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'elropero.showroom'}</span>
+                          <span className="font-mono text-[11px] font-medium text-black">{webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'Danisa.guz.03'}</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => {
-                            const val = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'elropero.showroom';
+                            const val = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'Danisa.guz.03';
                             navigator.clipboard.writeText(val);
                             setCopiedAlias(true);
                             setTimeout(() => setCopiedAlias(false), 2000);
@@ -1468,12 +1477,12 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                           <span className="block text-[8px] tracking-[0.2em] uppercase text-neutral-400">CBU / CVU</span>
-                          <span className="font-mono text-[11px] font-medium text-black break-all">{webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100084729182736'}</span>
+                          <span className="font-mono text-[11px] font-medium text-black break-all">{webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100037658598052'}</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => {
-                            const val = webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100084729182736';
+                            const val = webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100037658598052';
                             navigator.clipboard.writeText(val);
                             setCopiedCbu(true);
                             setTimeout(() => setCopiedCbu(false), 2000);

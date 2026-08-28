@@ -791,7 +791,7 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                   value={localSettings?.bankTitular || ''}
                   onChange={e => setLocalSettings({ ...localSettings, bankTitular: e.target.value })}
                   className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold uppercase"
-                  placeholder="EL ROPERO SHOWROOM"
+                  placeholder="Danisa Guzman"
                 />
               </div>
               <div className="space-y-3">
@@ -801,7 +801,7 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                   value={localSettings?.bankCbu || ''}
                   onChange={e => setLocalSettings({ ...localSettings, bankCbu: e.target.value })}
                   className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold font-mono"
-                  placeholder="0000003100084729182736"
+                  placeholder="0000003100037658598052"
                 />
               </div>
               <div className="space-y-3">
@@ -811,7 +811,7 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                   value={localSettings?.bankAlias || localSettings?.mercadoPagoAlias || ''}
                   onChange={e => setLocalSettings({ ...localSettings, bankAlias: e.target.value, mercadoPagoAlias: e.target.value })}
                   className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold font-mono"
-                  placeholder="elropero.showroom"
+                  placeholder="Danisa.guz.03"
                 />
               </div>
               <div className="space-y-3">

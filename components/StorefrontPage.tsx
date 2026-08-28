@@ -31,7 +31,7 @@ import BuyGiftCardModal from './BuyGiftCardModal';
 import Footer from './Footer';
 import { CustomerOrder } from '../contexts/AuthContext';
 import { buildSaleItemsFromOrder, getOrderSaleId, isGiftCardOrder } from '../services/webOrderToSale';
-import { sumTransferLines, sumExchangeLines, DESCUENTO_BASE_TRANSFERENCIA } from '../services/exchangePricing';
+import { sumTransferLines, sumExchangeLines, DESCUENTO_BASE_TRANSFERENCIA, calculateExchangeBreakdown } from '../services/exchangePricing';
 import { fulfillWebCambio } from '../services/webCambioFulfillment';
 import { fulfillWebOrder, isOrderExpired, releaseExpiredReservations, getAvailableStock } from '../services/webOrderFulfillment';
 import { sendNotificationEmail, sendSaleConfirmationEmail, sendGiftCardEmail } from '../services/emailService';
@@ -848,30 +848,29 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     const totalDev = sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaDev);
 
     const isTransferenciaNuevo = exchangePaymentMethod === 'transferencia';
-    const totalNuevo = cart.reduce((sum, c) => {
-      const disc = getDiscount(c.product);
-      const basePrice = isTransferenciaNuevo ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-      const price = getDiscountedPrice(basePrice, disc, isTransferenciaNuevo);
-      return sum + price * c.quantity;
-    }, 0);
-
-    if (exchangeTipoEnvio === 'envio') {
-      if (exchangeCpCliente.trim().length < 4) {
-        showAlert('Por favor ingresá un Código Postal válido (mínimo 4 dígitos) para cotizar el envío.', 'Código Postal Faltante', 'warning');
-        return;
-      }
-      if (isCalculatingExchangeShipping) {
-        showAlert('Por favor aguardá un segundo a que finalice la cotización del envío.', 'Calculando Envío', 'info');
-        return;
-      }
-      if (exchangeShippingError) {
-        showAlert(exchangeShippingError, 'Error de Envíos', 'warning');
-        return;
-      }
-    }
-
     const costoEnvioTotal = (cart.length > 0 && exchangeTipoEnvio === 'envio') ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
-    const diferencia = totalNuevo - totalDev + costoEnvioTotal;
+
+    const breakdown = calculateExchangeBreakdown({
+      itemsDevueltos: exchangeSession.itemsDevueltos,
+      itemsNuevos: cart.map(c => ({
+        id: c.product.id,
+        productId: c.product.id,
+        descripcion: c.product.descripcion,
+        quantity: c.quantity,
+        product: c.product,
+      })),
+      isTransferenciaDev,
+      isTransferenciaNuevo,
+      costoEnvioTotal,
+      resolveNewUnitPrice: (item) => {
+        const p = item.product;
+        const disc = getDiscount(p);
+        const basePrice = isTransferenciaNuevo ? p.ventaEfectivo : p.ventaTarjeta;
+        return getDiscountedPrice(basePrice, disc, isTransferenciaNuevo);
+      }
+    });
+
+    const diferencia = breakdown.diferenciaTotal;
 
     const ventaOriginalId = getOrderSaleId(exchangeSession.order)!;
     const currentCustomerId = user?.uid || customerProfile?.id || exchangeSession.order.customerId;
@@ -1043,9 +1042,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           ...shippingPayloadMeta,
         });
 
-        const aliasStr = webSettings.mercadoPagoAlias ? `Alias: ${webSettings.mercadoPagoAlias}` : '';
-        const cbuStr = webSettings.cbuData ? `CBU: ${webSettings.cbuData}` : '';
-        const bankInfo = [aliasStr, cbuStr].filter(Boolean).join(' | ');
+        const titularStr = `Titular: ${webSettings.bankTitular?.trim() || 'Danisa Guzman'}`;
+        const aliasStr = `Alias: ${webSettings.bankAlias?.trim() || webSettings.mercadoPagoAlias?.trim() || 'Danisa.guz.03'}`;
+        const cbuStr = `CVU/CBU: ${webSettings.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100037658598052'}`;
+        const bankInfo = [titularStr, aliasStr, cbuStr].filter(Boolean).join(' | ');
 
         showAlert(
           `Cambio registrado en caja (${saleId}).\nPor favor realizá la transferencia por $${diferencia.toLocaleString('es-AR')}.\n${bankInfo}`,
@@ -1237,7 +1237,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     const isFirstLoad = prevInventoryRef.current.length === 0;
     prevInventoryRef.current = inventory;
 
-    if (cart.length === 0) return;
+    if (cart.length === 0 || showCheckout) return;
 
     const warnings: string[] = [];
     let changed = false;
@@ -1445,6 +1445,45 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
   const cartCount = cart.reduce((s, c) => s + c.quantity, 0);
 
+  const exchangeBreakdown = React.useMemo(() => {
+    if (!exchangeSession) return null;
+    const metodoPagoOriginal = exchangeSession.order?.metodoPago?.toLowerCase() || '';
+    const isTransferenciaDev = (exchangeSession.order as any)?.pago
+      ? (exchangeSession.order as any).pago.efectivo === 100
+      : (metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo'));
+    const isTransferenciaNuevo = exchangePaymentMethod === 'transferencia';
+    const costoEnvioTotal = (cart.length > 0 && exchangeTipoEnvio === 'envio') ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
+
+    return calculateExchangeBreakdown({
+      itemsDevueltos: exchangeSession.itemsDevueltos,
+      itemsNuevos: cart.map(c => ({
+        id: c.product.id,
+        productId: c.product.id,
+        descripcion: c.product.descripcion,
+        quantity: c.quantity,
+        product: c.product,
+      })),
+      isTransferenciaDev,
+      isTransferenciaNuevo,
+      costoEnvioTotal,
+      resolveNewUnitPrice: (item) => {
+        const p = item.product;
+        const disc = getDiscount(p);
+        const basePrice = isTransferenciaNuevo ? p.ventaEfectivo : p.ventaTarjeta;
+        return getDiscountedPrice(basePrice, disc, isTransferenciaNuevo);
+      }
+    });
+  }, [
+    exchangeSession,
+    cart,
+    exchangePaymentMethod,
+    exchangeTipoEnvio,
+    costoEnvioDevolucion,
+    costoEnvioNuevo,
+    getDiscount,
+    getDiscountedPrice
+  ]);
+
   const totalDevueltoExchange = React.useMemo(() => {
     if (!exchangeSession) return 0;
     const metodoPagoOriginal = exchangeSession.order?.metodoPago?.toLowerCase() || '';
@@ -1454,7 +1493,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     return sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaDev);
   }, [exchangeSession]);
 
-  const diferenciaExchange = finalCartTotal - totalDevueltoExchange;
+  const diferenciaExchange = exchangeBreakdown ? exchangeBreakdown.diferenciaSinEnvio : (finalCartTotal - totalDevueltoExchange);
 
   const sendWhatsApp = () => {
     const store = (webSettings.storeName || 'El Ropero').trim();
@@ -2779,7 +2818,17 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                   </button>
                 </div>
                 <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Resumen del cambio</p>
-                <div className="max-h-[140px] overflow-y-auto visible-scrollbar pr-1 space-y-2">
+                <div className="max-h-[160px] overflow-y-auto visible-scrollbar pr-1 space-y-2">
+                  {exchangeBreakdown && exchangeBreakdown.matchedPairsCount > 0 && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+                      <p className="text-[9.5px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <span>🤝 {exchangeBreakdown.matchedPairsCount} cambio(s) directo(s) ($0 diferencia)</span>
+                      </p>
+                      <p className="text-[8px] opacity-80 normal-case leading-tight">
+                        Por ley y política comercial, el cambio de talle o color del mismo producto es directo sin recargos.
+                      </p>
+                    </div>
+                  )}
                   {exchangeSession.itemsDevueltos.length > 0 ? (
                     <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60">
                       <p className="font-bold text-black/40">Devolvés</p>

@@ -56,9 +56,9 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({
   const [copiedAlias, setCopiedAlias] = React.useState(false);
   const [copiedOrderId, setCopiedOrderId] = React.useState(false);
 
-  const titular = webSettings?.bankTitular?.trim() || 'EL ROPERO';
-  const cbu = webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100084729182736';
-  const alias = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'elropero.showroom';
+  const titular = webSettings?.bankTitular?.trim() || 'Danisa Guzman';
+  const cbu = webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100037658598052';
+  const alias = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'Danisa.guz.03';
   const banco = webSettings?.bankName?.trim() || '';
   const whatsappNumber = webSettings?.contactWhatsapp?.replace(/\D/g, '') || '5492346685836';
   const storeName = webSettings?.storeName?.trim() || 'EL ROPERO';

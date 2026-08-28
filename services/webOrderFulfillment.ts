@@ -343,7 +343,22 @@ export async function reserveWebOrderStock(
     console.log('Reserva confirmada en el servidor:', result.data);
   } catch (error: any) {
     console.error('Error al reservar stock mediante Cloud Function:', error);
-    throw new Error(error.message || 'No se pudo reservar el stock. Es posible que algún producto se haya agotado.');
+    const msg = error?.message || '';
+    const isNetworkOrInternal =
+      error?.code === 'internal' ||
+      error?.code === 'unavailable' ||
+      error?.code === 'functions/internal' ||
+      error?.code === 'functions/unavailable' ||
+      msg.toLowerCase().includes('internal') ||
+      msg.toLowerCase().includes('cors') ||
+      msg.toLowerCase().includes('failed to fetch') ||
+      msg.toLowerCase().includes('network');
+
+    if (isNetworkOrInternal) {
+      throw new Error('Hubo un problema de conexión con el servidor al verificar el stock. Por favor, intentá nuevamente.');
+    }
+
+    throw new Error(msg || 'No se pudo reservar el stock. Es posible que algún producto se haya agotado.');
   }
 }
 

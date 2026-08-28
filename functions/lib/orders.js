@@ -391,6 +391,8 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
             let originalOrderData = null;
             let rootOrderRef = null;
             let custOrderRef = null;
+            let customerDocRef = null;
+            let customerDocSnap = null;
             if (originalOrderId) {
                 rootOrderRef = showroomRef.collection('orders').doc(originalOrderId);
                 let orderSnap = await transaction.get(rootOrderRef);
@@ -409,6 +411,11 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
                         custOrderRef = showroomRef.collection('customers').doc(targetCustId).collection('orders').doc(originalOrderId);
                     }
                 }
+            }
+            const targetCustomerId = customerId || (originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.customerId) || 'GUEST';
+            if (targetCustomerId && targetCustomerId !== 'GUEST') {
+                customerDocRef = showroomRef.collection('customers').doc(targetCustomerId);
+                customerDocSnap = await transaction.get(customerDocRef);
             }
             // ─────────────────────────────────────────────────────────────────
             // 2. VALIDACIONES Y CÁLCULOS
@@ -533,15 +540,31 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
                 let montoGift = Math.abs(diferencia);
                 if (isNaN(montoGift))
                     montoGift = 0;
-                giftCodigo = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+                const FRIENDLY_GIFT_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+                const existingCodes = new Set((giftCards || []).map((g) => (g.codigo || '').trim().toUpperCase()));
+                let code = '';
+                let attempts = 0;
+                do {
+                    let p1 = '';
+                    let p2 = '';
+                    for (let i = 0; i < 4; i++) {
+                        p1 += FRIENDLY_GIFT_CHARS[Math.floor(Math.random() * FRIENDLY_GIFT_CHARS.length)];
+                        p2 += FRIENDLY_GIFT_CHARS[Math.floor(Math.random() * FRIENDLY_GIFT_CHARS.length)];
+                    }
+                    code = `GC-${p1}-${p2}`;
+                    attempts++;
+                } while (existingCodes.has(code) && attempts < 200);
+                giftCodigo = code;
                 giftGenerada = {
                     id: `gift_${Date.now()}`,
                     codigo: giftCodigo,
-                    destinatario: (giftDestinatario === null || giftDestinatario === void 0 ? void 0 : giftDestinatario.trim()) || 'Cambio web',
+                    destinatario: (giftDestinatario === null || giftDestinatario === void 0 ? void 0 : giftDestinatario.trim()) || payload.customerNombre || (originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.customerNombre) || 'Cliente',
                     montoInicial: montoGift,
                     saldo: montoGift,
                     estado: 'ACTIVA',
                     fechaCreacion: new Date().toISOString(),
+                    email: payload.customerEmail || (originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.customerEmail) || null,
+                    customerId: (targetCustomerId && targetCustomerId !== 'GUEST') ? targetCustomerId : null,
                     medioPagoOrigen,
                     ventaOrigenId: ventaOriginalId,
                 };
@@ -617,7 +640,6 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
             // Preparar nueva orden de cambio si se eligieron prendas nuevas
             let newCambioOrderPayload = null;
             let cambioOrderId = null;
-            let targetCustomerId = customerId || (originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.customerId) || 'GUEST';
             if (safeItemsNuevos.length > 0) {
                 cambioOrderId = `order_cambio_${Date.now()}`;
                 const targetCustomerEmail = payload.customerEmail || (originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.customerEmail) || '';
@@ -653,6 +675,26 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
                 giftCards: nextGiftCards,
                 lastSync: Date.now(),
             }));
+            if (giftGenerada && customerDocRef && giftCodigo) {
+                if (customerDocSnap && customerDocSnap.exists) {
+                    const custData = customerDocSnap.data() || {};
+                    const existingGifts = custData.giftCards || [];
+                    if (!existingGifts.includes(giftCodigo)) {
+                        transaction.update(customerDocRef, sanitize({
+                            giftCards: [...existingGifts, giftCodigo],
+                            lastUpdate: new Date().toISOString(),
+                        }));
+                    }
+                }
+                else {
+                    transaction.set(customerDocRef, sanitize({
+                        uid: targetCustomerId,
+                        email: payload.customerEmail || (originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.customerEmail) || '',
+                        giftCards: [giftCodigo],
+                        createdAt: new Date().toISOString(),
+                    }), { merge: true });
+                }
+            }
             if (updatedOriginalOrderPayload && rootOrderRef) {
                 transaction.set(rootOrderRef, updatedOriginalOrderPayload, { merge: true });
                 if (custOrderRef) {
