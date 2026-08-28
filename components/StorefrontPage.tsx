@@ -322,7 +322,6 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     if (user) {
       setShowBuyGiftCard(true);
     } else {
-      showAlert('Debés estar registrado e iniciar sesión para comprar una Gift Card.', 'Registro Requerido', 'info');
       setPendingBuyGiftCard(true);
       setShowAuthModal(true);
     }

@@ -381,4 +381,18 @@ export async function releaseExpiredReservations(showroomId: string): Promise<vo
   }
 }
 
+export async function cancelWebOrderReservation(showroomId: string, orderId: string): Promise<void> {
+  try {
+    const cancelFn = httpsCallable<{ showroomId: string; orderId: string }, { success: boolean }>(
+      functions,
+      'cancelWebOrderReservationServer'
+    );
+    await cancelFn({ showroomId, orderId });
+    console.log(`[cancelWebOrderReservation] Reserva ${orderId} cancelada en el servidor.`);
+  } catch (e: any) {
+    console.warn('[cancelWebOrderReservation] Error al cancelar reserva de orden:', e?.message || e);
+  }
+}
+
+
 

@@ -4,6 +4,7 @@ import {
   reserveWebOrderStock,
   fulfillWebOrder,
   releaseExpiredReservations,
+  cancelWebOrderReservation,
   isOrderExpired,
   WebOrderForFulfillment,
 } from '../services/webOrderFulfillment';
@@ -283,6 +284,36 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
       expect(consoleSpy).toHaveBeenCalledWith(
         '[releaseExpiredReservations] Aviso al verificar reservas expiradas:',
         'Network error'
+      );
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('cancelWebOrderReservation', () => {
+    it('invoca la Cloud Function cancelWebOrderReservationServer con showroomId y orderId', async () => {
+      mockHttpsCallableFn.mockResolvedValueOnce({
+        data: {
+          success: true,
+        },
+      });
+
+      await cancelWebOrderReservation('ROPERO', 'ORD-999');
+
+      expect(mockHttpsCallableFn).toHaveBeenCalledWith({
+        showroomId: 'ROPERO',
+        orderId: 'ORD-999',
+      });
+    });
+
+    it('maneja errores sin propagar excepciones no controladas', async () => {
+      mockHttpsCallableFn.mockRejectedValueOnce(new Error('Internal error'));
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await expect(cancelWebOrderReservation('ROPERO', 'ORD-ERR')).resolves.toBeUndefined();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[cancelWebOrderReservation] Error al cancelar reserva de orden:',
+        'Internal error'
       );
       consoleSpy.mockRestore();
     });

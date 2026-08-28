@@ -88,7 +88,6 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({
 
   const handleNext = () => {
     if (!user) {
-      showAlert('Debés estar registrado e iniciar sesión para comprar una Gift Card.', 'Registro Requerido', 'warning');
       if (onRequireAuth) onRequireAuth();
       return;
     }
@@ -139,7 +138,6 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({
 
   const handlePay = async () => {
     if (!user) {
-      showAlert('Debés estar registrado e iniciar sesión para comprar una Gift Card.', 'Registro Requerido', 'warning');
       if (onRequireAuth) onRequireAuth();
       return;
     }

@@ -23,7 +23,18 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
     if (existingOrderSnap.exists) {
       const existingData = existingOrderSnap.data() || {};
       if (existingData.estado === 'PENDING_PAYMENT' || existingData.estado === 'pending_transfer' || existingData.estado === 'Confirmado') {
-        console.log(`[reserveWebOrder] Orden ${orderId} ya está en estado '${existingData.estado}'. Omitiendo reserva duplicada.`);
+        console.log(`[reserveWebOrder] Orden ${orderId} ya está en estado '${existingData.estado}'. Actualizando datos sin duplicar descuento de stock.`);
+        const mergedData = {
+          ...existingData,
+          ...orderData,
+          estado: orderData.estado || existingData.estado,
+          expiresAt: orderData.expiresAt || existingData.expiresAt
+        };
+        transaction.set(orderRef, mergedData, { merge: true });
+        if (orderData.customerId && orderData.customerId !== 'GUEST') {
+          const customerOrderRef = showroomRef.collection('customers').doc(orderData.customerId).collection('orders').doc(orderId);
+          transaction.set(customerOrderRef, mergedData, { merge: true });
+        }
         return; // Stock ya fue descontado previamente
       }
     }
@@ -243,6 +254,80 @@ export const releaseExpiredReservationsServer = functions.https.onCall(async (da
   const showroomId = data?.showroomId || process.env.SHOWROOM_ID || 'ROPERO';
   const result = await executeReleaseExpiredReservations(db, showroomId);
   return result;
+});
+
+// 2c. cancelWebOrderReservationServer (Callable HTTPS)
+// Cancela una reserva activa específica inmediatamente y restituye el stock al inventario
+export const cancelWebOrderReservationServer = functions.https.onCall(async (data, context) => {
+  const db = admin.firestore();
+  const { showroomId, orderId } = data || {};
+  if (!showroomId || !orderId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing showroomId or orderId');
+  }
+
+  const showroomRef = db.collection('showrooms').doc(showroomId);
+  const orderRef = showroomRef.collection('orders').doc(orderId);
+
+  await db.runTransaction(async (transaction) => {
+    const orderSnap = await transaction.get(orderRef);
+    if (!orderSnap.exists) return;
+
+    const orderData = orderSnap.data() || {};
+    const isPending = orderData.estado === 'PENDING_PAYMENT' || orderData.estado === 'pending_transfer' || orderData.estado === 'Pendiente';
+    if (!isPending) return;
+
+    const srSnap = await transaction.get(showroomRef);
+    if (!srSnap.exists) return;
+
+    const srData = srSnap.data() || {};
+    const inventory = srData.inventory || [];
+    const nextInventory = [...inventory];
+    const items = orderData.items || [];
+
+    for (const oi of items) {
+      if (oi.isVirtualGiftCard) continue;
+
+      const idx = nextInventory.findIndex(i => i.id === oi.productId);
+      if (idx === -1) continue;
+
+      const item = { ...nextInventory[idx] };
+      const returnQty = oi.cantidad || 1;
+
+      if (item.stockPorVariante && oi.talle && oi.color) {
+        const varKey = `${oi.talle}-${oi.color}`;
+        const matchKey = Object.keys(item.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase()) || varKey;
+
+        item.stockPorVariante = { ...item.stockPorVariante };
+        item.stockPorVariante[matchKey] = (item.stockPorVariante[matchKey] || 0) + returnQty;
+
+        if (item.coloresStock && oi.color) {
+          const cKey = Object.keys(item.coloresStock).find(k => k.toLowerCase() === oi.color.trim().toLowerCase()) || oi.color.trim().toUpperCase();
+          item.coloresStock = { ...item.coloresStock };
+          item.coloresStock[cKey] = (item.coloresStock[cKey] || 0) + returnQty;
+        }
+        item.cantidad += returnQty;
+      } else {
+        const colorKey = oi.color?.trim().toUpperCase();
+        if (colorKey && item.coloresStock && item.coloresStock[colorKey] !== undefined) {
+          item.coloresStock = { ...item.coloresStock };
+          item.coloresStock[colorKey] = (item.coloresStock[colorKey] || 0) + returnQty;
+        }
+        item.cantidad += returnQty;
+      }
+
+      nextInventory[idx] = item;
+    }
+
+    transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
+    transaction.update(orderRef, { estado: 'Cancelado', cancelReason: 'user_cancelled', updatedAt: new Date().toISOString() });
+
+    if (orderData.customerId && orderData.customerId !== 'GUEST') {
+      const customerOrderRef = showroomRef.collection('customers').doc(orderData.customerId).collection('orders').doc(orderId);
+      transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'user_cancelled', updatedAt: new Date().toISOString() }, { merge: true });
+    }
+  });
+
+  return { success: true, message: 'Reserva cancelada y stock restituido exitosamente.' };
 });
 
 // ── Helper: parse variant from description (replicates frontend cartToSale.ts) ──

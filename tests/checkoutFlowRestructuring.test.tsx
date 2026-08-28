@@ -58,7 +58,8 @@ vi.mock('../services/firebase', () => ({
 vi.mock('../services/webOrderFulfillment', async (importOriginal) => ({
   ...(await importOriginal() as any),
   fulfillWebOrder: vi.fn(),
-  reserveWebOrderStock: vi.fn()
+  reserveWebOrderStock: vi.fn().mockResolvedValue(undefined),
+  cancelWebOrderReservation: vi.fn().mockResolvedValue(undefined)
 }));
 
 vi.mock('../services/ualaApi', () => ({
@@ -282,7 +283,7 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
     expect(screen.queryByText(/0 prendas/i)).not.toBeInTheDocument();
   });
 
-  it('muestra el banner visual con temporizador de reserva de stock de 15 minutos en checkout activo', () => {
+  it('muestra el banner visual con temporizador de reserva de stock de 15 minutos en checkout activo', async () => {
     currentAuthUser = mockUser;
     currentCustomerProfile = mockCustomerProfile;
 
@@ -292,7 +293,61 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
       </ModalProvider>
     );
 
-    expect(screen.getByText(/Reserva de stock activa/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/Reserva de stock activa/i)).toBeInTheDocument();
+    });
     expect(screen.getByText('15:00')).toBeInTheDocument();
+  });
+
+  it('reserva el stock inmediatamente en el segundo exacto en que se ingresa al checkout', async () => {
+    const { reserveWebOrderStock } = await import('../services/webOrderFulfillment');
+
+    render(
+      <ModalProvider>
+        <CheckoutFlow {...defaultProps} />
+      </ModalProvider>
+    );
+
+    await waitFor(() => {
+      expect(reserveWebOrderStock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({
+          estado: 'PENDING_PAYMENT',
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              productId: 'p1',
+              cantidad: 1,
+              talle: 'M',
+              color: 'NEGRO'
+            })
+          ])
+        })
+      );
+    });
+  });
+
+  it('libera la reserva de stock si el usuario cierra el checkout antes de finalizar la compra', async () => {
+    const { cancelWebOrderReservation } = await import('../services/webOrderFulfillment');
+    const mockOnClose = vi.fn();
+
+    render(
+      <ModalProvider>
+        <CheckoutFlow {...defaultProps} onClose={mockOnClose} />
+      </ModalProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Reserva de stock activa/i)).toBeInTheDocument();
+    });
+
+    // Hacer clic en el botón X de cerrar
+    const btnCerrar = screen.getByRole('button', { name: '' }); // X icon button
+    fireEvent.click(btnCerrar);
+
+    await waitFor(() => {
+      expect(cancelWebOrderReservation).toHaveBeenCalled();
+      expect(mockOnClose).toHaveBeenCalled();
+    });
   });
 });

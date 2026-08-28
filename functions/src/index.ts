@@ -8,7 +8,7 @@ export { cotizarEnvio, obtenerSucursales, importarEnvioMiCorreo, obtenerEtiqueta
 import { importarEnvioMiCorreo as doImportMiCorreo } from "./micorreo";
 
 // Importar y exportar funciones de reservas y ordenes web
-export { reserveWebOrder, releaseExpiredReservationsCron, releaseExpiredReservationsServer, fulfillWebCambioServer, fulfillWebOrderServer } from "./orders";
+export { reserveWebOrder, releaseExpiredReservationsCron, releaseExpiredReservationsServer, cancelWebOrderReservationServer, fulfillWebCambioServer, fulfillWebOrderServer } from "./orders";
 
 if (!admin.apps.length) {
   admin.initializeApp();

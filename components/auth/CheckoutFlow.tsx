@@ -4,7 +4,7 @@ import { useAuth, ShippingAddress } from '../../contexts/AuthContext';
 import { InventoryItem, WebSettings, GiftCard } from '../../types';
 import { db, auth, functions } from '../../services/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { fulfillWebOrder, reserveWebOrderStock, getAvailableStock } from '../../services/webOrderFulfillment';
+import { fulfillWebOrder, reserveWebOrderStock, cancelWebOrderReservation, getAvailableStock } from '../../services/webOrderFulfillment';
 import { collection, addDoc, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import { sendNotificationEmail } from '../../services/emailService';
 import { DESCUENTO_BASE_TRANSFERENCIA } from '../../services/exchangePricing';
@@ -221,6 +221,94 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
   // 15-minute stock reservation visual countdown timer (900 seconds)
   const [timeLeft, setTimeLeft] = React.useState<number>(15 * 60);
+  const [activeReservationId, setActiveReservationId] = React.useState<string | null>(null);
+  const [isReservingStock, setIsReservingStock] = React.useState<boolean>(false);
+  const [isReservationActive, setIsReservationActive] = React.useState<boolean>(false);
+
+  const handleClose = React.useCallback(() => {
+    if (isReservationActive && step !== 'success' && activeReservationId) {
+      cancelWebOrderReservation(PUBLIC_SHOWROOM_ID, activeReservationId).catch(err =>
+        console.error('Error liberando reserva al cerrar checkout:', err)
+      );
+      setIsReservationActive(false);
+    }
+    onClose();
+  }, [isReservationActive, step, activeReservationId, onClose]);
+
+  // Reserva de stock inmediata en Firestore en el segundo exacto en que se ingresa al checkout
+  React.useEffect(() => {
+    if (!isOpen) {
+      setActiveReservationId(null);
+      setIsReservationActive(false);
+      setIsReservingStock(false);
+      return;
+    }
+
+    if (cart.length === 0 || step === 'success') return;
+
+    let isMounted = true;
+
+    const performInitialReservation = async () => {
+      const orderId = doc(collection(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders')).id;
+      setActiveReservationId(orderId);
+      setIsReservingStock(true);
+
+      const orderItems = cart.map(c => {
+        const disc = getDiscount(c.product);
+        const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
+        const finalPrice = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+        return {
+          productId: c.product.id,
+          descripcion: c.product.descripcion,
+          sku: c.product.sku,
+          cantidad: c.quantity,
+          precioUnitario: finalPrice,
+          talle: c.selectedTalle || '',
+          color: c.selectedColor || '',
+          payMethod: paymentMethod
+        };
+      });
+
+      const initialOrderData = {
+        customerId: user ? user.uid : 'GUEST',
+        customerEmail: email ? sanitizeInput(email.trim().toLowerCase()) : (user?.email || ''),
+        customerNombre: nombre ? sanitizeInput(nombre.trim().toUpperCase()) : (customerProfile?.nombre || ''),
+        customerTelefono: telefono ? sanitizeInput(telefono.trim()) : (customerProfile?.telefono || ''),
+        fecha: new Date().toISOString(),
+        items: orderItems,
+        total: Math.round(cartTotal),
+        tipoEnvio: tipoEnvio,
+        metodoPago: paymentMethod === 'transferencia' ? 'Transferencia' : 'Tarjeta / Ualá Bis',
+        pago: paymentMethod === 'transferencia' ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
+        estado: 'PENDING_PAYMENT' as const,
+        pesoTotalGramos: calculateCartWeightGrams(cart),
+      };
+
+      try {
+        await reserveWebOrderStock(PUBLIC_SHOWROOM_ID, orderId, initialOrderData);
+        if (isMounted) {
+          setIsReservationActive(true);
+          setTimeLeft(15 * 60);
+        }
+      } catch (err: any) {
+        console.error('Error al reservar stock en base de datos al abrir checkout:', err);
+        if (isMounted) {
+          showAlert(err.message || 'No hay stock suficiente para algunas prendas en tu carrito.', 'Sin stock disponible', 'error');
+          onClose();
+        }
+      } finally {
+        if (isMounted) {
+          setIsReservingStock(false);
+        }
+      }
+    };
+
+    performInitialReservation();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen]);
 
   React.useEffect(() => {
     if (!isOpen || step === 'success') return;
@@ -229,6 +317,12 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
+          if (activeReservationId && step !== 'success') {
+            cancelWebOrderReservation(PUBLIC_SHOWROOM_ID, activeReservationId).catch(err =>
+              console.error('Error al liberar reserva por expiración de 15 min:', err)
+            );
+            setIsReservationActive(false);
+          }
           showAlert('Tu tiempo de reserva de stock (15 minutos) ha expirado. Por favor, verificá nuevamente los productos en tu carrito.', 'Reserva Expirada', 'warning');
           onClose();
           return 0;
@@ -238,7 +332,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isOpen, step, showAlert, onClose]);
+  }, [isOpen, step, showAlert, onClose, activeReservationId]);
 
   // Gift Card Coupon States
   const [showGiftInput, setShowGiftInput] = React.useState(false);
@@ -513,7 +607,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
     setErrorMsg(null);
     if (step === 'delivery') {
       if (user) {
-        onClose();
+        handleClose();
       } else {
         setStep('identification');
       }
@@ -581,9 +675,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         } : {})
       };
 
-      const ordersCol = collection(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders');
-      const orderRef = doc(ordersCol);
-      const orderId = orderRef.id;
+      const orderId = activeReservationId || doc(collection(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders')).id;
 
       let redirectUrl: string | null = null;
       let ualaPaymentId: string | null = null;
@@ -613,7 +705,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         }
       }
 
-      // Reservar el stock en Firebase (descuenta temporalmente y guarda en pendingOrders)
+      // Actualizar la reserva en Firebase con los datos completos
       const finalOrderData = {
         ...orderData,
         orderId: orderId,                  // Campo propio para buscarlo en Collection Group
@@ -625,11 +717,13 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       try {
         await reserveWebOrderStock(PUBLIC_SHOWROOM_ID, orderId, finalOrderData);
       } catch (reserveErr: any) {
-        console.error('Error al reservar stock:', reserveErr);
+        console.error('Error al actualizar reserva de stock:', reserveErr);
         setErrorMsg(reserveErr.message || 'No hay stock suficiente para algunos productos. Alguien pudo haberlos comprado.');
         setIsLoading(false);
         return;
       }
+
+      setIsReservationActive(false); // Orden confirmada, no cancelar al cerrar
 
       // 2. Si el usuario está registrado, limpiar su carrito de Firestore y guardar dirección nueva si corresponde
       if (user && customerProfile) {
@@ -780,7 +874,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={() => { if (step !== 'success' && !isLoading) onClose(); }} 
+        onClick={() => { if (step !== 'success' && !isLoading) handleClose(); }} 
       />
 
       {/* Container */}
@@ -797,7 +891,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
             <span className="text-[11px] tracking-[0.25em] uppercase font-light text-black">Checkout</span>
           </div>
           {step !== 'success' && (
-            <button onClick={onClose} disabled={isLoading} className="opacity-40 hover:opacity-100 transition-opacity">
+            <button onClick={handleClose} disabled={isLoading} className="opacity-40 hover:opacity-100 transition-opacity">
               <X size={16} strokeWidth={1.2} />
             </button>
           )}
@@ -811,8 +905,17 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
               : 'bg-neutral-950 text-neutral-200 border-neutral-800'
           }`}>
             <div className="flex items-center gap-2 text-[9px] tracking-[0.2em] uppercase font-light">
-              <Clock size={13} className={timeLeft < 180 ? 'text-red-500 animate-pulse' : 'text-amber-400'} strokeWidth={1.5} />
-              <span>Reserva de stock activa</span>
+              {isReservingStock ? (
+                <>
+                  <Loader2 size={13} className="animate-spin text-amber-400" />
+                  <span>Reservando stock en base de datos...</span>
+                </>
+              ) : (
+                <>
+                  <Clock size={13} className={timeLeft < 180 ? 'text-red-500 animate-pulse' : 'text-amber-400'} strokeWidth={1.5} />
+                  <span>Reserva de stock activa (15 min)</span>
+                </>
+              )}
             </div>
             <div className="flex items-center gap-2 font-mono text-[11px]">
               <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400 font-sans hidden sm:inline">Expira en:</span>
