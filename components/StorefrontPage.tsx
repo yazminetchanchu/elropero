@@ -33,8 +33,8 @@ import { CustomerOrder } from '../contexts/AuthContext';
 import { buildSaleItemsFromOrder, getOrderSaleId, isGiftCardOrder } from '../services/webOrderToSale';
 import { sumTransferLines, sumExchangeLines, DESCUENTO_BASE_TRANSFERENCIA, calculateExchangeBreakdown } from '../services/exchangePricing';
 import { fulfillWebCambio } from '../services/webCambioFulfillment';
-import { fulfillWebOrder, isOrderExpired, releaseExpiredReservations, getAvailableStock } from '../services/webOrderFulfillment';
-import { sendNotificationEmail, sendSaleConfirmationEmail, sendGiftCardEmail } from '../services/emailService';
+import { isOrderExpired, releaseExpiredReservations, getAvailableStock } from '../services/webOrderFulfillment';
+import { sendNotificationEmail, sendGiftCardEmail } from '../services/emailService';
 import { cartLinesToSaleItems } from '../services/cartToSale';
 import { calculateCartWeightGrams, calculateCartDimensions, calculateSaleItemsWeightGrams, calculateSaleItemsDimensions } from '../utils/shippingHelpers';
 import { createUalaPayment, setUalaEnvironment } from '../services/ualaApi';
@@ -390,48 +390,28 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     if (pagoStatus === 'ok' && (tipoParam === 'cambio' || pendingCambioId)) {
       const targetCambioId = pendingCambioId || localStorage.getItem('ropero_last_pending_cambio');
       if (targetCambioId) {
-        localStorage.removeItem('ropero_last_pending_cambio');
-        const confirmCambio = async () => {
+        const verifyCambioReturn = async () => {
           try {
             const cambioRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'pending_cambios', targetCambioId);
             const snap = await getDoc(cambioRef);
             if (snap.exists()) {
               const data = snap.data();
-              if (data.estado === 'Pendiente' || data.estado === 'PENDING_PAYMENT') {
-                const { saleId, giftCodigo } = await fulfillWebCambio(PUBLIC_SHOWROOM_ID, data.payload);
-                await updateDoc(cambioRef, { estado: 'Confirmado', saleId });
-
-                if (giftCodigo) {
-                  const targetEmail = customerProfile?.email || user?.email || data.customerEmail;
-                  if (targetEmail) {
-                    const destinatario = data.payload?.giftDestinatario || customerProfile?.nombre || 'Cliente';
-                    const montoGift = Math.abs(data.payload?.diferencia || 0);
-                    sendGiftCardEmail(
-                      targetEmail,
-                      destinatario,
-                      'El Ropero Showroom',
-                      montoGift,
-                      giftCodigo,
-                      'Crédito a favor generado por cambio de prendas.'
-                    ).catch(err => console.error('Error al enviar correo de Gift Card por cambio Ualá:', err));
-                  }
-                }
-
-                // The backend now handles updating the order's partial exchange state.
-
+              if (data.estado === 'Confirmado') {
+                localStorage.removeItem('ropero_last_pending_cambio');
                 showAlert('¡Tu pago de la diferencia fue acreditado correctamente! El cambio fue procesado exitosamente.', '¡Pago y Cambio Exitoso!', 'success');
                 await refreshOrders();
+              } else {
+                showAlert('Recibimos el retorno de Ualá Bis. El sistema está verificando la acreditación de la diferencia en segundo plano para confirmar tu cambio.', 'Procesando Cambio', 'info');
               }
             }
           } catch (e) {
-            console.error('Error al confirmar cambio de Ualá:', e);
-            showAlert('Hubo un error al confirmar tu cambio. Si tu pago se debitó, contactanos por WhatsApp.', 'Atención con tu Cambio', 'error');
+            console.error('Error al verificar cambio de Ualá:', e);
           } finally {
             const cleanUrl = window.location.origin + window.location.pathname;
             window.history.replaceState({}, document.title, cleanUrl);
           }
         };
-        confirmCambio();
+        verifyCambioReturn();
       }
     } else if (pagoStatus === 'error' && (tipoParam === 'cambio' || pendingCambioId)) {
       localStorage.removeItem('ropero_last_pending_cambio');
@@ -439,61 +419,30 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
     } else if (pagoStatus === 'ok' && orderId) {
-      localStorage.removeItem('ropero_last_pending_order');
-      const confirmOrder = async () => {
+      const verifyOrderReturn = async () => {
         try {
           const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', orderId);
           const snap = await getDoc(orderRef);
           
           if (snap.exists()) {
             const data = snap.data();
-            if (data.estado === 'Pendiente' || data.estado === 'PENDING_PAYMENT') {
-              const fulfillPayload: any = {
-                fecha: data.fecha,
-                items: data.items,
-                total: data.total,
-                metodoPago: data.metodoPago,
-              };
-              if (data.costoEnvio !== undefined) fulfillPayload.costoEnvio = data.costoEnvio;
-              if (data.giftCardUsada !== undefined) fulfillPayload.giftCardUsada = data.giftCardUsada;
-
-              const saleId = await fulfillWebOrder(PUBLIC_SHOWROOM_ID, orderId, fulfillPayload);
-              
-              sendSaleConfirmationEmail(
-                {
-                  id: saleId || data.saleId || orderId,
-                  fecha: data.fecha,
-                  metodoPago: data.metodoPago,
-                  costoEnvio: data.costoEnvio,
-                  items: data.items || [],
-                  total: data.total || 0,
-                  giftCardUsada: data.giftCardUsada
-                },
-                data.customerNombre || 'Cliente',
-                data.customerEmail,
-                'web'
-              );
-
+            if (['PAID', 'APPROVED', 'Confirmado', 'Confirmada'].includes(data.estado)) {
+              localStorage.removeItem('ropero_last_pending_order');
+              setPendingPaymentOrder(null);
               showAlert('¡Tu pago se acreditó correctamente! El pedido ha sido confirmado.', '¡Pago Exitoso!', 'success');
+            } else {
+              // El webhook de Ualá Bis valida y procesa la transacción de forma segura en el servidor
+              showAlert('Recibimos el retorno de la pasarela de pagos. Tu pedido se confirmará automáticamente en instantes tras la verificación del pago.', 'Procesando Pago', 'info');
             }
-          } else {
-             // Verificar si ya estaba confirmado (por si recarga la pagina)
-             const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', orderId);
-             const snap = await getDoc(orderRef);
-             if (snap.exists() && (snap.data().estado === 'Confirmado' || snap.data().estado === 'Confirmada')) {
-               // Ya está confirmado, no hacer nada más que un feedback silente
-               console.log('El pedido ya había sido confirmado.');
-             }
           }
         } catch (e) {
-          console.error('Error al confirmar pago de Ualá:', e);
-          showAlert('Hubo un error al confirmar tu pedido. Si tu pago se debitó, contactanos por WhatsApp.', 'Atención con tu Pedido', 'error');
+          console.error('Error al verificar retorno de pago:', e);
         } finally {
           const cleanUrl = window.location.origin + window.location.pathname;
           window.history.replaceState({}, document.title, cleanUrl);
         }
       };
-      confirmOrder();
+      verifyOrderReturn();
     } else if (pagoStatus === 'error' && orderId) {
       const handlePaymentErrorReturn = async () => {
         try {

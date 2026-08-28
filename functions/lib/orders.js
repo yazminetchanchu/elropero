@@ -34,10 +34,91 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fulfillWebOrderServer = exports.fulfillWebCambioServer = exports.cancelWebOrderReservationServer = exports.releaseExpiredReservationsServer = exports.releaseExpiredReservationsCron = exports.reserveWebOrder = void 0;
+exports.recalculateOrderPricing = recalculateOrderPricing;
 exports.executeReleaseExpiredReservations = executeReleaseExpiredReservations;
+exports.extractProductModelKeyServer = extractProductModelKeyServer;
+exports.calcExchangeLineTotalServer = calcExchangeLineTotalServer;
+exports.calculateExchangeBreakdownServer = calculateExchangeBreakdownServer;
+exports.executeFulfillWebCambio = executeFulfillWebCambio;
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 // db will be initialized inside the functions to prevent app/no-app error during module loading.
+const DESCUENTO_BASE_TRANSFERENCIA = 20;
+/**
+ * Recalcula y valida los precios unitarios, descuentos y total de una orden
+ * contrastando directamente contra el catálogo oficial e inventario en Firestore.
+ */
+function recalculateOrderPricing(showroomData, orderData) {
+    const inventory = showroomData.inventory || [];
+    const webSettings = showroomData.webSettings || showroomData.settings || {};
+    const giftCards = showroomData.giftCards || [];
+    const isTransfer = orderData.metodoPago === 'Transferencia' ||
+        orderData.paymentMethod === 'transferencia' ||
+        orderData.estado === 'pending_transfer' ||
+        (orderData.pago && orderData.pago.efectivo === 100);
+    const rawItems = Array.isArray(orderData.items) ? orderData.items : [];
+    let calculatedSubtotal = 0;
+    const verifiedItems = rawItems.map((oi) => {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        const qty = Math.max(1, Number(oi.cantidad || 1));
+        if (oi.isVirtualGiftCard) {
+            const baseMonto = Math.max(5000, Number(oi.precioUnitario || oi.monto || 5000));
+            const unitPrice = isTransfer
+                ? baseMonto
+                : Math.round(baseMonto / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100));
+            calculatedSubtotal += unitPrice * qty;
+            return Object.assign(Object.assign({}, oi), { cantidad: qty, precioUnitario: unitPrice, precioEfectivo: baseMonto, precioTarjeta: Math.round(baseMonto / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)), costo: 0 });
+        }
+        const invItem = inventory.find((i) => i.id === (oi.productId || oi.id));
+        if (!invItem) {
+            throw new functions.https.HttpsError('not-found', `El producto "${oi.descripcion || oi.productId}" no existe en el catálogo.`);
+        }
+        const basePrice = isTransfer
+            ? Number((_b = (_a = invItem.ventaEfectivo) !== null && _a !== void 0 ? _a : invItem.precioEfectivo) !== null && _b !== void 0 ? _b : 0)
+            : Number((_e = (_d = (_c = invItem.ventaTarjeta) !== null && _c !== void 0 ? _c : invItem.precioTarjeta) !== null && _d !== void 0 ? _d : invItem.ventaEfectivo) !== null && _e !== void 0 ? _e : 0);
+        const itemDisc = Number(invItem.descuentoWeb || 0);
+        const sectionDisc = Number(((_f = webSettings.discountBySection) === null || _f === void 0 ? void 0 : _f[invItem.categoria]) || 0);
+        const disc = Math.max(itemDisc, sectionDisc);
+        let calculatedUnitPrice;
+        if (isTransfer) {
+            const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
+            calculatedUnitPrice = Math.round(basePrice * (1 - extraDesc / 100));
+        }
+        else {
+            calculatedUnitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
+        }
+        calculatedSubtotal += calculatedUnitPrice * qty;
+        return Object.assign(Object.assign({}, oi), { productId: invItem.id, sku: invItem.sku || oi.sku || '---', descripcion: invItem.descripcion, costo: (_g = invItem.costo) !== null && _g !== void 0 ? _g : 0, cantidad: qty, precioUnitario: calculatedUnitPrice, precioEfectivo: isTransfer ? calculatedUnitPrice : Number((_h = invItem.ventaEfectivo) !== null && _h !== void 0 ? _h : calculatedUnitPrice), precioTarjeta: !isTransfer ? calculatedUnitPrice : Number((_j = invItem.ventaTarjeta) !== null && _j !== void 0 ? _j : calculatedUnitPrice), descuento: disc });
+    });
+    const tipoEnvio = String(orderData.tipoEnvio || '').toLowerCase();
+    let costoEnvio = 0;
+    if (tipoEnvio !== 'retiro' && tipoEnvio !== 'recoleta' && tipoEnvio !== 'local' && tipoEnvio !== 'showroom') {
+        costoEnvio = Math.max(0, Number(orderData.costoEnvio || 0));
+    }
+    let montoGiftCardUsado = 0;
+    let verifiedGiftCardUsada = undefined;
+    if (orderData.giftCardUsada && orderData.giftCardUsada.codigo) {
+        const code = String(orderData.giftCardUsada.codigo).trim().toUpperCase();
+        const gc = giftCards.find((g) => (g.codigo || '').trim().toUpperCase() === code);
+        if (gc && gc.estado === 'ACTIVA' && gc.saldo > 0) {
+            const maxAvailable = Math.min(Number(gc.saldo || 0), calculatedSubtotal + costoEnvio);
+            montoGiftCardUsado = Math.min(Number(orderData.giftCardUsada.montoUsado || maxAvailable), maxAvailable);
+            verifiedGiftCardUsada = {
+                codigo: code,
+                montoUsado: montoGiftCardUsado,
+            };
+        }
+    }
+    const calculatedTotal = Math.max(0, Math.round(calculatedSubtotal + costoEnvio - montoGiftCardUsado));
+    return {
+        items: verifiedItems,
+        subtotal: calculatedSubtotal,
+        costoEnvio,
+        montoGiftCardUsado,
+        giftCardUsada: verifiedGiftCardUsada,
+        total: calculatedTotal,
+    };
+}
 // 1. reserveWebOrder (Callable)
 // El frontend (carrito) no bloquea nada. Solo lee. 
 // Al "Continuar al pago", llama a esta función para reservar.
@@ -52,30 +133,33 @@ exports.reserveWebOrder = functions.https.onCall(async (data, context) => {
     // Ejecutamos la reserva de forma atómica en el servidor
     await db.runTransaction(async (transaction) => {
         var _a;
-        // ── Idempotencia: si la orden ya fue reservada, no volver a descontar stock ──
-        const existingOrderSnap = await transaction.get(orderRef);
-        if (existingOrderSnap.exists) {
-            const existingData = existingOrderSnap.data() || {};
-            if (existingData.estado === 'PENDING_PAYMENT' || existingData.estado === 'pending_transfer' || existingData.estado === 'Confirmado') {
-                console.log(`[reserveWebOrder] Orden ${orderId} ya está en estado '${existingData.estado}'. Actualizando datos sin duplicar descuento de stock.`);
-                const mergedData = Object.assign(Object.assign(Object.assign({}, existingData), orderData), { estado: orderData.estado || existingData.estado, expiresAt: orderData.expiresAt || existingData.expiresAt });
-                transaction.set(orderRef, mergedData, { merge: true });
-                if (orderData.customerId && orderData.customerId !== 'GUEST') {
-                    const customerOrderRef = showroomRef.collection('customers').doc(orderData.customerId).collection('orders').doc(orderId);
-                    transaction.set(customerOrderRef, mergedData, { merge: true });
-                }
-                return; // Stock ya fue descontado previamente
-            }
-        }
         const srSnap = await transaction.get(showroomRef);
         if (!srSnap.exists) {
             throw new functions.https.HttpsError('not-found', 'Showroom no encontrado');
         }
         const srData = srSnap.data() || {};
         const inventory = srData.inventory || [];
+        // Recalcular y validar precios contra catálogo oficial en el servidor (Anti-Price Tampering)
+        const pricing = recalculateOrderPricing(srData, orderData);
+        const sanitizedOrderData = Object.assign(Object.assign(Object.assign({}, orderData), { items: pricing.items, costoEnvio: pricing.costoEnvio, total: pricing.total }), (pricing.giftCardUsada !== undefined ? { giftCardUsada: pricing.giftCardUsada } : {}));
+        // ── Idempotencia: si la orden ya fue reservada, actualizar con precios verificados sin duplicar descuento de stock ──
+        const existingOrderSnap = await transaction.get(orderRef);
+        if (existingOrderSnap.exists) {
+            const existingData = existingOrderSnap.data() || {};
+            if (existingData.estado === 'PENDING_PAYMENT' || existingData.estado === 'pending_transfer' || existingData.estado === 'Confirmado') {
+                console.log(`[reserveWebOrder] Orden ${orderId} ya está en estado '${existingData.estado}'. Actualizando datos con precios verificados.`);
+                const mergedData = Object.assign(Object.assign(Object.assign({}, existingData), sanitizedOrderData), { estado: sanitizedOrderData.estado || existingData.estado, expiresAt: sanitizedOrderData.expiresAt || existingData.expiresAt });
+                transaction.set(orderRef, mergedData, { merge: true });
+                if (sanitizedOrderData.customerId && sanitizedOrderData.customerId !== 'GUEST') {
+                    const customerOrderRef = showroomRef.collection('customers').doc(sanitizedOrderData.customerId).collection('orders').doc(orderId);
+                    transaction.set(customerOrderRef, mergedData, { merge: true });
+                }
+                return; // Stock ya fue descontado previamente
+            }
+        }
         // 1. Verificar stock y deducir temporalmente
         const nextInventory = [...inventory];
-        const items = orderData.items;
+        const items = sanitizedOrderData.items;
         for (const oi of items) {
             if (oi.isVirtualGiftCard)
                 continue;
@@ -125,16 +209,16 @@ exports.reserveWebOrder = functions.https.onCall(async (data, context) => {
         }
         // 2. Establecer expiración y estado
         // Transferencia: 24 horas (pending_transfer). Tarjeta/Ualá Bis: 15 minutos (PENDING_PAYMENT).
-        const isTransfer = orderData.metodoPago === 'Transferencia' || orderData.paymentMethod === 'transferencia' || orderData.estado === 'pending_transfer';
-        const targetEstado = isTransfer ? 'pending_transfer' : (orderData.estado || 'PENDING_PAYMENT');
+        const isTransfer = sanitizedOrderData.metodoPago === 'Transferencia' || sanitizedOrderData.paymentMethod === 'transferencia' || sanitizedOrderData.estado === 'pending_transfer';
+        const targetEstado = isTransfer ? 'pending_transfer' : (sanitizedOrderData.estado || 'PENDING_PAYMENT');
         const expirationDurationMs = isTransfer ? 24 * 60 * 60 * 1000 : 15 * 60 * 1000;
         const expiresAt = new Date(Date.now() + expirationDurationMs).toISOString();
-        const finalOrderData = Object.assign(Object.assign({}, orderData), { estado: targetEstado, expiresAt });
+        const finalOrderData = Object.assign(Object.assign({}, sanitizedOrderData), { estado: targetEstado, expiresAt });
         // 3. Escribir actualizaciones
         transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
         transaction.set(orderRef, finalOrderData);
-        if (orderData.customerId && orderData.customerId !== 'GUEST') {
-            const customerOrderRef = showroomRef.collection('customers').doc(orderData.customerId).collection('orders').doc(orderId);
+        if (sanitizedOrderData.customerId && sanitizedOrderData.customerId !== 'GUEST') {
+            const customerOrderRef = showroomRef.collection('customers').doc(sanitizedOrderData.customerId).collection('orders').doc(orderId);
             transaction.set(customerOrderRef, finalOrderData);
         }
     });
@@ -362,16 +446,162 @@ function adjustStockLine(item, productId, qty, color, talle, direction) {
     }
     return Object.assign(Object.assign({}, item), { cantidad: Math.max(0, item.cantidad + sign * qty) });
 }
-// 3. fulfillWebCambioServer (Callable)
+function extractProductModelKeyServer(item) {
+    if (item.productId && item.productId.trim()) {
+        return item.productId.trim().toLowerCase();
+    }
+    if (item.id && item.id.trim() && !item.id.startsWith('item_') && !item.id.startsWith('cart_')) {
+        return item.id.trim().toLowerCase();
+    }
+    const desc = (item.descripcion || '').toLowerCase().replace(/\(.*?\)/g, '').trim();
+    return desc || (item.id || '').toLowerCase().trim();
+}
+function calcExchangeLineTotalServer(item, isTransferencia) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    const cant = (_a = item.cantidad) !== null && _a !== void 0 ? _a : 1;
+    const desc = item.descuento || 0;
+    const precioEf = (_d = (_c = (_b = item.precioEfectivo) !== null && _b !== void 0 ? _b : item.precioUnitario) !== null && _c !== void 0 ? _c : item.precio) !== null && _d !== void 0 ? _d : 0;
+    const precioTar = (_g = (_f = (_e = item.precioTarjeta) !== null && _e !== void 0 ? _e : item.precioUnitario) !== null && _f !== void 0 ? _f : item.precio) !== null && _g !== void 0 ? _g : 0;
+    if (isTransferencia) {
+        const descuentoExtra = Math.max(0, desc - DESCUENTO_BASE_TRANSFERENCIA);
+        return Math.round(precioEf * (1 - descuentoExtra / 100) * cant);
+    }
+    else {
+        return Math.round(precioTar * (1 - desc / 100) * cant);
+    }
+}
+/**
+ * Calcula oficialmente la diferencia de un cambio web en el servidor,
+ * contrastando las prendas devueltas contra la venta original y las prendas nuevas
+ * contra el inventario y catálogo oficial.
+ */
+function calculateExchangeBreakdownServer(options) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    const { ventaOriginal, itemsDevueltos, itemsNuevos, inventory, webSettings, payload } = options;
+    let medioPagoOrigen = 'efectivo';
+    if (ventaOriginal === null || ventaOriginal === void 0 ? void 0 : ventaOriginal.pago) {
+        if (ventaOriginal.pago.tarjeta === 100)
+            medioPagoOrigen = 'tarjeta';
+        else if (ventaOriginal.pago.efectivo === 100)
+            medioPagoOrigen = 'efectivo';
+        else
+            medioPagoOrigen = 'mixto';
+    }
+    else if (ventaOriginal === null || ventaOriginal === void 0 ? void 0 : ventaOriginal.metodoPago) {
+        const mp = String(ventaOriginal.metodoPago).toLowerCase();
+        if (mp.includes('transferencia') || mp.includes('efectivo')) {
+            medioPagoOrigen = 'efectivo';
+        }
+        else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito') || mp.includes('ualá') || mp.includes('uala')) {
+            medioPagoOrigen = 'tarjeta';
+        }
+    }
+    const isTransferenciaDev = medioPagoOrigen === 'efectivo';
+    const isTransferenciaNuevo = ((_a = payload === null || payload === void 0 ? void 0 : payload.pago) === null || _a === void 0 ? void 0 : _a.efectivo) === 100 || isTransferenciaDev;
+    const returnedUnits = [];
+    const itemsOriginales = ventaOriginal.items || [];
+    for (const dev of itemsDevueltos || []) {
+        const qty = Math.max(1, Number(dev.cantidad || 1));
+        const modelKey = extractProductModelKeyServer(dev);
+        // Buscar el ítem en la venta original para obtener el precio real abonado
+        const originalMatch = itemsOriginales.find((orig) => {
+            const origId = orig.productId || orig.id;
+            const devId = dev.productId || dev.id;
+            if (origId && devId && origId === devId)
+                return true;
+            return extractProductModelKeyServer(orig) === modelKey;
+        }) || dev;
+        const unitPaid = calcExchangeLineTotalServer(Object.assign(Object.assign({}, originalMatch), { cantidad: 1 }), isTransferenciaDev);
+        for (let i = 0; i < qty; i++) {
+            returnedUnits.push({
+                descripcion: dev.descripcion || originalMatch.descripcion || 'Prenda devuelta',
+                modelKey,
+                paidAmount: unitPaid,
+                matched: false,
+            });
+        }
+    }
+    const newUnits = [];
+    for (const neu of itemsNuevos || []) {
+        const qty = Math.max(1, Number(neu.cantidad || 1));
+        const modelKey = extractProductModelKeyServer(neu);
+        const invItem = inventory.find((i) => i.id === (neu.id || neu.productId));
+        let unitPrice;
+        if (invItem) {
+            const basePrice = isTransferenciaNuevo
+                ? Number((_c = (_b = invItem.ventaEfectivo) !== null && _b !== void 0 ? _b : invItem.precioEfectivo) !== null && _c !== void 0 ? _c : 0)
+                : Number((_f = (_e = (_d = invItem.ventaTarjeta) !== null && _d !== void 0 ? _d : invItem.precioTarjeta) !== null && _e !== void 0 ? _e : invItem.ventaEfectivo) !== null && _f !== void 0 ? _f : 0);
+            const itemDisc = Number(invItem.descuentoWeb || 0);
+            const secDisc = Number(((_g = webSettings.discountBySection) === null || _g === void 0 ? void 0 : _g[invItem.categoria]) || 0);
+            const disc = Math.max(itemDisc, secDisc);
+            if (isTransferenciaNuevo) {
+                const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
+                unitPrice = Math.round(basePrice * (1 - extraDesc / 100));
+            }
+            else {
+                unitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
+            }
+        }
+        else {
+            // Fallback si no está en inventario
+            unitPrice = calcExchangeLineTotalServer(Object.assign(Object.assign({}, neu), { cantidad: 1 }), isTransferenciaNuevo);
+        }
+        for (let i = 0; i < qty; i++) {
+            newUnits.push({
+                descripcion: neu.descripcion || (invItem === null || invItem === void 0 ? void 0 : invItem.descripcion) || 'Prenda nueva',
+                modelKey,
+                currentPrice: unitPrice,
+                matched: false,
+            });
+        }
+    }
+    // 3. Matching 1:1 por modelo (Ley de Defensa del Consumidor: cambio de talle/color del mismo modelo = $0)
+    let matchedPairsCount = 0;
+    for (const newUnit of newUnits) {
+        const matchIdx = returnedUnits.findIndex((ret) => !ret.matched && ret.modelKey === newUnit.modelKey);
+        if (matchIdx !== -1) {
+            returnedUnits[matchIdx].matched = true;
+            newUnit.matched = true;
+            matchedPairsCount++;
+        }
+    }
+    // 4. Calcular totales de prendas sobrantes
+    const totalReturnedUnmatchedCredit = returnedUnits
+        .filter((u) => !u.matched)
+        .reduce((sum, u) => sum + u.paidAmount, 0);
+    const totalNewUnmatchedCost = newUnits
+        .filter((u) => !u.matched)
+        .reduce((sum, u) => sum + u.currentPrice, 0);
+    const diferenciaSinEnvio = totalNewUnmatchedCost - totalReturnedUnmatchedCredit;
+    // 5. Validar costos de envío (si es retiro/recoleta/local es $0)
+    const tipoEnvioNuevo = String((payload === null || payload === void 0 ? void 0 : payload.tipoEnvioNuevo) || '').toLowerCase();
+    const tipoEnvioDev = String((payload === null || payload === void 0 ? void 0 : payload.tipoEnvioDevolucion) || '').toLowerCase();
+    let costoEnvioNuevo = 0;
+    if (tipoEnvioNuevo === 'envio') {
+        costoEnvioNuevo = Math.max(0, Number((payload === null || payload === void 0 ? void 0 : payload.costoEnvioNuevo) || 0));
+    }
+    let costoEnvioDev = 0;
+    if (tipoEnvioDev === 'envio') {
+        costoEnvioDev = Math.max(0, Number((payload === null || payload === void 0 ? void 0 : payload.costoEnvioDevolucion) || 0));
+    }
+    const costoEnvioTotal = costoEnvioNuevo + costoEnvioDev;
+    const diferenciaTotal = Math.round(diferenciaSinEnvio + costoEnvioTotal);
+    return {
+        matchedPairsCount,
+        totalNewUnmatchedCost,
+        totalReturnedUnmatchedCredit,
+        diferenciaSinEnvio,
+        costoEnvioTotal,
+        diferenciaTotal,
+        montoGiftCard: diferenciaTotal < 0 ? Math.abs(diferenciaTotal) : 0,
+        montoAPagar: diferenciaTotal > 0 ? diferenciaTotal : 0,
+    };
+}
+// 3. fulfillWebCambioServer (Callable) y executeFulfillWebCambio (Core compartido con Webhook)
 // Procesa un cambio web de forma atómica en el backend, evitando restricciones
 // de security rules que impiden que usuarios no-admin modifiquen sales y giftCards.
-exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) => {
+async function executeFulfillWebCambio(db, showroomId, payload) {
     try {
-        const db = admin.firestore();
-        const { showroomId, payload } = data;
-        if (!showroomId || !payload) {
-            throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: showroomId or payload.');
-        }
         const { ventaOriginalId, itemsDevueltos, itemsNuevos, diferencia, giftDestinatario, originalOrderId, customerId, } = payload;
         if (!itemsDevueltos || !itemsDevueltos.length) {
             throw new functions.https.HttpsError('invalid-argument', 'Debés seleccionar al menos una prenda a devolver.');
@@ -380,7 +610,7 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
         const saleId = `sale_cambio_web_${Date.now()}`;
         let giftCodigo;
         await db.runTransaction(async (transaction) => {
-            var _a, _b;
+            var _a, _b, _c;
             // ─────────────────────────────────────────────────────────────────
             // 1. TODAS LAS LECTURAS (READS) AL INICIO DE LA TRANSACCIÓN
             // ─────────────────────────────────────────────────────────────────
@@ -516,8 +746,24 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
                     }
                 }
             }
-            // Generate gift card if diferencia < 0
-            let giftGenerada = null;
+            // ─────────────────────────────────────────────────────────────────
+            // 3. AUDITORÍA Y RECÁLCULO OFICIAL DEL CAMBIO (ANTI GIFT CARD FRAUD)
+            // ─────────────────────────────────────────────────────────────────
+            const breakdown = calculateExchangeBreakdownServer({
+                ventaOriginal,
+                itemsDevueltos,
+                itemsNuevos: safeItemsNuevos,
+                inventory,
+                webSettings: srData.webSettings || srData.settings || {},
+                payload,
+            });
+            const clientDiferencia = Number(diferencia !== null && diferencia !== void 0 ? diferencia : 0);
+            if (Math.abs(clientDiferencia - breakdown.diferenciaTotal) > 1.0) {
+                functions.logger.warn(`[SECURITY ALERT] Discrepancia en diferencia de cambio web detectada. ` +
+                    `Cliente envió: $${clientDiferencia}, Backend/Catálogo calculó: $${breakdown.diferenciaTotal}. Se aplicará el cálculo oficial.`);
+            }
+            // La diferencia oficial calculada por el backend reemplaza totalmente la del cliente
+            const verifiedDiferencia = breakdown.diferenciaTotal;
             let medioPagoOrigen = 'efectivo';
             if (ventaOriginal === null || ventaOriginal === void 0 ? void 0 : ventaOriginal.pago) {
                 if (ventaOriginal.pago.tarjeta === 100)
@@ -536,10 +782,10 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
                     medioPagoOrigen = 'tarjeta';
                 }
             }
-            if (diferencia < 0) {
-                let montoGift = Math.abs(diferencia);
-                if (isNaN(montoGift))
-                    montoGift = 0;
+            // Generate gift card SOLO si la diferencia oficial verificada es < 0
+            let giftGenerada = null;
+            if (breakdown.montoGiftCard > 0) {
+                const montoGift = breakdown.montoGiftCard;
                 const FRIENDLY_GIFT_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
                 const existingCodes = new Set((giftCards || []).map((g) => (g.codigo || '').trim().toUpperCase()));
                 let code = '';
@@ -569,11 +815,17 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
                     ventaOrigenId: ventaOriginalId,
                 };
             }
+            // Validar si el cambio requiere pago adicional con tarjeta pero no proviene de webhook autorizado
+            const isCardPayment = ((_b = payload === null || payload === void 0 ? void 0 : payload.pago) === null || _b === void 0 ? void 0 : _b.tarjeta) === 100 || (payload === null || payload === void 0 ? void 0 : payload.paymentMethod) === 'tarjeta';
+            const isCalledFromWebhook = (payload === null || payload === void 0 ? void 0 : payload.fromWebhook) === true || (payload === null || payload === void 0 ? void 0 : payload.isWebhookFulfillment) === true;
+            if (breakdown.montoAPagar > 0 && isCardPayment && !isCalledFromWebhook) {
+                throw new functions.https.HttpsError('failed-precondition', `El cambio requiere abonar una diferencia de $${breakdown.montoAPagar.toLocaleString('es-AR')} con tarjeta a través de la pasarela de pagos.`);
+            }
             // Default payment from original sale if diferencia <= 0
             const pagoDefaultOrig = (ventaOriginal === null || ventaOriginal === void 0 ? void 0 : ventaOriginal.pago) || (medioPagoOrigen === 'tarjeta' ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 });
             // Build the sale record
             const newSale = Object.assign(Object.assign({ id: saleId, fecha: new Date().toISOString(), tipo: 'cambio', ventaOriginalId,
-                itemsDevueltos, itemsNuevos: safeItemsNuevos, items: [], total: Math.max(0, diferencia) || 0, diferencia: diferencia || 0, pago: diferencia <= 0 ? pagoDefaultOrig : (payload.pago || { efectivo: 100, tarjeta: 0 }), pagoDevolucion: pagoDefaultOrig, giftDestinatario: (giftDestinatario === null || giftDestinatario === void 0 ? void 0 : giftDestinatario.trim()) || 'Cambio web' }, ((giftGenerada === null || giftGenerada === void 0 ? void 0 : giftGenerada.id) ? { giftGeneradaId: giftGenerada.id } : {})), { costoEnvio: payload.costoEnvio || 0, costoEnvioDevolucion: payload.costoEnvioDevolucion || 0, costoEnvioNuevo: payload.costoEnvioNuevo || 0, tipoEnvioDevolucion: payload.tipoEnvioDevolucion || null, tipoEnvioNuevo: payload.tipoEnvioNuevo || null, codigoPostalCliente: payload.codigoPostalCliente || null });
+                itemsDevueltos, itemsNuevos: safeItemsNuevos, items: [], total: Math.max(0, verifiedDiferencia), diferencia: verifiedDiferencia, pago: verifiedDiferencia <= 0 ? pagoDefaultOrig : (payload.pago || { efectivo: 100, tarjeta: 0 }), pagoDevolucion: pagoDefaultOrig, giftDestinatario: (giftDestinatario === null || giftDestinatario === void 0 ? void 0 : giftDestinatario.trim()) || 'Cambio web' }, ((giftGenerada === null || giftGenerada === void 0 ? void 0 : giftGenerada.id) ? { giftGeneradaId: giftGenerada.id } : {})), { costoEnvio: breakdown.costoEnvioTotal, costoEnvioDevolucion: payload.costoEnvioDevolucion || 0, costoEnvioNuevo: payload.costoEnvioNuevo || 0, tipoEnvioDevolucion: payload.tipoEnvioDevolucion || null, tipoEnvioNuevo: payload.tipoEnvioNuevo || null, codigoPostalCliente: payload.codigoPostalCliente || null });
             // Apply inventory changes
             let nextInventory = [...inventory];
             for (const dev of itemsDevueltos) {
@@ -664,7 +916,7 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
                             talle: item.talle || parsed.talle || '',
                             color: item.color || parsed.color || '',
                         };
-                    }), itemsNuevos: safeItemsNuevos, total: Math.max(0, diferencia) || 0, tipoEnvio: payload.tipoEnvioNuevo === 'recoleta' ? 'retiro' : payload.tipoEnvioNuevo === 'local' ? 'retiro' : ((originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.tipoEnvio) || 'retiro') }, ((originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.direccionEnvio) ? { direccionEnvio: originalOrderData.direccionEnvio } : {})), { costoEnvio: payload.costoEnvioNuevo || payload.costoEnvio || 0, metodoPago: diferencia > 0 ? (((_b = payload.pago) === null || _b === void 0 ? void 0 : _b.tarjeta) === 100 ? 'Tarjeta / Ualá Bis' : 'Transferencia') : 'Cambio Directo', estado: 'Confirmado', giftCardGenerada: giftCodigo || null, isExchanged: false }));
+                    }), itemsNuevos: safeItemsNuevos, total: Math.max(0, diferencia) || 0, tipoEnvio: payload.tipoEnvioNuevo === 'recoleta' ? 'retiro' : payload.tipoEnvioNuevo === 'local' ? 'retiro' : ((originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.tipoEnvio) || 'retiro') }, ((originalOrderData === null || originalOrderData === void 0 ? void 0 : originalOrderData.direccionEnvio) ? { direccionEnvio: originalOrderData.direccionEnvio } : {})), { costoEnvio: payload.costoEnvioNuevo || payload.costoEnvio || 0, metodoPago: diferencia > 0 ? (((_c = payload.pago) === null || _c === void 0 ? void 0 : _c.tarjeta) === 100 ? 'Tarjeta / Ualá Bis' : 'Transferencia') : 'Cambio Directo', estado: 'Confirmado', giftCardGenerada: giftCodigo || null, isExchanged: false }));
             }
             // ─────────────────────────────────────────────────────────────────
             // 3. TODAS LAS ESCRITURAS (WRITES) AL FINAL DE LA TRANSACCIÓN
@@ -713,21 +965,39 @@ exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) =>
         return { saleId, giftCodigo: giftCodigo || null };
     }
     catch (error) {
-        functions.logger.error("Error en fulfillWebCambioServer:", error);
+        functions.logger.error("Error en executeFulfillWebCambio:", error);
         if (error instanceof functions.https.HttpsError) {
             throw error;
         }
         throw new functions.https.HttpsError('internal', error.message || 'Error interno al procesar el cambio web.');
     }
+}
+exports.fulfillWebCambioServer = functions.https.onCall(async (data, context) => {
+    const db = admin.firestore();
+    const { showroomId, payload } = data || {};
+    if (!showroomId || !payload) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: showroomId or payload.');
+    }
+    return await executeFulfillWebCambio(db, showroomId, payload);
 });
 // 4. fulfillWebOrderServer (Callable)
-// Procesa el fulfillment de una orden web de forma atómica en el backend
-// usando Firebase Admin SDK, evitando errores de permisos al actualizar /showrooms/{showroomId}.
+// Procesa el fulfillment manual de una orden web de forma atómica en el backend
+// usando Firebase Admin SDK. Solo administradores autorizados pueden llamarla manualmente.
 exports.fulfillWebOrderServer = functions.https.onCall(async (data, context) => {
+    var _a;
     try {
         const db = admin.firestore();
         const { showroomId, orderId, order, orderData } = data || {};
         const payload = order || orderData;
+        // ── Control de Acceso: Solo administradores autorizados pueden invocar fulfillWebOrderServer ──
+        const ADMIN_EMAILS = ['elropero.informacion@gmail.com', 'yazminetchanchu@gmail.com'];
+        const token = (_a = context === null || context === void 0 ? void 0 : context.auth) === null || _a === void 0 ? void 0 : _a.token;
+        const isCallerAdmin = (context === null || context === void 0 ? void 0 : context.auth) && ((token === null || token === void 0 ? void 0 : token.admin) === true ||
+            (token === null || token === void 0 ? void 0 : token.role) === 'manager' ||
+            ((token === null || token === void 0 ? void 0 : token.email) && ADMIN_EMAILS.includes(token.email.toLowerCase())));
+        if (!isCallerAdmin) {
+            throw new functions.https.HttpsError('permission-denied', 'Acceso denegado: solo los administradores pueden confirmar pedidos manualmente. Las compras web se confirman automáticamente por Webhook de pasarela.');
+        }
         if (!showroomId || !orderId || !payload || !Array.isArray(payload.items)) {
             throw new functions.https.HttpsError('invalid-argument', 'Faltan campos requeridos: showroomId, orderId o items del pedido.');
         }
@@ -740,6 +1010,7 @@ exports.fulfillWebOrderServer = functions.https.onCall(async (data, context) => 
             : null;
         const emailsToSend = [];
         await db.runTransaction(async (transaction) => {
+            var _a;
             // 1. Lecturas
             const snap = await transaction.get(showroomRef);
             if (!snap.exists) {
@@ -756,9 +1027,14 @@ exports.fulfillWebOrderServer = functions.https.onCall(async (data, context) => 
                 console.log(`[fulfillWebOrderServer] Venta ${saleId} ya existe en el showroom. Omitiendo duplicación.`);
                 return;
             }
-            // 2. Construir la Venta
-            const saleItems = payload.items.map((oi) => {
-                var _a, _b, _c, _d, _e, _f, _g;
+            // 2. Construir la Venta con precios verificados contra catálogo
+            const pricing = (existingOrder === null || existingOrder === void 0 ? void 0 : existingOrder.total) !== undefined && ((_a = existingOrder === null || existingOrder === void 0 ? void 0 : existingOrder.items) === null || _a === void 0 ? void 0 : _a.length)
+                ? { items: existingOrder.items, total: existingOrder.total, giftCardUsada: existingOrder.giftCardUsada }
+                : recalculateOrderPricing(srData, payload);
+            const isTarjeta = payload.items.some((oi) => oi.payMethod === 'tarjeta') ||
+                (payload.metodoPago && (payload.metodoPago.toLowerCase().includes('tarjeta') || payload.metodoPago.toLowerCase().includes('ualá') || payload.metodoPago.toLowerCase().includes('uala')));
+            const saleItems = pricing.items.map((oi) => {
+                var _a, _b, _c, _d, _e;
                 const inv = inventory.find((i) => i.id === (oi.productId || oi.id));
                 const variant = [oi.talle && `T:${oi.talle}`, oi.color && `C:${oi.color}`].filter(Boolean).join(' ') || '';
                 const descripcion = variant ? `${oi.descripcion} (${variant})` : oi.descripcion;
@@ -768,25 +1044,23 @@ exports.fulfillWebOrderServer = functions.https.onCall(async (data, context) => 
                     descripcion,
                     cantidad: oi.cantidad || 1,
                     costo: (_a = inv === null || inv === void 0 ? void 0 : inv.costo) !== null && _a !== void 0 ? _a : 0,
-                    precioEfectivo: (_d = (_c = (_b = oi.precioUnitario) !== null && _b !== void 0 ? _b : oi.precioEfectivo) !== null && _c !== void 0 ? _c : oi.precio) !== null && _d !== void 0 ? _d : 0,
-                    precioTarjeta: (_g = (_f = (_e = oi.precioUnitario) !== null && _e !== void 0 ? _e : oi.precioTarjeta) !== null && _f !== void 0 ? _f : oi.precio) !== null && _g !== void 0 ? _g : 0,
+                    precioEfectivo: (_c = (_b = oi.precioEfectivo) !== null && _b !== void 0 ? _b : oi.precioUnitario) !== null && _c !== void 0 ? _c : 0,
+                    precioTarjeta: (_e = (_d = oi.precioTarjeta) !== null && _d !== void 0 ? _d : oi.precioUnitario) !== null && _e !== void 0 ? _e : 0,
                     descuento: oi.descuento || 0,
                     talle: oi.talle,
                     color: oi.color,
                 };
             });
-            const isTarjeta = payload.items.some((oi) => oi.payMethod === 'tarjeta') ||
-                (payload.metodoPago && (payload.metodoPago.toLowerCase().includes('tarjeta') || payload.metodoPago.toLowerCase().includes('ualá') || payload.metodoPago.toLowerCase().includes('uala')));
             const saleRecord = {
                 id: saleId,
                 fecha: payload.fecha || new Date().toISOString(),
                 tipo: 'venta',
                 items: saleItems,
-                total: payload.total || 0,
+                total: pricing.total,
                 pago: isTarjeta ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 },
             };
-            if (payload.giftCardUsada !== undefined) {
-                saleRecord.giftCardUsada = payload.giftCardUsada;
+            if (pricing.giftCardUsada !== undefined) {
+                saleRecord.giftCardUsada = pricing.giftCardUsada;
             }
             // 3. Procesar Gift Card usada si aplica
             let nextGiftCards = [...giftCards];

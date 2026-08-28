@@ -182,4 +182,16 @@ describe('Flujos Detallados del Storefront (Página Web)', () => {
     // Podemos simular un cambio de método de pago si el UI lo permite, o comprobar el total
     expect(screen.getByText('Total Final')).toBeInTheDocument();
   });
+
+  it('Seguridad Anti-Bypass: no invoca fulfillment de órdenes si se accede con ?pago=ok en la URL', async () => {
+    delete (window as any).location;
+    window.location = new URL('https://elropero.ar/?pago=ok&orderId=ord-malicious') as any;
+
+    const { fulfillWebOrder } = await import('../services/webOrderFulfillment');
+
+    renderStorefront();
+
+    // Comprobar que en ningún momento se invoca fulfillWebOrder desde el cliente
+    expect(fulfillWebOrder).not.toHaveBeenCalled();
+  });
 });

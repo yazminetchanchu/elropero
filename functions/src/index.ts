@@ -9,6 +9,7 @@ import { importarEnvioMiCorreo as doImportMiCorreo } from "./micorreo";
 
 // Importar y exportar funciones de reservas y ordenes web
 export { reserveWebOrder, releaseExpiredReservationsCron, releaseExpiredReservationsServer, cancelWebOrderReservationServer, fulfillWebCambioServer, fulfillWebOrderServer } from "./orders";
+import { executeFulfillWebCambio } from "./orders";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -93,7 +94,73 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
       .get();
 
     if (ordersQuery.empty) {
-      console.warn(`[ualaWebhook] No se encontró ninguna orden con orderId: ${externalReference}`);
+      // 1. Verificar si externalReference corresponde a un cambio web pendiente (pending_cambios)
+      const targetShowroomId = process.env.SHOWROOM_ID || 'ROPERO';
+      const cambioRef = db.collection('showrooms').doc(targetShowroomId).collection('pending_cambios').doc(externalReference);
+      const cambioSnap = await cambioRef.get();
+
+      if (cambioSnap.exists) {
+        const cambioData = cambioSnap.data() || {};
+        if (cambioData.estado === 'Confirmado') {
+          console.log(`[ualaWebhook] Cambio ${externalReference} ya está confirmado.`);
+          res.status(200).send('OK - Already processed');
+          return;
+        }
+
+        if (status !== 'APPROVED' && status !== 'SUCCESS' && status !== 'PAID') {
+          if (['REJECTED', 'CANCELLED', 'FAILED', 'EXPIRED', 'REFUNDED'].includes(status)) {
+            await cambioRef.update({ estado: 'Cancelado', paymentStatus: status });
+            console.log(`[ualaWebhook] Cambio ${externalReference} cancelado por estado de pago: ${status}`);
+          }
+          res.status(200).send('OK - Cambio not approved');
+          return;
+        }
+
+        // Pago aprobado: procesar fulfillment atómico en backend
+        try {
+          const cambioPayload = {
+            ...(cambioData.payload || {}),
+            fromWebhook: true,
+            isWebhookFulfillment: true,
+          };
+          const cambioResult = await executeFulfillWebCambio(db, targetShowroomId, cambioPayload);
+          await cambioRef.update({
+            estado: 'Confirmado',
+            saleId: cambioResult.saleId,
+            fulfilledAt: new Date().toISOString()
+          });
+
+          if (cambioResult.giftCodigo) {
+            const targetEmail = cambioData.customerEmail || cambioData.payload?.customerEmail;
+            if (targetEmail) {
+              const destinatario = cambioData.payload?.giftDestinatario || cambioData.customerNombre || 'Cliente';
+              const montoGift = Math.abs(cambioData.payload?.diferencia || 0);
+              try {
+                await enqueueBackendGiftCardDelivery({
+                  email: targetEmail,
+                  destinatario,
+                  deParteDe: 'El Ropero Showroom',
+                  monto: montoGift,
+                  codigo: cambioResult.giftCodigo,
+                  mensaje: 'Crédito a favor generado por cambio de prendas.'
+                });
+              } catch (mailErr) {
+                console.error('[ualaWebhook] Error encolando correo de Gift Card por cambio:', mailErr);
+              }
+            }
+          }
+
+          console.log(`[ualaWebhook] Cambio ${externalReference} procesado exitosamente por webhook.`);
+          res.status(200).send('OK');
+          return;
+        } catch (cambioErr) {
+          console.error(`[ualaWebhook] Error procesando cambio ${externalReference}:`, cambioErr);
+          res.status(500).send('Error processing exchange');
+          return;
+        }
+      }
+
+      console.warn(`[ualaWebhook] No se encontró ninguna orden ni cambio con orderId: ${externalReference}`);
       res.status(200).send('OK - Order not found');
       return;
     }
@@ -532,13 +599,51 @@ export const createUalaCheckout = functions.https.onRequest(async (req, res) => 
       throw new Error('Ualá no devolvió un access_token válido en el servidor.');
     }
 
-    // 3. Crear el Checkout Link en Ualá Bis
-    const numericTotal = Number(order.total);
-    if (isNaN(numericTotal) || numericTotal < 25) {
-      res.status(400).json({ error: `El monto mínimo para generar un cobro con Ualá Bis es de $25.00 ARS (Monto recibido: $${numericTotal || 0}).` });
+    // 3. Crear el Checkout Link en Ualá Bis con validación estricta anti price-tampering
+    let verifiedTotal = Number(order.total);
+    const orderId = String(order.id || '').trim();
+
+    if (orderId) {
+      const showroomId = process.env.SHOWROOM_ID || 'ROPERO';
+      // 1. Buscar en orders del showroom o subcolecciones
+      let orderDocSnap = await db.collection('showrooms').doc(showroomId).collection('orders').doc(orderId).get();
+      if (!orderDocSnap.exists) {
+        const qSnap = await db.collectionGroup('orders').where('orderId', '==', orderId).limit(1).get();
+        if (!qSnap.empty) {
+          orderDocSnap = qSnap.docs[0];
+        }
+      }
+
+      if (orderDocSnap.exists) {
+        const orderData = orderDocSnap.data() || {};
+        const dbTotal = Number(orderData.total);
+        if (!isNaN(dbTotal) && dbTotal > 0) {
+          if (!isNaN(verifiedTotal) && Math.abs(verifiedTotal - dbTotal) > 1.0) {
+            console.warn(`[SECURITY ALERT] Price Tampering detectado para orden ${orderId}. Cliente envió: $${verifiedTotal}, Firestore/Catálogo requiere: $${dbTotal}. Se cobrará el monto verificado.`);
+          }
+          verifiedTotal = dbTotal;
+        }
+      } else {
+        // 2. Verificar si corresponde a un cambio web pendiente (pending_cambios)
+        const cambioSnap = await db.collection('showrooms').doc(showroomId).collection('pending_cambios').doc(orderId).get();
+        if (cambioSnap.exists) {
+          const cambioData = cambioSnap.data() || {};
+          const cambioTotal = Number(cambioData.totalDiferencia || cambioData.payload?.diferencia);
+          if (!isNaN(cambioTotal) && cambioTotal > 0) {
+            if (!isNaN(verifiedTotal) && Math.abs(verifiedTotal - cambioTotal) > 1.0) {
+              console.warn(`[SECURITY ALERT] Price Tampering detectado para cambio ${orderId}. Cliente envió: $${verifiedTotal}, Requerido: $${cambioTotal}.`);
+            }
+            verifiedTotal = cambioTotal;
+          }
+        }
+      }
+    }
+
+    if (isNaN(verifiedTotal) || verifiedTotal < 25) {
+      res.status(400).json({ error: `El monto mínimo para generar un cobro con Ualá Bis es de $25.00 ARS (Monto verificado: $${verifiedTotal || 0}).` });
       return;
     }
-    const amountString = numericTotal.toFixed(2);
+    const amountString = verifiedTotal.toFixed(2);
 
     const checkoutPayload: Record<string, any> = {
       amount: amountString,
@@ -548,8 +653,8 @@ export const createUalaCheckout = functions.https.onRequest(async (req, res) => 
       notification_url: "https://us-central1-el-ropero-8989a.cloudfunctions.net/ualaWebhook"
     };
 
-    if (order.id) {
-      checkoutPayload.external_reference = String(order.id);
+    if (orderId) {
+      checkoutPayload.external_reference = orderId;
     }
 
     console.log(`[createUalaCheckout] Generando cobro por $${amountString} ARS en ${checkoutUrl}...`);
