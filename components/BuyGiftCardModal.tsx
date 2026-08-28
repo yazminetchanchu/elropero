@@ -169,6 +169,7 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({
         total: finalPrice, 
         tipoEnvio: 'retiro',
         metodoPago: paymentMethod === 'transferencia' ? 'Transferencia' : 'Tarjeta / Ualá Bis',
+        paymentMethod: paymentMethod === 'transferencia' ? 'TRANSFER' : 'UALA',
         pago: paymentMethod === 'transferencia' ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
         ualaPlan: null,
         estado: 'Pendiente' as const
@@ -202,6 +203,7 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({
         ...orderData,
         orderId: orderId,
         showroomId: PUBLIC_SHOWROOM_ID,
+        paymentMethod: paymentMethod === 'transferencia' ? 'TRANSFER' : 'UALA',
         ualaPaymentId: ualaPaymentId,
         ualaPaymentUrl: redirectUrl
       };

@@ -102,16 +102,24 @@ export function recalculateOrderPricing(
 
   let montoGiftCardUsado = 0;
   let verifiedGiftCardUsada: { codigo: string; montoUsado: number } | undefined = undefined;
-  if (orderData.giftCardUsada && orderData.giftCardUsada.codigo) {
-    const code = String(orderData.giftCardUsada.codigo).trim().toUpperCase();
+  const rawGiftCode = (orderData.giftCardCode || orderData.giftCardUsada?.codigo || '').toString().trim().toUpperCase();
+  const rawGiftAmount = orderData.giftCardAmount ?? orderData.giftCardUsada?.montoUsado;
+
+  if (rawGiftCode) {
+    const code = rawGiftCode;
     const gc = giftCards.find((g: any) => (g.codigo || '').trim().toUpperCase() === code);
-    if (gc && gc.estado === 'ACTIVA' && gc.saldo > 0) {
-      const maxAvailable = Math.min(Number(gc.saldo || 0), calculatedSubtotal + costoEnvio);
-      montoGiftCardUsado = Math.min(Number(orderData.giftCardUsada.montoUsado || maxAvailable), maxAvailable);
-      verifiedGiftCardUsada = {
-        codigo: code,
-        montoUsado: montoGiftCardUsado,
-      };
+    if (gc && gc.estado === 'ACTIVA') {
+      const curBalance = Number(gc.balance ?? gc.saldo ?? 0);
+      const curReserved = Number(gc.reservedBalance ?? gc.saldoReservado ?? 0);
+      const availableBalance = Math.max(0, curBalance - curReserved);
+      if (availableBalance > 0) {
+        const maxAvailable = Math.min(availableBalance, calculatedSubtotal + costoEnvio);
+        montoGiftCardUsado = Math.min(Number(rawGiftAmount || maxAvailable), maxAvailable);
+        verifiedGiftCardUsada = {
+          codigo: code,
+          montoUsado: montoGiftCardUsado,
+        };
+      }
     }
   }
 
@@ -161,18 +169,137 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
       ...(pricing.giftCardUsada !== undefined ? { giftCardUsada: pricing.giftCardUsada } : {})
     };
 
-    // ── Idempotencia: si la orden ya fue reservada, actualizar con precios verificados sin duplicar descuento de stock ──
+    // Datos de Gift Card solicitados (soporta giftCardCode/giftCardAmount y giftCardUsada)
+    const giftCardCode = (sanitizedOrderData.giftCardCode || sanitizedOrderData.giftCardUsada?.codigo || orderData.giftCardCode || orderData.giftCardUsada?.codigo || '').toString().trim().toUpperCase();
+    const giftCardAmount = Number(
+      sanitizedOrderData.giftCardAmount ??
+      sanitizedOrderData.giftCardUsada?.montoUsado ??
+      orderData.giftCardAmount ??
+      orderData.giftCardUsada?.montoUsado ??
+      pricing.montoGiftCardUsado ??
+      0
+    );
+
+    // ── READ PHASE: Todas las lecturas antes de cualquier escritura (Firestore Transaction Rule) ──
     const existingOrderSnap = await transaction.get(orderRef);
+    const existingData = existingOrderSnap.exists ? (existingOrderSnap.data() || {}) : {};
+
+    const gcRef = giftCardCode ? db.doc(`showrooms/${showroomId}/giftCards/${giftCardCode}`) : null;
+    const gcSnap = gcRef ? await transaction.get(gcRef) : null;
+
+    // Validación de Gift Card si se solicitó su uso
+    let gcFoundInDoc = false;
+    let gcFoundInSr = false;
+    let currentBalance = 0;
+    let currentReserved = 0;
+    let deltaToReserve = 0;
+    let newReservedBalance = 0;
+
+    if (giftCardCode && giftCardAmount > 0) {
+      if (gcSnap && gcSnap.exists) {
+        gcFoundInDoc = true;
+        const gcData = gcSnap.data()!;
+        currentBalance = Number(gcData.balance ?? gcData.saldo ?? 0);
+        currentReserved = Number(gcData.reservedBalance ?? gcData.saldoReservado ?? 0);
+      }
+
+      const gcInSr = (srData.giftCards || []).find((g: any) => (g.codigo || '').trim().toUpperCase() === giftCardCode);
+      if (gcInSr) {
+        gcFoundInSr = true;
+        if (!gcFoundInDoc) {
+          currentBalance = Number(gcInSr.balance ?? gcInSr.saldo ?? 0);
+          currentReserved = Number(gcInSr.reservedBalance ?? gcInSr.saldoReservado ?? 0);
+        }
+      }
+
+      if (!gcFoundInDoc && !gcFoundInSr) {
+        throw new functions.https.HttpsError('not-found', 'La Gift Card no existe.');
+      }
+
+      // Idempotencia: descontar lo que ya haya reservado esta misma orden previamente
+      const prevReservedByOrder = existingData && (
+        (existingData.giftCardCode || '').toString().trim().toUpperCase() === giftCardCode ||
+        (existingData.giftCardUsada?.codigo || '').toString().trim().toUpperCase() === giftCardCode
+      ) ? Number(existingData.giftCardAmount ?? existingData.giftCardUsada?.montoUsado ?? 0) : 0;
+
+      deltaToReserve = Math.max(0, giftCardAmount - prevReservedByOrder);
+      const availableBalance = currentBalance - currentReserved;
+
+      if (availableBalance < deltaToReserve) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `Saldo insuficiente en la Gift Card. Disponible: $${availableBalance}`
+        );
+      }
+
+      newReservedBalance = currentReserved + deltaToReserve;
+    }
+
+    let nextGiftCards = [...(srData.giftCards || [])];
+    if (gcFoundInSr && deltaToReserve > 0) {
+      nextGiftCards = nextGiftCards.map((g: any) => {
+        if ((g.codigo || '').trim().toUpperCase() === giftCardCode) {
+          return {
+            ...g,
+            reservedBalance: newReservedBalance,
+            saldoReservado: newReservedBalance,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return g;
+      });
+    }
+
+    // ── Idempotencia: si la orden ya fue reservada, actualizar con precios verificados sin duplicar descuento de stock ──
     if (existingOrderSnap.exists) {
-      const existingData = existingOrderSnap.data() || {};
       if (existingData.estado === 'PENDING_PAYMENT' || existingData.estado === 'pending_transfer' || existingData.estado === 'Confirmado') {
         console.log(`[reserveWebOrder] Orden ${orderId} ya está en estado '${existingData.estado}'. Actualizando datos con precios verificados.`);
+
+        // 1. Normalizar medio de pago
+        const rawMethod = (sanitizedOrderData.paymentMethod || sanitizedOrderData.metodoPago || existingData?.paymentMethod || existingData?.metodoPago || 'UALA').toString().toUpperCase();
+        const isManualPayment = ['TRANSFER', 'TRANSFERENCIA', 'EFECTIVO', 'LOCAL'].includes(rawMethod) || rawMethod.includes('TRANSFER') || rawMethod.includes('EFECTIVO') || sanitizedOrderData.estado === 'pending_transfer';
+        const method = isManualPayment ? 'TRANSFER' : (rawMethod.includes('MERCADOPAGO') ? 'MERCADOPAGO' : (rawMethod.includes('GIFTCARD') ? 'GIFTCARD' : 'UALA'));
+
+        // 2. 24 hs para transferencias/efectivo, 15 min para pasarelas
+        const now = Date.now();
+        const ttlMs = isManualPayment ? 24 * 60 * 60 * 1000 : 15 * 60 * 1000;
+        const calculatedExpiresAt = new Date(now + ttlMs).toISOString();
+
+        const targetEstado = existingData.estado === 'Confirmado'
+          ? 'Confirmado'
+          : (sanitizedOrderData.estado || (isManualPayment ? 'pending_transfer' : (existingData.estado || 'PENDING_PAYMENT')));
+
+        // 3. Guardar pisando siempre el expiresAt anterior
         const mergedData = {
           ...existingData,
           ...sanitizedOrderData,
-          estado: sanitizedOrderData.estado || existingData.estado,
-          expiresAt: sanitizedOrderData.expiresAt || existingData.expiresAt
+          paymentMethod: method,
+          estado: targetEstado,
+          expiresAt: calculatedExpiresAt, // Siempre pisa la reserva preliminar
+          updatedAt: new Date(now).toISOString(),
+          ...(giftCardCode && giftCardAmount > 0 ? {
+            giftCardCode,
+            giftCardAmount,
+            giftCardUsada: {
+              codigo: giftCardCode,
+              montoUsado: giftCardAmount
+            }
+          } : {})
         };
+
+        if (deltaToReserve > 0) {
+          if (gcRef && gcFoundInDoc) {
+            transaction.update(gcRef, {
+              reservedBalance: newReservedBalance,
+              saldoReservado: newReservedBalance,
+              updatedAt: new Date().toISOString()
+            });
+          }
+          if (gcFoundInSr) {
+            transaction.update(showroomRef, { giftCards: nextGiftCards, lastSync: Date.now() });
+          }
+        }
+
         transaction.set(orderRef, mergedData, { merge: true });
         if (sanitizedOrderData.customerId && sanitizedOrderData.customerId !== 'GUEST') {
           const customerOrderRef = showroomRef.collection('customers').doc(sanitizedOrderData.customerId).collection('orders').doc(orderId);
@@ -240,20 +367,50 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
     }
 
     // 2. Establecer expiración y estado
-    // Transferencia: 24 horas (pending_transfer). Tarjeta/Ualá Bis: 15 minutos (PENDING_PAYMENT).
-    const isTransfer = sanitizedOrderData.metodoPago === 'Transferencia' || sanitizedOrderData.paymentMethod === 'transferencia' || sanitizedOrderData.estado === 'pending_transfer';
-    const targetEstado = isTransfer ? 'pending_transfer' : (sanitizedOrderData.estado || 'PENDING_PAYMENT');
-    const expirationDurationMs = isTransfer ? 24 * 60 * 60 * 1000 : 15 * 60 * 1000;
-    const expiresAt = new Date(Date.now() + expirationDurationMs).toISOString();
+    // 1. Normalizar medio de pago
+    const rawMethod = (sanitizedOrderData.paymentMethod || sanitizedOrderData.metodoPago || 'UALA').toString().toUpperCase();
+    const isManualPayment = ['TRANSFER', 'TRANSFERENCIA', 'EFECTIVO', 'LOCAL'].includes(rawMethod) || rawMethod.includes('TRANSFER') || rawMethod.includes('EFECTIVO') || sanitizedOrderData.estado === 'pending_transfer';
+    const method = isManualPayment ? 'TRANSFER' : (rawMethod.includes('MERCADOPAGO') ? 'MERCADOPAGO' : (rawMethod.includes('GIFTCARD') ? 'GIFTCARD' : 'UALA'));
 
+    // 2. 24 hs para transferencias/efectivo, 15 min para pasarelas
+    const now = Date.now();
+    const ttlMs = isManualPayment ? 24 * 60 * 60 * 1000 : 15 * 60 * 1000;
+    const calculatedExpiresAt = new Date(now + ttlMs).toISOString();
+    const targetEstado = sanitizedOrderData.estado || (isManualPayment ? 'pending_transfer' : 'PENDING_PAYMENT');
+
+    // 3. Guardar pisando siempre el expiresAt anterior
     const finalOrderData = {
       ...sanitizedOrderData,
+      paymentMethod: method,
       estado: targetEstado,
-      expiresAt
+      expiresAt: calculatedExpiresAt,
+      createdAt: sanitizedOrderData.createdAt || new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+      ...(giftCardCode && giftCardAmount > 0 ? {
+        giftCardCode,
+        giftCardAmount,
+        giftCardUsada: {
+          codigo: giftCardCode,
+          montoUsado: giftCardAmount
+        }
+      } : {})
     };
 
     // 3. Escribir actualizaciones
-    transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
+    const showroomUpdates: any = { inventory: nextInventory, lastSync: Date.now() };
+    if (gcFoundInSr && deltaToReserve > 0) {
+      showroomUpdates.giftCards = nextGiftCards;
+    }
+    transaction.update(showroomRef, showroomUpdates);
+
+    if (gcRef && gcFoundInDoc && deltaToReserve > 0) {
+      transaction.update(gcRef, {
+        reservedBalance: newReservedBalance,
+        saldoReservado: newReservedBalance,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
     transaction.set(orderRef, finalOrderData);
 
     if (sanitizedOrderData.customerId && sanitizedOrderData.customerId !== 'GUEST') {
@@ -315,6 +472,12 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
         const srSnap = await transaction.get(showroomRef);
         if (!srSnap.exists) return;
 
+        // READ gcRef if gift card was used in this order
+        const gcCode = (freshData.giftCardCode || freshData.giftCardUsada?.codigo || data.giftCardCode || data.giftCardUsada?.codigo || '').toString().trim().toUpperCase();
+        const gcAmount = Number(freshData.giftCardAmount ?? freshData.giftCardUsada?.montoUsado ?? data.giftCardAmount ?? data.giftCardUsada?.montoUsado ?? 0);
+        const gcRef = gcCode ? db.doc(`showrooms/${showroomId}/giftCards/${gcCode}`) : null;
+        const gcSnap = gcRef ? await transaction.get(gcRef) : null;
+
         const srData = srSnap.data() || {};
         const inventory = srData.inventory || [];
         const nextInventory = [...inventory];
@@ -354,13 +517,42 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
           nextInventory[idx] = item;
         }
 
+        // Restituir Gift Card reservedBalance si aplica
+        let nextGiftCards = [...(srData.giftCards || [])];
+        if (gcCode && gcAmount > 0) {
+          if (gcSnap && gcSnap.exists) {
+            const gcData = gcSnap.data()!;
+            const curReserved = Number(gcData.reservedBalance ?? gcData.saldoReservado ?? 0);
+            const newReserved = Math.max(0, curReserved - gcAmount);
+            transaction.update(gcRef!, {
+              reservedBalance: newReserved,
+              saldoReservado: newReserved,
+              updatedAt: new Date().toISOString()
+            });
+          }
+
+          nextGiftCards = nextGiftCards.map((g: any) => {
+            if ((g.codigo || '').trim().toUpperCase() === gcCode) {
+              const curReserved = Number(g.reservedBalance ?? g.saldoReservado ?? 0);
+              const newReserved = Math.max(0, curReserved - gcAmount);
+              return {
+                ...g,
+                reservedBalance: newReserved,
+                saldoReservado: newReserved,
+                updatedAt: new Date().toISOString()
+              };
+            }
+            return g;
+          });
+        }
+
         // Marcar como Cancelado y devolver stock restaurado al showroom
-        transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
-        transaction.update(docSnap.ref, { estado: 'Cancelado', cancelReason: 'expired' });
+        transaction.update(showroomRef, { inventory: nextInventory, giftCards: nextGiftCards, lastSync: Date.now() });
+        transaction.update(docSnap.ref, { estado: 'Cancelado', cancelReason: 'expired', updatedAt: new Date().toISOString() });
 
         if (data.customerId && data.customerId !== 'GUEST') {
            const customerOrderRef = showroomRef.collection('customers').doc(data.customerId).collection('orders').doc(docSnap.id);
-           transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired' }, { merge: true });
+           transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired', updatedAt: new Date().toISOString() }, { merge: true });
         }
       });
       releasedCount++;
@@ -414,6 +606,11 @@ export const cancelWebOrderReservationServer = functions.https.onCall(async (dat
     const srSnap = await transaction.get(showroomRef);
     if (!srSnap.exists) return;
 
+    const gcCode = (orderData.giftCardCode || orderData.giftCardUsada?.codigo || '').toString().trim().toUpperCase();
+    const gcAmount = Number(orderData.giftCardAmount ?? orderData.giftCardUsada?.montoUsado ?? 0);
+    const gcRef = gcCode ? db.doc(`showrooms/${showroomId}/giftCards/${gcCode}`) : null;
+    const gcSnap = gcRef ? await transaction.get(gcRef) : null;
+
     const srData = srSnap.data() || {};
     const inventory = srData.inventory || [];
     const nextInventory = [...inventory];
@@ -453,7 +650,36 @@ export const cancelWebOrderReservationServer = functions.https.onCall(async (dat
       nextInventory[idx] = item;
     }
 
-    transaction.update(showroomRef, { inventory: nextInventory, lastSync: Date.now() });
+    // Restituir Gift Card reservedBalance si aplica
+    let nextGiftCards = [...(srData.giftCards || [])];
+    if (gcCode && gcAmount > 0) {
+      if (gcSnap && gcSnap.exists) {
+        const gcData = gcSnap.data()!;
+        const curReserved = Number(gcData.reservedBalance ?? gcData.saldoReservado ?? 0);
+        const newReserved = Math.max(0, curReserved - gcAmount);
+        transaction.update(gcRef!, {
+          reservedBalance: newReserved,
+          saldoReservado: newReserved,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      nextGiftCards = nextGiftCards.map((g: any) => {
+        if ((g.codigo || '').trim().toUpperCase() === gcCode) {
+          const curReserved = Number(g.reservedBalance ?? g.saldoReservado ?? 0);
+          const newReserved = Math.max(0, curReserved - gcAmount);
+          return {
+            ...g,
+            reservedBalance: newReserved,
+            saldoReservado: newReserved,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return g;
+      });
+    }
+
+    transaction.update(showroomRef, { inventory: nextInventory, giftCards: nextGiftCards, lastSync: Date.now() });
     transaction.update(orderRef, { estado: 'Cancelado', cancelReason: 'user_cancelled', updatedAt: new Date().toISOString() });
 
     if (orderData.customerId && orderData.customerId !== 'GUEST') {
@@ -465,14 +691,22 @@ export const cancelWebOrderReservationServer = functions.https.onCall(async (dat
   return { success: true, message: 'Reserva cancelada y stock restituido exitosamente.' };
 });
 
+export const cancelWebOrder = cancelWebOrderReservationServer;
+
 // ── Helper: parse variant from description (replicates frontend cartToSale.ts) ──
-function parseVariantFromDescripcion(descripcion: string): { color?: string; talle?: string } {
-  const colorMatch = descripcion.match(/\(.*?C:([^\s)]+)/i);
-  const talleMatch = descripcion.match(/\(.*?T:([^\s)]+)/i);
-  return {
-    color: colorMatch?.[1]?.trim().toUpperCase(),
-    talle: talleMatch?.[1]?.trim(),
-  };
+export function parseVariantFromDescripcion(descripcion: string): { talle?: string; color?: string } {
+  if (!descripcion) return {};
+
+  // Extrae talle: busca 'T:' y captura hasta encontrar 'C:' o el cierre ')'
+  const talleMatch = descripcion.match(/\(.*?T:([^)]*?)(?:\s+C:|\))/i);
+
+  // Extrae color: busca 'C:' y captura hasta encontrar 'T:' o el cierre ')'
+  const colorMatch = descripcion.match(/\(.*?C:([^)]*?)(?:\s+T:|\))/i);
+
+  const talle = talleMatch && talleMatch[1].trim() ? talleMatch[1].trim().toUpperCase() : undefined;
+  const color = colorMatch && colorMatch[1].trim() ? colorMatch[1].trim().toUpperCase() : undefined;
+
+  return { talle, color };
 }
 
 // ── Helper: adjust a single inventory line's stock ──
@@ -743,6 +977,26 @@ export function calculateExchangeBreakdownServer(options: {
   };
 }
 
+export function parseSafeDate(rawDate: any): Date | null {
+  if (!rawDate) return null;
+  if (rawDate instanceof Date) return isNaN(rawDate.getTime()) ? null : rawDate;
+  if (typeof rawDate?.toDate === 'function') return rawDate.toDate();
+  if (typeof rawDate === 'number') return new Date(rawDate);
+
+  if (typeof rawDate === 'string') {
+    const match = rawDate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (match) {
+      const [, d, m, y, h = '0', min = '0', s = '0'] = match;
+      const parsed = new Date(+y, +m - 1, +d, +h, +min, +s);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const direct = new Date(rawDate);
+    if (!isNaN(direct.getTime())) return direct;
+  }
+  return null;
+}
+
 // 3. fulfillWebCambioServer (Callable) y executeFulfillWebCambio (Core compartido con Webhook)
 // Procesa un cambio web de forma atómica en el backend, evitando restricciones
 // de security rules que impiden que usuarios no-admin modifiquen sales y giftCards.
@@ -831,9 +1085,10 @@ export async function executeFulfillWebCambio(
       }
 
       // Validate 15-day window
-      const diasTranscurridos = Math.floor(
-        (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
-      );
+      const parsedDate = parseSafeDate(ventaOriginal.fecha);
+      const diasTranscurridos = parsedDate
+        ? Math.floor((Date.now() - parsedDate.getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
       if (diasTranscurridos > 15) {
         throw new functions.https.HttpsError('failed-precondition', 'Ya han pasado 15 días desde la compra.');
       }
@@ -1296,6 +1551,26 @@ export const fulfillWebOrderServer = functions.https.onCall(async (data, context
       const orderSnap = await transaction.get(orderRef);
       const existingOrder = orderSnap.exists ? (orderSnap.data() || {}) : null;
 
+      // Extraer datos de gift card usada
+      const usedCode = (
+        payload.giftCardCode ||
+        payload.giftCardUsada?.codigo ||
+        existingOrder?.giftCardCode ||
+        existingOrder?.giftCardUsada?.codigo ||
+        ''
+      ).toString().trim().toUpperCase();
+
+      const usedAmount = Number(
+        payload.giftCardAmount ??
+        payload.giftCardUsada?.montoUsado ??
+        existingOrder?.giftCardAmount ??
+        existingOrder?.giftCardUsada?.montoUsado ??
+        0
+      );
+
+      const gcRef = usedCode ? db.doc(`showrooms/${showroomId}/giftCards/${usedCode}`) : null;
+      const gcSnap = gcRef ? await transaction.get(gcRef) : null;
+
       const srData = snap.data() || {};
       const sales = srData.sales || [];
       const inventory = srData.inventory || [];
@@ -1347,18 +1622,40 @@ export const fulfillWebOrderServer = functions.https.onCall(async (data, context
         saleRecord.giftCardUsada = pricing.giftCardUsada;
       }
 
-      // 3. Procesar Gift Card usada si aplica
+      // 3. Procesar Gift Card usada si aplica (deducción de saldo real y liberación de saldo reservado)
       let nextGiftCards = [...giftCards];
-      if (payload.giftCardUsada && payload.giftCardUsada.codigo) {
-        const usedCode = String(payload.giftCardUsada.codigo).toUpperCase().trim();
+      if (usedCode && usedAmount > 0) {
+        if (gcSnap && gcSnap.exists) {
+          const gcData = gcSnap.data()!;
+          const currentBalance = Number(gcData.balance ?? gcData.saldo ?? 0);
+          const currentReserved = Number(gcData.reservedBalance ?? gcData.saldoReservado ?? 0);
+          const newBalance = Math.max(0, currentBalance - usedAmount);
+          const newReserved = Math.max(0, currentReserved - usedAmount);
+
+          transaction.update(gcRef!, {
+            balance: newBalance,
+            saldo: newBalance,
+            reservedBalance: newReserved,
+            saldoReservado: newReserved,
+            estado: newBalance <= 0 ? 'AGOTADA' : 'ACTIVA',
+            updatedAt: new Date().toISOString()
+          });
+        }
+
         nextGiftCards = nextGiftCards.map((gc: any) => {
           if (gc.codigo && gc.codigo.toUpperCase().trim() === usedCode) {
-            const montoUsado = Number(payload.giftCardUsada.montoUsado) || 0;
-            const nuevoSaldo = Math.max(0, (gc.saldo || 0) - montoUsado);
+            const currentBalance = Number(gc.balance ?? gc.saldo ?? 0);
+            const currentReserved = Number(gc.reservedBalance ?? gc.saldoReservado ?? 0);
+            const nuevoSaldo = Math.max(0, currentBalance - usedAmount);
+            const nuevoReserved = Math.max(0, currentReserved - usedAmount);
             return {
               ...gc,
               saldo: nuevoSaldo,
+              balance: nuevoSaldo,
+              reservedBalance: nuevoReserved,
+              saldoReservado: nuevoReserved,
               estado: nuevoSaldo <= 0 ? 'AGOTADA' : 'ACTIVA',
+              updatedAt: new Date().toISOString()
             };
           }
           return gc;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSaleItemsFromOrder, getOrderSaleId, isOrderEligibleForExchange, isGiftCardOrder } from './webOrderToSale';
+import { buildSaleItemsFromOrder, getOrderSaleId, isOrderEligibleForExchange, isGiftCardOrder, parseSafeDate } from './webOrderToSale';
 import { CustomerOrder } from '../contexts/AuthContext';
 import { InventoryItem } from '../types';
 
@@ -181,6 +181,109 @@ describe('webOrderToSale Service', () => {
       const twentyDaysAgo = new Date(Date.now() - 20 * 86400000).toISOString();
       const oldOrder: CustomerOrder = { ...mockOrder, fecha: twentyDaysAgo };
       expect(isOrderEligibleForExchange(oldOrder)).toBe(false);
+    });
+
+    it('returns true for orders created today in DD/MM/YYYY format', () => {
+      const today = new Date();
+      const d = String(today.getDate()).padStart(2, '0');
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const y = today.getFullYear();
+      const localFecha = `${d}/${m}/${y}`;
+      const todayOrder: CustomerOrder = { ...mockOrder, fecha: localFecha };
+      expect(isOrderEligibleForExchange(todayOrder)).toBe(true);
+    });
+
+    it('returns true for orders created today in DD/MM/YYYY, HH:mm format', () => {
+      const today = new Date();
+      const d = String(today.getDate()).padStart(2, '0');
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const y = today.getFullYear();
+      const localFecha = `${d}/${m}/${y}, 15:30`;
+      const todayOrder: CustomerOrder = { ...mockOrder, fecha: localFecha };
+      expect(isOrderEligibleForExchange(todayOrder)).toBe(true);
+    });
+
+    it('returns false for orders created 20 days ago in DD/MM/YYYY format', () => {
+      const oldDate = new Date(Date.now() - 20 * 86400000);
+      const d = String(oldDate.getDate()).padStart(2, '0');
+      const m = String(oldDate.getMonth() + 1).padStart(2, '0');
+      const y = oldDate.getFullYear();
+      const oldFecha = `${d}/${m}/${y}`;
+      const oldOrder: CustomerOrder = { ...mockOrder, fecha: oldFecha };
+      expect(isOrderEligibleForExchange(oldOrder)).toBe(false);
+    });
+
+    it('supports Firestore Timestamp objects in order.fecha', () => {
+      const todayOrder: CustomerOrder = {
+        ...mockOrder,
+        fecha: { toDate: () => new Date() } as any,
+      };
+      expect(isOrderEligibleForExchange(todayOrder)).toBe(true);
+    });
+
+    it('returns false when fecha is completely invalid', () => {
+      const invalidOrder: CustomerOrder = { ...mockOrder, fecha: 'fecha-invalida' };
+      expect(isOrderEligibleForExchange(invalidOrder)).toBe(false);
+    });
+  });
+
+  describe('parseSafeDate', () => {
+    it('returns null for null, undefined, or empty values', () => {
+      expect(parseSafeDate(null)).toBeNull();
+      expect(parseSafeDate(undefined)).toBeNull();
+      expect(parseSafeDate('')).toBeNull();
+    });
+
+    it('returns valid Date instances as is and null for Invalid Date', () => {
+      const validDate = new Date('2026-08-28T12:00:00.000Z');
+      expect(parseSafeDate(validDate)).toBe(validDate);
+      expect(parseSafeDate(new Date('invalid'))).toBeNull();
+    });
+
+    it('supports Firestore Timestamp objects with toDate()', () => {
+      const target = new Date('2026-08-28T10:00:00.000Z');
+      const ts = { toDate: () => target };
+      expect(parseSafeDate(ts)).toBe(target);
+    });
+
+    it('supports epoch numbers in milliseconds', () => {
+      const epoch = 1724889600000;
+      const parsed = parseSafeDate(epoch);
+      expect(parsed?.getTime()).toBe(epoch);
+    });
+
+    it('supports ISO 8601 strings', () => {
+      const iso = '2026-08-28T14:30:00.000Z';
+      const parsed = parseSafeDate(iso);
+      expect(parsed?.toISOString()).toBe(iso);
+    });
+
+    it('correctly parses DD/MM/YYYY without swapping day and month', () => {
+      // 05/08/2026 debe ser 5 de agosto, NO 8 de mayo
+      const parsed = parseSafeDate('05/08/2026');
+      expect(parsed).not.toBeNull();
+      expect(parsed?.getFullYear()).toBe(2026);
+      expect(parsed?.getMonth()).toBe(7); // 0-indexed: 7 es agosto
+      expect(parsed?.getDate()).toBe(5);
+
+      const parsed28 = parseSafeDate('28/08/2026');
+      expect(parsed28?.getDate()).toBe(28);
+      expect(parsed28?.getMonth()).toBe(7);
+      expect(parsed28?.getFullYear()).toBe(2026);
+    });
+
+    it('supports DD/MM/YYYY with time and seconds', () => {
+      const parsed = parseSafeDate('28/08/2026, 17:30:45');
+      expect(parsed?.getDate()).toBe(28);
+      expect(parsed?.getMonth()).toBe(7);
+      expect(parsed?.getFullYear()).toBe(2026);
+      expect(parsed?.getHours()).toBe(17);
+      expect(parsed?.getMinutes()).toBe(30);
+      expect(parsed?.getSeconds()).toBe(45);
+    });
+
+    it('returns null for non-date strings', () => {
+      expect(parseSafeDate('no-es-una-fecha')).toBeNull();
     });
   });
 });

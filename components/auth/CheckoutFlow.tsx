@@ -1,12 +1,12 @@
 import React from 'react';
-import { X, ArrowRight, ArrowLeft, Loader2, CheckCircle, Smartphone, MapPin, ShoppingBag, Send, AlertCircle, Lock, Gift, Clock, Landmark, Copy, Check } from 'lucide-react';
+import { X, ArrowRight, ArrowLeft, Loader2, CheckCircle, Smartphone, MapPin, ShoppingBag, Send, AlertCircle, Lock, Gift, Clock, Landmark, CreditCard, Copy, Check } from 'lucide-react';
 import { useAuth, ShippingAddress } from '../../contexts/AuthContext';
 import { InventoryItem, WebSettings, GiftCard } from '../../types';
 import { db, auth, functions } from '../../services/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { fulfillWebOrder, reserveWebOrderStock, cancelWebOrderReservation, getAvailableStock } from '../../services/webOrderFulfillment';
 import { collection, addDoc, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
-import { sendNotificationEmail } from '../../services/emailService';
+import { sendNotificationEmail, sendTransferReservationEmail } from '../../services/emailService';
 import { DESCUENTO_BASE_TRANSFERENCIA } from '../../services/exchangePricing';
 import { createUalaPayment, setUalaEnvironment, getUalaEnvironment } from '../../services/ualaApi';
 import { calculateCartWeightKg, calculateCartWeightGrams, calculateCartDimensions } from '../../utils/shippingHelpers';
@@ -213,7 +213,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
   const [paymentRedirectUrl, setPaymentRedirectUrl] = React.useState<string | null>(null);
 
-  const [paymentMethod, setPaymentMethod] = React.useState<'transferencia' | 'tarjeta'>(initialPaymentMethod);
+  const paymentMethod = initialPaymentMethod;
 
   const [copiedCbu, setCopiedCbu] = React.useState(false);
   const [copiedAlias, setCopiedAlias] = React.useState(false);
@@ -279,6 +279,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         total: Math.round(cartTotal),
         tipoEnvio: tipoEnvio,
         metodoPago: paymentMethod === 'transferencia' ? 'Transferencia' : 'Tarjeta / Ualá Bis',
+        paymentMethod: paymentMethod === 'transferencia' ? 'TRANSFER' : 'UALA',
         pago: paymentMethod === 'transferencia' ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
         estado: 'PENDING_PAYMENT' as const,
         pesoTotalGramos: calculateCartWeightGrams(cart),
@@ -405,7 +406,6 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       setAppliedGiftCard(initialAppliedGiftCard);
       setGiftCardError(null);
       setIsValidatingGift(false);
-      setPaymentMethod(initialPaymentMethod);
       setSucursalProvince('');
       setSucursales([]);
       setSelectedSucursal(null);
@@ -672,6 +672,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         ...(tipoEnvio === 'envio' || tipoEnvio === 'envio_sucursal' ? { costoEnvio: calculatedCostoEnvio } : {}),
         ...(tipoEnvio === 'envio_sucursal' && selectedSucursal ? { sucursalCorreoArgentino: selectedSucursal } : {}),
         metodoPago: finalTotal === 0 ? 'Gift Card' : (isTransfer ? 'Transferencia' : 'Tarjeta / Ualá Bis'),
+        paymentMethod: finalTotal === 0 ? 'GIFTCARD' : (isTransfer ? 'TRANSFER' : 'UALA'),
         pago: isTransfer ? { efectivo: 100, tarjeta: 0 } : { efectivo: 0, tarjeta: 100 },
         ualaPlan: null,
         estado: orderEstado,
@@ -719,6 +720,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
         ...orderData,
         orderId: orderId,                  // Campo propio para buscarlo en Collection Group
         showroomId: PUBLIC_SHOWROOM_ID,    // Permite al webhook de Ualá saber en qué showroom buscar
+        paymentMethod: finalTotal === 0 ? 'GIFTCARD' : (isTransfer ? 'TRANSFER' : 'UALA'),
         ualaPaymentId: ualaPaymentId,
         ualaPaymentUrl: redirectUrl
       };
@@ -766,6 +768,32 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
       setPaymentRedirectUrl(redirectUrl);
       setStep('success');
+
+      if (isTransfer) {
+        try {
+          await sendTransferReservationEmail(
+            {
+              id: orderId,
+              orderId: orderId,
+              customerNombre: nombre.trim().toUpperCase(),
+              customerEmail: email.trim(),
+              customerTelefono: telefono.trim(),
+              fecha: new Date().toISOString(),
+              items: finalOrderData.items,
+              total: Math.round(finalTotal),
+              costoEnvio: calculatedCostoEnvio,
+              tipoEnvio: tipoEnvio,
+              giftCardUsada: appliedGiftCard ? {
+                codigo: appliedGiftCard.codigo,
+                montoUsado: giftCardDiscountAmount
+              } : undefined
+            },
+            webSettings
+          );
+        } catch (mailErr) {
+          console.error('Error enviando correo de confirmación de transferencia:', mailErr);
+        }
+      }
 
       if (!isTransfer && redirectUrl) {
         window.open(redirectUrl, '_blank', 'noopener,noreferrer');
@@ -1274,24 +1302,35 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
               {/* Resumen del Medio de Pago */}
               <div className="space-y-1.5">
                 <p className="text-[8px] tracking-[0.25em] font-light text-neutral-400 uppercase">Medio de Pago Seleccionado</p>
-                {paymentMethod === 'transferencia' ? (
-                  <div className="p-3 border border-neutral-200 bg-white space-y-0.5">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[9px] tracking-[0.2em] font-light text-black uppercase">Transferencia Bancaria</p>
-                      <span className="text-[8px] font-light text-black bg-neutral-100 px-1.5 py-0.5 uppercase border border-black/10">-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
+                <div className="p-3.5 border border-neutral-200 bg-neutral-50/60 rounded-none">
+                  {paymentMethod === 'transferencia' ? (
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Landmark size={14} className="text-black" strokeWidth={1.3} />
+                          <p className="text-[9px] tracking-[0.2em] font-medium text-black uppercase">Transferencia Bancaria</p>
+                        </div>
+                        <span className="text-[8px] font-light text-black bg-neutral-200 px-1.5 py-0.5 uppercase border border-black/10">-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
+                      </div>
+                      <p className="text-[8px] tracking-[0.1em] text-neutral-500 uppercase font-light mt-1.5">
+                        Bonificación del 20% OFF seleccionada en el carrito. Tu stock permanecerá reservado durante 24 horas para adjuntar tu comprobante.
+                      </p>
                     </div>
-                    <p className="text-[8px] tracking-[0.1em] text-neutral-400 uppercase font-light">
-                      Bonificación del 20% OFF. Reserva de stock activa por 24 horas.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="p-3 border border-neutral-200 bg-white space-y-0.5">
-                    <p className="text-[9px] tracking-[0.2em] font-light text-black uppercase">Tarjeta de Crédito / Débito (Ualá Bis)</p>
-                    <p className="text-[8px] tracking-[0.1em] text-neutral-400 uppercase font-light">
-                      Precio de lista. Pasarela de pago segura Ualá Bis (Crédito, Débito y Cuotas).
-                    </p>
-                  </div>
-                )}
+                  ) : (
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CreditCard size={14} className="text-black" strokeWidth={1.3} />
+                          <p className="text-[9px] tracking-[0.2em] font-medium text-black uppercase">Tarjeta de Crédito / Débito (Ualá Bis)</p>
+                        </div>
+                        <span className="text-[8px] font-light text-neutral-400 uppercase">Precio lista</span>
+                      </div>
+                      <p className="text-[8px] tracking-[0.1em] text-neutral-500 uppercase font-light mt-1.5">
+                        Precio de lista seleccionado en el carrito. Pasarela de pago segura Ualá Bis (Crédito, Débito y Cuotas).
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Gift Card Aplicada */}

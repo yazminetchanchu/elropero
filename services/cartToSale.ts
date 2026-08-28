@@ -33,15 +33,22 @@ export function cartLinesToSaleItems(
   });
 }
 
-/** Extrae color del texto de variante en descripción (T: / C:). */
+/** Extrae talle y color del texto de variante en descripción (T: / C:). */
 export function parseVariantFromDescripcion(descripcion: string): {
-  color?: string;
   talle?: string;
+  color?: string;
 } {
-  const colorMatch = descripcion.match(/\(.*?C:([^\s)]+)/i);
-  const talleMatch = descripcion.match(/\(.*?T:([^\s)]+)/i);
-  return {
-    color: colorMatch?.[1]?.trim().toUpperCase(),
-    talle: talleMatch?.[1]?.trim(),
-  };
+  if (!descripcion) return {};
+
+  // Extrae talle: busca 'T:' y captura hasta encontrar 'C:' o el cierre ')'
+  const talleMatch = descripcion.match(/\(.*?T:([^)]*?)(?:\s+C:|\))/i);
+
+  // Extrae color: busca 'C:' y captura hasta encontrar 'T:' o el cierre ')'
+  const colorMatch = descripcion.match(/\(.*?C:([^)]*?)(?:\s+T:|\))/i);
+
+  const talle = talleMatch && talleMatch[1].trim() ? talleMatch[1].trim().toUpperCase() : undefined;
+  const color = colorMatch && colorMatch[1].trim() ? colorMatch[1].trim().toUpperCase() : undefined;
+
+  return { talle, color };
 }
+

@@ -691,3 +691,270 @@ export const sendGiftCardEmail = async (
   }
 };
 
+export interface TransferReservationEmailData {
+  id?: string;
+  orderId?: string;
+  customerNombre?: string;
+  customerEmail?: string;
+  customerTelefono?: string;
+  fecha?: string;
+  items: Array<{
+    descripcion?: string;
+    talle?: string;
+    color?: string;
+    cantidad?: number;
+    precioUnitario?: number;
+    precioEfectivo?: number;
+    descuento?: number;
+  }>;
+  total: number;
+  costoEnvio?: number;
+  tipoEnvio?: string;
+  giftCardUsada?: {
+    codigo: string;
+    montoUsado: number;
+  };
+}
+
+export interface BankSettingsData {
+  storeName?: string;
+  contactWhatsapp?: string;
+  bankTitular?: string;
+  bankCbu?: string;
+  bankAlias?: string;
+  bankName?: string;
+  mercadoPagoAlias?: string;
+}
+
+/**
+ * Genera y envía un correo automático detallado con datos bancarios y aviso de 24 hs
+ * al registrarse una reserva por transferencia.
+ */
+export const sendTransferReservationEmail = async (
+  order: TransferReservationEmailData,
+  settings?: BankSettingsData
+) => {
+  try {
+    const storeEmail = 'elropero.informacion@gmail.com';
+    const recipients: string[] = [storeEmail];
+
+    if (order.customerEmail && order.customerEmail.trim()) {
+      const custEmail = order.customerEmail.trim().toLowerCase();
+      if (custEmail !== storeEmail) {
+        recipients.push(custEmail);
+      }
+    }
+
+    const rawId = order.orderId || order.id || '';
+    const cleanId = rawId.replace(/^sale_web_/, '').replace(/^sale_/, '').replace(/^ord_/, '').slice(-8).toUpperCase();
+    const title = `⏳ Reserva de Pedido #${cleanId} - Datos para Transferencia`;
+
+    const titular = settings?.bankTitular?.trim() || 'Danisa Guzman';
+    const banco = settings?.bankName?.trim() || 'Banco Santander';
+    const alias = settings?.bankAlias?.trim() || settings?.mercadoPagoAlias?.trim() || 'Danisa.guz.03';
+    const cbu = settings?.bankCbu?.trim() || '0000003100037658598052';
+    const whatsappNum = (settings?.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '');
+
+    // Formateo de fecha y hora
+    const dateObj = new Date(order.fecha || Date.now());
+    const fechaFormatted = !isNaN(dateObj.getTime())
+      ? dateObj.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
+    const horaFormatted = !isNaN(dateObj.getTime())
+      ? dateObj.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs'
+      : '';
+
+    // Cuerpo de texto plano
+    let textBody = `EL ROPERO SHOWROOM\n${title}\n\n`;
+    textBody += `¡Hola ${order.customerNombre || 'Cliente'}!\n`;
+    textBody += `Tu pedido #${cleanId} ha sido reservado correctamente.\n\n`;
+    textBody += `⚠️ IMPORTANTE: Tenés un plazo de 24 horas para realizar la transferencia y adjuntar tu comprobante. Pasado ese tiempo, la reserva de las prendas se cancela automáticamente y vuelven al stock disponible.\n\n`;
+    textBody += `--- DATOS PARA LA TRANSFERENCIA ---\n`;
+    textBody += `Titular: ${titular}\n`;
+    textBody += `Banco: ${banco}\n`;
+    textBody += `Alias: ${alias}\n`;
+    textBody += `CBU / CVU: ${cbu}\n`;
+    textBody += `Monto total a transferir: $${order.total.toLocaleString('es-AR')}\n\n`;
+    textBody += `--- DETALLE DE PRENDAS RESERVADAS ---\n`;
+
+    let subtotalItems = 0;
+    (order.items || []).forEach((item, idx) => {
+      const desc = item.descripcion || 'Prenda';
+      const talleStr = item.talle ? ` [Talle: ${item.talle}]` : '';
+      const colorStr = item.color ? ` [Color: ${item.color}]` : '';
+      const unit = item.precioUnitario ?? item.precioEfectivo ?? 0;
+      const sub = unit * (item.cantidad || 1);
+      subtotalItems += sub;
+      textBody += `${idx + 1}. ${desc}${talleStr}${colorStr} - Cant: ${item.cantidad || 1} x $${unit.toLocaleString('es-AR')} = $${sub.toLocaleString('es-AR')}\n`;
+    });
+
+    if (order.costoEnvio && order.costoEnvio > 0) {
+      textBody += `\n🚚 Costo de Envío: +$${order.costoEnvio.toLocaleString('es-AR')}\n`;
+    }
+    if (order.giftCardUsada) {
+      textBody += `🎁 Gift Card (${order.giftCardUsada.codigo}): -$${order.giftCardUsada.montoUsado.toLocaleString('es-AR')}\n`;
+    }
+    textBody += `\nTOTAL A TRANSFERIR: $${order.total.toLocaleString('es-AR')}\n\n`;
+    textBody += `Para enviar tu comprobante, comunicate por WhatsApp al +${whatsappNum} indicando tu número de pedido #${cleanId}.\n`;
+    textBody += `¡Muchas gracias por elegir El Ropero Showroom!`;
+
+    // Filas HTML de prendas
+    let itemsHtmlRows = '';
+    (order.items || []).forEach((item) => {
+      const desc = item.descripcion || 'Prenda';
+      const talleVal = item.talle || 'Único';
+      const colorVal = item.color || 'Estándar';
+      const unit = item.precioUnitario ?? item.precioEfectivo ?? 0;
+      const sub = unit * (item.cantidad || 1);
+
+      itemsHtmlRows += `
+        <tr style="border-bottom: 1px solid #f0f0f0;">
+          <td style="padding: 12px 10px; color: #111111; font-weight: 600; font-size: 13px;">${desc}</td>
+          <td style="padding: 12px 6px; text-align: center;"><span style="background-color: #f1f3f5; color: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">${talleVal}</span></td>
+          <td style="padding: 12px 6px; text-align: center;"><span style="background-color: #f1f3f5; color: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">${colorVal}</span></td>
+          <td style="padding: 12px 6px; text-align: center; color: #444444; font-weight: 600; font-size: 13px;">${item.cantidad || 1}</td>
+          <td style="padding: 12px 10px; text-align: right; color: #111111; font-weight: 600; font-size: 13px;">$${sub.toLocaleString('es-AR')}</td>
+        </tr>
+      `;
+    });
+
+    const waText = encodeURIComponent(`¡Hola! Te adjunto el comprobante de transferencia para mi pedido #${cleanId} por un total de $${order.total.toLocaleString('es-AR')}.`);
+    const waUrl = `https://wa.me/${whatsappNum}?text=${waText}`;
+
+    const htmlBody = `
+    <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; border: 1px solid #eaeaea; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.06); color: #1a1a1a;">
+      <div style="background-color: #0a0a0a; padding: 32px 24px; text-align: center; border-bottom: 3px solid #8f8d85;">
+        <p style="margin: 0; font-size: 11px; letter-spacing: 5px; text-transform: uppercase; color: #a3a3a3; font-weight: 500;">Showroom de indumentaria</p>
+        <h1 style="margin: 8px 0 0 0; font-size: 26px; letter-spacing: 8px; text-transform: uppercase; color: #ffffff; font-weight: 600;">EL ROPERO</h1>
+      </div>
+      
+      <div style="padding: 36px 28px; background-color: #ffffff;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+          <h2 style="font-size: 20px; font-weight: 600; color: #111111; margin: 0; letter-spacing: 0.5px;">⏳ Reserva de Pedido</h2>
+          <span style="background-color: #0a0a0a; color: #ffffff; padding: 5px 12px; font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; border-radius: 4px;">#${cleanId}</span>
+        </div>
+
+        <p style="font-size: 14px; color: #444444; margin: 0 0 20px 0; line-height: 1.6;">
+          Hola <strong>${order.customerNombre || 'Cliente'}</strong>, recibimos tu pedido con opción de <strong>Transferencia Bancaria (-20% OFF)</strong>. Tus prendas se encuentran reservadas a tu nombre.
+        </p>
+
+        <!-- ALERTA DE 24 HORAS -->
+        <div style="background-color: #fff9db; border: 1.5px solid #fcc419; border-radius: 10px; padding: 18px 20px; margin-bottom: 28px;">
+          <div style="display: flex; align-items: flex-start;">
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: #e67700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">
+                ⏰ Plazo de Reserva: 24 Horas
+              </div>
+              <div style="font-size: 13px; color: #333333; line-height: 1.5; font-weight: 500;">
+                Tenés un plazo de <strong>24 horas</strong> para realizar la transferencia y adjuntar tu comprobante. Pasado ese tiempo, la reserva de las prendas se cancela automáticamente y vuelven al stock disponible.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DATOS BANCARIOS -->
+        <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 22px; margin-bottom: 28px;">
+          <div style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #666666; font-weight: 700; margin-bottom: 14px; border-bottom: 1px solid #dee2e6; padding-bottom: 8px;">
+            🏦 Datos de la Cuenta Bancaria
+          </div>
+          <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 6px 0; color: #666666; width: 35%; font-weight: 500;">Titular:</td>
+              <td style="padding: 6px 0; color: #111111; font-weight: 600; text-transform: uppercase;">${titular}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #666666; font-weight: 500;">Banco:</td>
+              <td style="padding: 6px 0; color: #111111; font-weight: 600; text-transform: uppercase;">${banco}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #666666; font-weight: 500;">Alias:</td>
+              <td style="padding: 6px 0; color: #111111; font-weight: 700; font-family: monospace; font-size: 14px; background: #eef2ff; padding: 3px 8px; border-radius: 4px; display: inline-block;">${alias}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #666666; font-weight: 500;">CBU / CVU:</td>
+              <td style="padding: 6px 0; color: #111111; font-weight: 700; font-family: monospace; font-size: 13px; word-break: break-all;">${cbu}</td>
+            </tr>
+            <tr style="border-top: 1px solid #dee2e6;">
+              <td style="padding: 10px 0 4px 0; color: #111111; font-weight: 700; font-size: 14px;">Total a Transferir:</td>
+              <td style="padding: 10px 0 4px 0; color: #0a0a0a; font-weight: 800; font-size: 18px;">$${order.total.toLocaleString('es-AR')}</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- DETALLE DE PRENDAS -->
+        <div style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #666666; font-weight: 700; margin-bottom: 12px;">
+          🛍️ Detalle del Pedido
+        </div>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+          <thead>
+            <tr style="background-color: #f8f9fa; border-bottom: 2px solid #e9ecef;">
+              <th style="padding: 10px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Prenda</th>
+              <th style="padding: 10px 6px; text-align: center; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Talle</th>
+              <th style="padding: 10px 6px; text-align: center; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Color</th>
+              <th style="padding: 10px 6px; text-align: center; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Cant.</th>
+              <th style="padding: 10px 10px; text-align: right; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Precio</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtmlRows}
+          </tbody>
+        </table>
+
+        <!-- DESGLOSE DE TOTALES -->
+        <div style="background-color: #fdfdfd; border: 1px solid #eeeeee; border-radius: 8px; padding: 16px; margin-bottom: 28px;">
+          <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 4px 0; color: #666666;">Subtotal Prendas:</td>
+              <td style="padding: 4px 0; text-align: right; color: #111111; font-weight: 600;">$${subtotalItems.toLocaleString('es-AR')}</td>
+            </tr>
+            ${order.costoEnvio && order.costoEnvio > 0 ? `
+            <tr>
+              <td style="padding: 4px 0; color: #666666;">🚚 Envío:</td>
+              <td style="padding: 4px 0; text-align: right; color: #111111; font-weight: 600;">+$${order.costoEnvio.toLocaleString('es-AR')}</td>
+            </tr>` : ''}
+            ${order.giftCardUsada ? `
+            <tr>
+              <td style="padding: 4px 0; color: #2e7d32;">🎁 Gift Card (${order.giftCardUsada.codigo}):</td>
+              <td style="padding: 4px 0; text-align: right; color: #2e7d32; font-weight: 600;">-$${order.giftCardUsada.montoUsado.toLocaleString('es-AR')}</td>
+            </tr>` : ''}
+            <tr style="border-top: 1.5px solid #0a0a0a;">
+              <td style="padding: 10px 0 4px 0; font-size: 14px; font-weight: 700; color: #0a0a0a; text-transform: uppercase; letter-spacing: 1px;">Total Final a Transferir:</td>
+              <td style="padding: 10px 0 4px 0; text-align: right; font-size: 18px; font-weight: 800; color: #0a0a0a;">$${order.total.toLocaleString('es-AR')}</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- BOTÓN WHATSAPP -->
+        <div style="text-align: center; margin-top: 24px;">
+          <a href="${waUrl}" style="display: inline-block; background-color: #25D366; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 14px 28px; border-radius: 8px; box-shadow: 0 4px 12px rgba(37, 211, 102, 0.25);">
+            💬 Adjuntar Comprobante por WhatsApp
+          </a>
+          <p style="font-size: 12px; color: #888888; margin: 12px 0 0 0;">
+            O comunicate directamente al +${whatsappNum}
+          </p>
+        </div>
+      </div>
+
+      <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #eeeeee; font-size: 12px; color: #888888;">
+        El Ropero Showroom · Indumentaria & Estilo · Buenos Aires, Argentina
+      </div>
+    </div>
+    `;
+
+    const mailData: EmailData = {
+      to: recipients,
+      message: {
+        subject: title,
+        text: textBody,
+        html: htmlBody,
+      },
+    };
+
+    const docRef = await addDoc(collection(db, 'mail'), mailData);
+    console.log('[TransferEmail] Correo de reserva por transferencia encolado para:', recipients, '| Doc ID:', docRef?.id);
+  } catch (error: any) {
+    console.error('[TransferEmail] ERROR al encolar correo de reserva por transferencia:', error?.code || error?.message || error);
+  }
+};
+
+

@@ -2,6 +2,7 @@ import React from 'react';
 import { InventoryItem, Sale, GiftCard, SaleItem } from '../types';
 import { Trash2, CreditCard, Banknote, CheckCircle, Search, X } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
+import { parseSafeDate } from '../services/webOrderToSale';
 
 
 // =======================
@@ -427,9 +428,10 @@ const Sales: React.FC<SalesProps> = ({
         return;
       }
 
-      const diasTranscurridos = Math.floor(
-        (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
-      );
+      const parsedDate = parseSafeDate(ventaOriginal.fecha);
+      const diasTranscurridos = parsedDate
+        ? Math.floor((Date.now() - parsedDate.getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
       if (diasTranscurridos > 15) {
         showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
         return;
@@ -1282,8 +1284,8 @@ const Sales: React.FC<SalesProps> = ({
           .reverse()
           .filter(s => {
             // Filtro de fecha
-            const d = new Date(s.fecha);
-            if (d.getMonth() + 1 !== filtroMes || d.getFullYear() !== filtroAnio) return false;
+            const d = parseSafeDate(s.fecha);
+            if (!d || d.getMonth() + 1 !== filtroMes || d.getFullYear() !== filtroAnio) return false;
 
             const cleanQuery = normalizeText(searchSale);
             if (!cleanQuery) return true;
@@ -1327,7 +1329,7 @@ const Sales: React.FC<SalesProps> = ({
               </div>
 
               <div className="text-xs text-[#1A1A1A] text-left sm:text-center">
-                {new Date(s.fecha).toLocaleString('es-AR', {
+                {(parseSafeDate(s.fecha) ?? new Date(s.fecha)).toLocaleString('es-AR', {
                   day: '2-digit',
                   month: '2-digit',
                   hour: '2-digit',
@@ -1363,9 +1365,10 @@ const Sales: React.FC<SalesProps> = ({
                 {s.tipo !== 'cambio' && (s.items ?? []).length > 0 && (
                   <button
                     onClick={() => {
-                      const diasTranscurridos = Math.floor(
-                        (Date.now() - new Date(s.fecha).getTime()) / (1000 * 60 * 60 * 24)
-                      );
+                      const parsedDate = parseSafeDate(s.fecha);
+                      const diasTranscurridos = parsedDate
+                        ? Math.floor((Date.now() - parsedDate.getTime()) / (1000 * 60 * 60 * 24))
+                        : 999;
                       if (diasTranscurridos > 15) {
                         showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
                         return;
@@ -1427,8 +1430,11 @@ const Sales: React.FC<SalesProps> = ({
                 <strong>No se permite realizar cambios.</strong>
               </p>
               <p className="text-xs text-[#1A1A1A]/50 mt-2">
-                Fecha de venta: {new Date(ventaSeleccionadaPendiente.fecha).toLocaleDateString('es-AR')}<br />
-                Días transcurridos: {Math.floor((Date.now() - new Date(ventaSeleccionadaPendiente.fecha).getTime()) / 86400000)}
+                Fecha de venta: {(parseSafeDate(ventaSeleccionadaPendiente.fecha) ?? new Date(ventaSeleccionadaPendiente.fecha)).toLocaleDateString('es-AR')}<br />
+                Días transcurridos: {(() => {
+                  const p = parseSafeDate(ventaSeleccionadaPendiente.fecha);
+                  return p ? Math.floor((Date.now() - p.getTime()) / 86400000) : '-';
+                })()}
               </p>
             </div>
             <div className="flex gap-3 justify-center">

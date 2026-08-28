@@ -2,13 +2,19 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 
 /** Helper to extract size (talle) and color from description */
-function parseVariantFromDescripcion(descripcion: string): { talle?: string; color?: string } {
-  const talleMatch = descripcion.match(/\(.*?T:([^\s)]+)/i);
-  const colorMatch = descripcion.match(/\(.*?C:([^\s)]+)/i);
-  return {
-    talle: talleMatch?.[1]?.trim(),
-    color: colorMatch?.[1]?.trim().toUpperCase(),
-  };
+export function parseVariantFromDescripcion(descripcion: string): { talle?: string; color?: string } {
+  if (!descripcion) return {};
+
+  // Extrae talle: busca 'T:' y captura hasta encontrar 'C:' o el cierre ')'
+  const talleMatch = descripcion.match(/\(.*?T:([^)]*?)(?:\s+C:|\))/i);
+
+  // Extrae color: busca 'C:' y captura hasta encontrar 'T:' o el cierre ')'
+  const colorMatch = descripcion.match(/\(.*?C:([^)]*?)(?:\s+T:|\))/i);
+
+  const talle = talleMatch && talleMatch[1].trim() ? talleMatch[1].trim().toUpperCase() : undefined;
+  const color = colorMatch && colorMatch[1].trim() ? colorMatch[1].trim().toUpperCase() : undefined;
+
+  return { talle, color };
 }
 
 /**

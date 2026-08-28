@@ -34,17 +34,20 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.migrateMissingSaleItemVariants = void 0;
+exports.parseVariantFromDescripcion = parseVariantFromDescripcion;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 /** Helper to extract size (talle) and color from description */
 function parseVariantFromDescripcion(descripcion) {
-    var _a, _b;
-    const talleMatch = descripcion.match(/\(.*?T:([^\s)]+)/i);
-    const colorMatch = descripcion.match(/\(.*?C:([^\s)]+)/i);
-    return {
-        talle: (_a = talleMatch === null || talleMatch === void 0 ? void 0 : talleMatch[1]) === null || _a === void 0 ? void 0 : _a.trim(),
-        color: (_b = colorMatch === null || colorMatch === void 0 ? void 0 : colorMatch[1]) === null || _b === void 0 ? void 0 : _b.trim().toUpperCase(),
-    };
+    if (!descripcion)
+        return {};
+    // Extrae talle: busca 'T:' y captura hasta encontrar 'C:' o el cierre ')'
+    const talleMatch = descripcion.match(/\(.*?T:([^)]*?)(?:\s+C:|\))/i);
+    // Extrae color: busca 'C:' y captura hasta encontrar 'T:' o el cierre ')'
+    const colorMatch = descripcion.match(/\(.*?C:([^)]*?)(?:\s+T:|\))/i);
+    const talle = talleMatch && talleMatch[1].trim() ? talleMatch[1].trim().toUpperCase() : undefined;
+    const color = colorMatch && colorMatch[1].trim() ? colorMatch[1].trim().toUpperCase() : undefined;
+    return { talle, color };
 }
 /**
  * Callable Cloud Function that back‑fills missing `talle` and `color` fields on historic SaleItem records.

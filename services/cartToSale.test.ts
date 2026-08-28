@@ -179,22 +179,47 @@ describe('cartToSale service', () => {
       expect(res3.color).toBe('NEGRO');
     });
 
-    it('soporta minúsculas en los tags y normaliza el color a mayúsculas', () => {
+    it('soporta minúsculas en los tags y normaliza talle y color a mayúsculas', () => {
       const res = parseVariantFromDescripcion('Camisa Lino (t:s c:blanco)');
-      expect(res.talle).toBe('s');
+      expect(res.talle).toBe('S');
       expect(res.color).toBe('BLANCO');
     });
 
-    it('retorna undefined para ambos campos si la descripción no contiene variantes', () => {
+    it('retorna undefined o vacio para ambos campos si la descripción no contiene variantes o es vacía', () => {
       const res4 = parseVariantFromDescripcion('Accesorio comun');
       expect(res4.talle).toBeUndefined();
       expect(res4.color).toBeUndefined();
+
+      expect(parseVariantFromDescripcion('')).toEqual({});
+      expect(parseVariantFromDescripcion(undefined as any)).toEqual({});
     });
 
     it('maneja strings con texto complejo o paréntesis adicionales', () => {
       const res = parseVariantFromDescripcion('Top Deportivo (Edición Especial) (T:M C:NEGRO)');
       expect(res.talle).toBe('M');
       expect(res.color).toBe('NEGRO');
+    });
+
+    it('extrae correctamente colores con nombres compuestos (ej: AZUL MARINO, VERDE MILITAR, ROSA VIEJO)', () => {
+      const res1 = parseVariantFromDescripcion('Remera (T:M C:AZUL MARINO)');
+      expect(res1.talle).toBe('M');
+      expect(res1.color).toBe('AZUL MARINO');
+
+      const res2 = parseVariantFromDescripcion('Pantalón Cargo (T:42 C:VERDE MILITAR)');
+      expect(res2.talle).toBe('42');
+      expect(res2.color).toBe('VERDE MILITAR');
+
+      const res3 = parseVariantFromDescripcion('Top Seda (T:S C:ROSA VIEJO)');
+      expect(res3.talle).toBe('S');
+      expect(res3.color).toBe('ROSA VIEJO');
+
+      const res4 = parseVariantFromDescripcion('Vestido Fiesta (C:AZUL MARINO T:XL)');
+      expect(res4.talle).toBe('XL');
+      expect(res4.color).toBe('AZUL MARINO');
+
+      const res5 = parseVariantFromDescripcion('Bufanda (C:VERDE MILITAR)');
+      expect(res5.talle).toBeUndefined();
+      expect(res5.color).toBe('VERDE MILITAR');
     });
   });
 });

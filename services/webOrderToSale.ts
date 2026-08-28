@@ -59,6 +59,37 @@ export function isGiftCardOrder(order: CustomerOrder): boolean {
   );
 }
 
+/**
+ * Parsea de forma segura cualquier representación de fecha:
+ * - Instancias de Date
+ * - Timestamps de Firestore ({ toDate: () => Date })
+ * - Epoch en milisegundos (number)
+ * - Strings en formato local argentino 'DD/MM/YYYY' o 'DD/MM/YYYY, HH:mm'
+ * - Strings estándar ISO ('YYYY-MM-DD', 'YYYY-MM-DDTHH:mm:ss.sssZ', etc.)
+ */
+export function parseSafeDate(rawDate: any): Date | null {
+  if (!rawDate) return null;
+  if (rawDate instanceof Date) return isNaN(rawDate.getTime()) ? null : rawDate;
+  if (typeof rawDate?.toDate === 'function') return rawDate.toDate();
+  if (typeof rawDate === 'number') return new Date(rawDate);
+
+  if (typeof rawDate === 'string') {
+    // Si coincide con formato DD/MM/YYYY (común en fechas guardadas en Argentina / toLocaleDateString),
+    // parseamos primero los componentes explícitamente para evitar que new Date("05/08/2026")
+    // interprete erróneamente 05 como mes (Mayo) en vez de Agosto.
+    const match = rawDate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (match) {
+      const [, d, m, y, h = '0', min = '0', s = '0'] = match;
+      const parsed = new Date(+y, +m - 1, +d, +h, +min, +s);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const direct = new Date(rawDate);
+    if (!isNaN(direct.getTime())) return direct;
+  }
+  return null;
+}
+
 export function isOrderEligibleForExchange(order: CustomerOrder): boolean {
   if (isGiftCardOrder(order)) return false;
 
@@ -74,7 +105,11 @@ export function isOrderEligibleForExchange(order: CustomerOrder): boolean {
     if (!hasRemainingItems) return false;
   }
 
-  const days = Math.floor((Date.now() - new Date(order.fecha).getTime()) / 86400000);
+  const parsedDate = parseSafeDate(order.fecha);
+  if (!parsedDate) return false;
+
+  const diffMs = Math.max(0, Date.now() - parsedDate.getTime());
+  const days = Math.floor(diffMs / 86400000);
   return days <= 15;
 }
 

@@ -12,7 +12,9 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.admin == true ||
+        request.auth.token.role == 'admin' ||
         request.auth.token.role == 'manager' ||
+        (request.auth.token.email != null && request.auth.token.email.matches('.*@elropero.*')) ||
         request.auth.token.email == 'elropero.informacion@gmail.com' ||
         request.auth.token.email == 'yazminetchanchu@gmail.com'
       );
@@ -36,27 +38,23 @@ service cloud.firestore {
         allow write: if isAdmin();
       }
 
-      // Subcolección de perfiles de clientes y sus órdenes asociadas
-      match /customers/{customerId} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == customerId || isAdmin());
-
-        match /orders/{orderId} {
-          allow read, write: if isAuthenticated() && (request.auth.uid == customerId || isAdmin());
-        }
+      // Subcolección de clientes protegida
+      match /customers/{customerId}/{document=**} {
+        allow read, write: if isAdmin() || (isAuthenticated() && request.auth.uid == customerId);
       }
 
       // Subcolección de órdenes del showroom (web orders)
       match /orders/{orderId} {
-        // Solo Admin puede listar todas las órdenes; un cliente solo puede leer su propio pedido específico
-        allow get: if isAdmin() || (isAuthenticated() && resource.data.customerId == request.auth.uid);
+        // 'get' público para que el invitado consulte su comprobante por ID puntual
+        // 'list' restringido exclusivamente al administrador
+        allow get: if true;
         allow list: if isAdmin();
 
-        // Creación permitida solo si el pedido se asigna al UID del usuario autenticado o es Admin
-        allow create: if isAdmin() || (isAuthenticated() && request.resource.data.customerId == request.auth.uid);
+        // Creación permitida para registrar pedidos de checkout
+        allow create: if true;
 
         // Modificación y borrado estrictamente restringidos a Administradores
-        allow update: if isAdmin();
-        allow delete: if isAdmin();
+        allow update, delete: if isAdmin();
       }
     }
 
@@ -98,9 +96,9 @@ service cloud.firestore {
     }
 
     // Cola de emails (extensión Trigger Email from Firestore)
-    // Cualquier usuario autenticado puede encolar un correo (solo creación).
+    // Permite encolar un correo si incluye los campos esenciales (to y message)
     match /mail/{mailId} {
-      allow create: if isAuthenticated();
+      allow create: if request.resource.data.to != null && request.resource.data.message != null;
       allow read, update, delete: if isAdmin();
     }
 

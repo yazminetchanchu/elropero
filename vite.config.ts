@@ -67,6 +67,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'firebase-admin': path.resolve(__dirname, 'functions/node_modules/firebase-admin'),
+        'firebase-functions/v1': path.resolve(__dirname, 'functions/node_modules/firebase-functions/lib/v1'),
+        'firebase-functions': path.resolve(__dirname, 'functions/node_modules/firebase-functions'),
       }
     },
 

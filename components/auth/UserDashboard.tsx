@@ -2,7 +2,7 @@ import React from 'react';
 import { X, ShoppingBag, MapPin, Heart, User, Trash2, Edit3, Plus, ArrowRight, Loader2, LogOut, CheckCircle, Package, RefreshCw, Gift, ExternalLink, Copy, Check } from 'lucide-react';
 import { useAuth, ShippingAddress, CustomerOrder } from '../../contexts/AuthContext';
 import { InventoryItem, GiftCard } from '../../types';
-import { isOrderEligibleForExchange, isGiftCardOrder } from '../../services/webOrderToSale';
+import { isOrderEligibleForExchange, isGiftCardOrder, parseSafeDate } from '../../services/webOrderToSale';
 import { isOrderExpired } from '../../services/webOrderFulfillment';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -77,7 +77,8 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
     return (orders || []).filter(o => {
       if (isGiftCardOrder(o)) return false;
       if (isCancelledOrder(o.estado) || isOrderExpired(o)) return false;
-      const days = Math.floor((Date.now() - new Date(o.fecha).getTime()) / 86400000);
+      const parsedDate = parseSafeDate(o.fecha);
+      const days = parsedDate ? Math.floor((Date.now() - parsedDate.getTime()) / 86400000) : 999;
       return o.estado !== 'Entregado' && days <= 15;
     });
   }, [orders]);
@@ -86,7 +87,8 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
     return (orders || []).filter(o => {
       if (isGiftCardOrder(o)) return true;
       if (isCancelledOrder(o.estado) || isOrderExpired(o)) return true;
-      const days = Math.floor((Date.now() - new Date(o.fecha).getTime()) / 86400000);
+      const parsedDate = parseSafeDate(o.fecha);
+      const days = parsedDate ? Math.floor((Date.now() - parsedDate.getTime()) / 86400000) : 999;
       return o.estado === 'Entregado' || days > 15;
     });
   }, [orders]);
@@ -354,7 +356,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                     <div className="flex flex-wrap justify-between items-center gap-2 pb-2.5 border-b border-neutral-100">
                       <div className="flex items-center gap-2">
                         <span className="text-[8px] tracking-[0.15em] uppercase text-neutral-400 font-light">
-                          {new Date(order.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          {(parseSafeDate(order.fecha) ?? new Date(order.fecha)).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                         </span>
                         {order.tipoPedido === 'cambio_web' && (
                           <span className="text-[8px] tracking-[1px] uppercase px-2 py-0.5 font-bold bg-[#F5F0EB] text-[#7C5A3E] border border-[#E3D7CB] rounded">
@@ -476,7 +478,8 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                             disabled={isFullyExchanged}
                             onClick={() => {
                               if (isFullyExchanged) return;
-                              const days = Math.floor((Date.now() - new Date(order.fecha).getTime()) / 86400000);
+                              const parsedDate = parseSafeDate(order.fecha);
+                              const days = parsedDate ? Math.floor((Date.now() - parsedDate.getTime()) / 86400000) : 999;
                               if (days > 15) {
                                 showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
                                 return;

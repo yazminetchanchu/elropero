@@ -8,8 +8,8 @@ export { cotizarEnvio, obtenerSucursales, importarEnvioMiCorreo, obtenerEtiqueta
 import { importarEnvioMiCorreo as doImportMiCorreo } from "./micorreo";
 
 // Importar y exportar funciones de reservas y ordenes web
-export { reserveWebOrder, releaseExpiredReservationsCron, releaseExpiredReservationsServer, cancelWebOrderReservationServer, fulfillWebCambioServer, fulfillWebOrderServer } from "./orders";
-import { executeFulfillWebCambio } from "./orders";
+export { reserveWebOrder, releaseExpiredReservationsCron, releaseExpiredReservationsServer, cancelWebOrderReservationServer, cancelWebOrder, fulfillWebCambioServer, fulfillWebOrderServer } from "./orders";
+import { executeFulfillWebCambio, parseVariantFromDescripcion } from "./orders";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -90,7 +90,6 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
     // Buscar la orden en cualquier showroom usando Collection Group Query.
     const ordersQuery = await db.collectionGroup('orders')
       .where('orderId', '==', externalReference)
-      .limit(1)
       .get();
 
     if (ordersQuery.empty) {
@@ -165,10 +164,26 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
       return;
     }
 
-    const orderDoc = ordersQuery.docs[0];
-    const showroomId = orderDoc.data().showroomId || process.env.SHOWROOM_ID || 'ROPERO';
+    // Identificar la orden raíz del showroom por path (4 segmentos: showrooms/{showroomId}/orders/{orderId})
+    let mainOrderDoc = ordersQuery.docs.find(doc => {
+      const segments = doc.ref.path.split('/');
+      return segments.length === 4 && segments[0] === 'showrooms' && segments[2] === 'orders';
+    });
+
+    if (!mainOrderDoc && !ordersQuery.empty) {
+      mainOrderDoc = ordersQuery.docs[0];
+    }
+
+    if (!mainOrderDoc) {
+      console.warn(`[ualaWebhook] No se pudo resolver la orden para orderId: ${externalReference}`);
+      res.status(200).send('OK - Order not resolved');
+      return;
+    }
+
+    const orderDoc = mainOrderDoc;
+    const showroomId = mainOrderDoc.ref.parent.parent?.id || orderDoc.data().showroomId || process.env.SHOWROOM_ID || 'ROPERO';
     const showroomRef = db.collection('showrooms').doc(showroomId);
-    const orderRef = orderDoc.ref;
+    const orderRef = mainOrderDoc.ref;
 
     if (status !== 'APPROVED' && status !== 'SUCCESS' && status !== 'PAID') {
       console.log(`Payment not approved (Status: ${status}) for order ${externalReference}`);
@@ -230,8 +245,8 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
             transaction.update(orderRef, { estado: 'Cancelado', paymentStatus: status });
 
             if (orderData.customerId && orderData.customerId !== 'GUEST') {
-              const customerOrderRef = showroomRef.collection('customers').doc(orderData.customerId).collection('orders').doc(externalReference);
-              transaction.set(customerOrderRef, { estado: 'Cancelado', paymentStatus: status }, { merge: true });
+              const customerOrderRef = db.doc(`showrooms/${showroomId}/customers/${orderData.customerId}/orders/${mainOrderDoc.id}`);
+              transaction.set(customerOrderRef, { estado: 'Cancelado', paymentStatus: status, updatedAt: new Date().toISOString() }, { merge: true });
             }
           });
 
@@ -431,16 +446,27 @@ export const ualaWebhook = functions.https.onRequest(async (req, res) => {
       transaction.update(orderRef, {
         saleId,
         estado: 'PAID', // El pago se aprueba: La orden pasa a PAID y la reserva se confirma definitivamente
+        paymentStatus: 'PAID',
+        paymentMethod: 'UALA',
+        updatedAt: new Date().toISOString(),
         fulfilledAt: new Date().toISOString(),
+        paymentDetails: {
+          transactionId: req.body?.uuid || req.body?.id || payload.uuid || payload.id || null,
+          amount: req.body?.amount || webhookAmount || orderData.total,
+          paidAt: new Date().toISOString()
+        }
       });
 
       // Also update customer profile if registered
       if (orderData.customerId && orderData.customerId !== 'GUEST') {
-        const customerOrderRef = showroomRef.collection('customers').doc(orderData.customerId).collection('orders').doc(externalReference);
+        const customerOrderRef = db.doc(`showrooms/${showroomId}/customers/${orderData.customerId}/orders/${mainOrderDoc.id}`);
         // Using set with merge to avoid failing if it doesn't exist
         transaction.set(customerOrderRef, {
           saleId,
           estado: 'PAID',
+          paymentStatus: 'PAID',
+          paymentMethod: 'UALA',
+          updatedAt: new Date().toISOString(),
           fulfilledAt: new Date().toISOString()
         }, { merge: true });
       }
@@ -875,13 +901,10 @@ async function enqueueBackendSaleConfirmation(orderData: any, sale: any) {
     // Intentar extraer talle y color si en el webhook venían en la descripcion o propiedades
     let talleVal = item.talle || "Único";
     let colorVal = item.color || "Estándar";
-    if (talleVal === "Único" && descripcion.includes("(T:")) {
-      const m = descripcion.match(/\(T:([^ ]+)/);
-      if (m) talleVal = m[1];
-    }
-    if (colorVal === "Estándar" && descripcion.includes("C:")) {
-      const m = descripcion.match(/C:([^)]+)\)/);
-      if (m) colorVal = m[1];
+    if (talleVal === "Único" || colorVal === "Estándar") {
+      const parsed = parseVariantFromDescripcion(descripcion);
+      if (talleVal === "Único" && parsed.talle) talleVal = parsed.talle;
+      if (colorVal === "Estándar" && parsed.color) colorVal = parsed.color;
     }
 
     itemsHtmlRows += `
@@ -1048,6 +1071,187 @@ async function enqueueBackendOrderCancelled(orderData: any) {
     to: targetEmail,
     message: {
       subject: title + " - El Ropero Showroom",
+      html: htmlBody,
+    },
+  });
+}
+
+export async function enqueueBackendTransferReservation(orderData: any, webSettings?: any) {
+  const storeEmail = "elropero.informacion@gmail.com";
+  const recipients: string[] = [storeEmail];
+
+  if (orderData.customerEmail && typeof orderData.customerEmail === "string") {
+    const custEmail = orderData.customerEmail.trim().toLowerCase();
+    if (custEmail && custEmail !== storeEmail) {
+      recipients.push(custEmail);
+    }
+  }
+
+  const rawId = String(orderData.orderId || orderData.id || "");
+  const cleanId = rawId.replace(/^sale_web_/, "").replace(/^sale_/, "").replace(/^ord_/, "").slice(-8).toUpperCase();
+  const title = `⏳ Reserva de Pedido #${cleanId} - Datos para Transferencia`;
+
+  const titular = webSettings?.bankTitular?.trim() || "Danisa Guzman";
+  const banco = webSettings?.bankName?.trim() || "Banco Santander";
+  const alias = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || "Danisa.guz.03";
+  const cbu = webSettings?.bankCbu?.trim() || "0000003100037658598052";
+  const whatsappNum = String(webSettings?.contactWhatsapp || "5492346685836").replace(/[^0-9]/g, "");
+
+  const items = orderData.items || [];
+  let itemsHtmlRows = "";
+  items.forEach((item: any) => {
+    const descripcion = item.descripcion || "Prenda";
+    let talleVal = item.talle || "Único";
+    let colorVal = item.color || "Estándar";
+    if (talleVal === "Único" || colorVal === "Estándar") {
+      const parsed = parseVariantFromDescripcion(descripcion);
+      if (talleVal === "Único" && parsed.talle) talleVal = parsed.talle;
+      if (colorVal === "Estándar" && parsed.color) colorVal = parsed.color;
+    }
+    const precioUnit = item.precioUnitario ?? item.precioEfectivo ?? item.precioTarjeta ?? 0;
+    const subtotalItem = precioUnit * (item.cantidad || 1);
+
+    itemsHtmlRows += `
+      <tr style="border-bottom: 1px solid #f0f0f0;">
+        <td style="padding: 12px 10px; color: #111111; font-weight: 600; font-size: 13px;">${descripcion}</td>
+        <td style="padding: 12px 6px; text-align: center;"><span style="background-color: #f1f3f5; color: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">${talleVal}</span></td>
+        <td style="padding: 12px 6px; text-align: center;"><span style="background-color: #f1f3f5; color: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">${colorVal}</span></td>
+        <td style="padding: 12px 6px; text-align: center; color: #444444; font-weight: 600; font-size: 13px;">${item.cantidad || 1}</td>
+        <td style="padding: 12px 10px; text-align: right; color: #111111; font-weight: 600; font-size: 13px;">$${subtotalItem.toLocaleString("es-AR")}</td>
+      </tr>
+    `;
+  });
+
+  const subtotalItems = items.reduce((acc: number, item: any) => {
+    const p = item.precioUnitario ?? item.precioEfectivo ?? item.precioTarjeta ?? 0;
+    return acc + p * (item.cantidad || 1);
+  }, 0);
+
+  const waText = encodeURIComponent(`¡Hola! Te adjunto el comprobante de transferencia para mi pedido #${cleanId} por un total de $${Number(orderData.total || 0).toLocaleString("es-AR")}.`);
+  const waUrl = `https://wa.me/${whatsappNum}?text=${waText}`;
+
+  const htmlBody = `
+    <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background-color: #ffffff; border: 1px solid #eaeaea; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.06); color: #1a1a1a;">
+      <div style="background-color: #0a0a0a; padding: 32px 24px; text-align: center; border-bottom: 3px solid #8f8d85;">
+        <p style="margin: 0; font-size: 11px; letter-spacing: 5px; text-transform: uppercase; color: #a3a3a3; font-weight: 500;">Showroom de indumentaria</p>
+        <h1 style="margin: 8px 0 0 0; font-size: 26px; letter-spacing: 8px; text-transform: uppercase; color: #ffffff; font-weight: 600;">EL ROPERO</h1>
+      </div>
+      
+      <div style="padding: 36px 28px; background-color: #ffffff;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+          <h2 style="font-size: 20px; font-weight: 600; color: #111111; margin: 0; letter-spacing: 0.5px;">⏳ Reserva de Pedido</h2>
+          <span style="background-color: #0a0a0a; color: #ffffff; padding: 5px 12px; font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; border-radius: 4px;">#${cleanId}</span>
+        </div>
+
+        <p style="font-size: 14px; color: #444444; margin: 0 0 20px 0; line-height: 1.6;">
+          Hola <strong>${orderData.customerNombre || "Cliente"}</strong>, recibimos tu pedido con opción de <strong>Transferencia Bancaria (-20% OFF)</strong>. Tus prendas se encuentran reservadas a tu nombre.
+        </p>
+
+        <!-- ALERTA DE 24 HORAS -->
+        <div style="background-color: #fff9db; border: 1.5px solid #fcc419; border-radius: 10px; padding: 18px 20px; margin-bottom: 28px;">
+          <div>
+            <div style="font-size: 13px; font-weight: 700; color: #e67700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">
+              ⏰ Plazo de Reserva: 24 Horas
+            </div>
+            <div style="font-size: 13px; color: #333333; line-height: 1.5; font-weight: 500;">
+              Tenés un plazo de <strong>24 horas</strong> para realizar la transferencia y adjuntar tu comprobante. Pasado ese tiempo, la reserva de las prendas se cancela automáticamente y vuelven al stock disponible.
+            </div>
+          </div>
+        </div>
+
+        <!-- DATOS BANCARIOS -->
+        <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 22px; margin-bottom: 28px;">
+          <div style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #666666; font-weight: 700; margin-bottom: 14px; border-bottom: 1px solid #dee2e6; padding-bottom: 8px;">
+            🏦 Datos de la Cuenta Bancaria
+          </div>
+          <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 6px 0; color: #666666; width: 35%; font-weight: 500;">Titular:</td>
+              <td style="padding: 6px 0; color: #111111; font-weight: 600; text-transform: uppercase;">${titular}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #666666; font-weight: 500;">Banco:</td>
+              <td style="padding: 6px 0; color: #111111; font-weight: 600; text-transform: uppercase;">${banco}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #666666; font-weight: 500;">Alias:</td>
+              <td style="padding: 6px 0; color: #111111; font-weight: 700; font-family: monospace; font-size: 14px; background: #eef2ff; padding: 3px 8px; border-radius: 4px; display: inline-block;">${alias}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #666666; font-weight: 500;">CBU / CVU:</td>
+              <td style="padding: 6px 0; color: #111111; font-weight: 700; font-family: monospace; font-size: 13px; word-break: break-all;">${cbu}</td>
+            </tr>
+            <tr style="border-top: 1px solid #dee2e6;">
+              <td style="padding: 10px 0 4px 0; color: #111111; font-weight: 700; font-size: 14px;">Total a Transferir:</td>
+              <td style="padding: 10px 0 4px 0; color: #0a0a0a; font-weight: 800; font-size: 18px;">$${Number(orderData.total || 0).toLocaleString("es-AR")}</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- DETALLE DE PRENDAS -->
+        <div style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #666666; font-weight: 700; margin-bottom: 12px;">
+          🛍️ Detalle del Pedido
+        </div>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+          <thead>
+            <tr style="background-color: #f8f9fa; border-bottom: 2px solid #e9ecef;">
+              <th style="padding: 10px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Prenda</th>
+              <th style="padding: 10px 6px; text-align: center; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Talle</th>
+              <th style="padding: 10px 6px; text-align: center; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Color</th>
+              <th style="padding: 10px 6px; text-align: center; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Cant.</th>
+              <th style="padding: 10px 10px; text-align: right; font-size: 11px; text-transform: uppercase; color: #666666; letter-spacing: 1px;">Precio</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtmlRows}
+          </tbody>
+        </table>
+
+        <!-- DESGLOSE DE TOTALES -->
+        <div style="background-color: #fdfdfd; border: 1px solid #eeeeee; border-radius: 8px; padding: 16px; margin-bottom: 28px;">
+          <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 4px 0; color: #666666;">Subtotal Prendas:</td>
+              <td style="padding: 4px 0; text-align: right; color: #111111; font-weight: 600;">$${subtotalItems.toLocaleString("es-AR")}</td>
+            </tr>
+            ${orderData.costoEnvio && Number(orderData.costoEnvio) > 0 ? `
+            <tr>
+              <td style="padding: 4px 0; color: #666666;">🚚 Envío:</td>
+              <td style="padding: 4px 0; text-align: right; color: #111111; font-weight: 600;">+$${Number(orderData.costoEnvio).toLocaleString("es-AR")}</td>
+            </tr>` : ""}
+            ${orderData.giftCardUsada ? `
+            <tr>
+              <td style="padding: 4px 0; color: #2e7d32;">🎁 Gift Card (${orderData.giftCardUsada.codigo}):</td>
+              <td style="padding: 4px 0; text-align: right; color: #2e7d32; font-weight: 600;">-$${Number(orderData.giftCardUsada.montoUsado || 0).toLocaleString("es-AR")}</td>
+            </tr>` : ""}
+            <tr style="border-top: 1.5px solid #0a0a0a;">
+              <td style="padding: 10px 0 4px 0; font-size: 14px; font-weight: 700; color: #0a0a0a; text-transform: uppercase; letter-spacing: 1px;">Total Final a Transferir:</td>
+              <td style="padding: 10px 0 4px 0; text-align: right; font-size: 18px; font-weight: 800; color: #0a0a0a;">$${Number(orderData.total || 0).toLocaleString("es-AR")}</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- BOTÓN WHATSAPP -->
+        <div style="text-align: center; margin-top: 24px;">
+          <a href="${waUrl}" style="display: inline-block; background-color: #25D366; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 14px 28px; border-radius: 8px; box-shadow: 0 4px 12px rgba(37, 211, 102, 0.25);">
+            💬 Adjuntar Comprobante por WhatsApp
+          </a>
+          <p style="font-size: 12px; color: #888888; margin: 12px 0 0 0;">
+            O comunicate directamente al +${whatsappNum}
+          </p>
+        </div>
+      </div>
+
+      <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #eeeeee; font-size: 12px; color: #888888;">
+        El Ropero Showroom · Indumentaria & Estilo · Buenos Aires, Argentina
+      </div>
+    </div>
+  `;
+
+  await admin.firestore().collection("mail").add({
+    to: recipients,
+    message: {
+      subject: title,
       html: htmlBody,
     },
   });

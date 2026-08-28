@@ -30,7 +30,7 @@ import SessionExpiryModal from './auth/SessionExpiryModal';
 import BuyGiftCardModal from './BuyGiftCardModal';
 import Footer from './Footer';
 import { CustomerOrder } from '../contexts/AuthContext';
-import { buildSaleItemsFromOrder, getOrderSaleId, isGiftCardOrder } from '../services/webOrderToSale';
+import { buildSaleItemsFromOrder, getOrderSaleId, isGiftCardOrder, parseSafeDate } from '../services/webOrderToSale';
 import { sumTransferLines, sumExchangeLines, DESCUENTO_BASE_TRANSFERENCIA, calculateExchangeBreakdown } from '../services/exchangePricing';
 import { fulfillWebCambio } from '../services/webCambioFulfillment';
 import { isOrderExpired, releaseExpiredReservations, getAvailableStock } from '../services/webOrderFulfillment';
@@ -711,7 +711,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       showAlert('Las Gift Cards no admiten cambio.', 'Acción no permitida', 'warning');
       return;
     }
-    const days = Math.floor((Date.now() - new Date(order.fecha).getTime()) / 86400000);
+    const parsedDate = parseSafeDate(order.fecha);
+    const days = parsedDate ? Math.floor((Date.now() - parsedDate.getTime()) / 86400000) : 999;
     if (days > 15) {
       showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
       return;
@@ -2711,7 +2712,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                       </button>
                       <div className="flex items-center justify-center gap-1.5 pt-1 text-[8.5px] tracking-[0.15em] uppercase text-neutral-400 font-light">
                         <Clock size={11} className="text-neutral-500" strokeWidth={1.5} />
-                        <span>Reserva de 15 min al continuar al pago</span>
+                        <span>{paymentMethod === 'transferencia' ? 'Reserva de stock por 24 hs para transferencia' : 'Reserva de 15 min al continuar al pago'}</span>
                       </div>
                     </>
                   );

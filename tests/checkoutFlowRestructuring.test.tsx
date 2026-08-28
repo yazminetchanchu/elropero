@@ -78,7 +78,7 @@ vi.mock('firebase/firestore', () => ({
   getDoc: vi.fn(),
   setDoc: vi.fn(),
   updateDoc: vi.fn(),
-  addDoc: vi.fn()
+  addDoc: vi.fn().mockResolvedValue({ id: 'mail_123' })
 }));
 
 describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
@@ -273,7 +273,7 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
     // Simular que customerProfile/cart se actualizó a vacío en segundo plano
     rerender(
       <ModalProvider>
-        <CheckoutFlow {...defaultProps} cart={[]} />
+        <CheckoutFlow {...defaultProps} initialPaymentMethod="tarjeta" cart={[]} />
       </ModalProvider>
     );
 
@@ -349,5 +349,52 @@ describe('CheckoutFlow - Reestructuración de Pago, Gift Card y Datos', () => {
       expect(cancelWebOrderReservation).toHaveBeenCalled();
       expect(mockOnClose).toHaveBeenCalled();
     });
+  });
+
+  it('hereda Transferencia del carrito como solo lectura y envía paymentMethod: TRANSFER y estado: pending_transfer para reserva de 24h', async () => {
+    const { reserveWebOrderStock } = await import('../services/webOrderFulfillment');
+    currentAuthUser = mockUser;
+    currentCustomerProfile = mockCustomerProfile;
+
+    render(
+      <ModalProvider>
+        <CheckoutFlow {...defaultProps} initialPaymentMethod="transferencia" />
+      </ModalProvider>
+    );
+
+    // Seleccionar Retiro en Showroom
+    fireEvent.click(screen.getByText('Retiro en Showroom'));
+
+    // Ir a Confirmación
+    fireEvent.click(screen.getByText('Continuar'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirmación de Pedido')).toBeInTheDocument();
+    });
+
+    // El medio de pago es heredado de solo lectura (no hay botón interactivo para cambiarlo)
+    expect(screen.getByText('Transferencia Bancaria')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Tarjeta de Crédito \/ Débito/i })).not.toBeInTheDocument();
+
+    // Finalizar Pedido
+    const btnFinalizar = screen.getByText(/Finalizar y Enviar Pedido/i);
+    fireEvent.click(btnFinalizar);
+
+    // Debe mostrar la pantalla de Éxito de Transferencia
+    await waitFor(() => {
+      expect(screen.getByText(/¡Pedido Registrado con Éxito!/i)).toBeInTheDocument();
+      expect(screen.getByText(/Tenés 24 horas para realizar la transferencia/i)).toBeInTheDocument();
+    });
+
+    // Verificar que la llamada a reserveWebOrderStock contiene paymentMethod: TRANSFER y pending_transfer
+    expect(reserveWebOrderStock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({
+        paymentMethod: 'TRANSFER',
+        metodoPago: 'Transferencia',
+        estado: 'pending_transfer'
+      })
+    );
   });
 });

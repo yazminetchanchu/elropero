@@ -173,4 +173,102 @@ describe('emailService - Notificaciones y Envíos de Correos', () => {
       expect(payload.message.html).toContain('$4.500');
     });
   });
+
+  describe('sendTransferReservationEmail', () => {
+    const mockOrder = {
+      orderId: 'ORD-TRANSFER-8888',
+      customerNombre: 'Valentina Rossi',
+      customerEmail: 'valentina@cliente.com',
+      customerTelefono: '1155443322',
+      fecha: '2026-08-28T18:00:00.000Z',
+      items: [
+        {
+          descripcion: 'Blusa de Seda',
+          talle: 'S',
+          color: 'Blanco',
+          cantidad: 2,
+          precioUnitario: 12000,
+        },
+        {
+          descripcion: 'Pantalón Lino',
+          talle: 'M',
+          color: 'Beige',
+          cantidad: 1,
+          precioUnitario: 20000,
+        }
+      ],
+      total: 41000,
+      costoEnvio: 2000,
+      giftCardUsada: {
+        codigo: 'GIFT-5000',
+        montoUsado: 5000,
+      }
+    };
+
+    const mockSettings = {
+      storeName: 'EL ROPERO',
+      contactWhatsapp: '5492346685836',
+      bankTitular: 'Danisa Guzman',
+      bankCbu: '0000003100037658598052',
+      bankAlias: 'Danisa.guz.03',
+      bankName: 'Banco Santander'
+    };
+
+    it('envía email de reserva por transferencia con prendas completas, datos bancarios y aviso de 24 hs', async () => {
+      const { sendTransferReservationEmail } = await import('../services/emailService');
+      await sendTransferReservationEmail(mockOrder, mockSettings);
+
+      expect(mockAddDoc).toHaveBeenCalledTimes(1);
+      const [col, payload] = mockAddDoc.mock.calls[0];
+      expect(col).toBe('mail');
+
+      // Recipients
+      expect(payload.to).toContain('elropero.informacion@gmail.com');
+      expect(payload.to).toContain('valentina@cliente.com');
+
+      // Subject
+      expect(payload.message.subject).toContain('Reserva de Pedido');
+      expect(payload.message.subject).toContain('Datos para Transferencia');
+
+      // 1. Detalle del pedido con talle, color, cantidad y precio
+      expect(payload.message.text).toContain('Blusa de Seda');
+      expect(payload.message.text).toContain('[Talle: S]');
+      expect(payload.message.text).toContain('[Color: Blanco]');
+      expect(payload.message.text).toContain('Pantalón Lino');
+      expect(payload.message.text).toContain('[Talle: M]');
+      expect(payload.message.text).toContain('[Color: Beige]');
+
+      expect(payload.message.html).toContain('Blusa de Seda');
+      expect(payload.message.html).toContain('S');
+      expect(payload.message.html).toContain('Blanco');
+      expect(payload.message.html).toContain('Pantalón Lino');
+      expect(payload.message.html).toContain('M');
+      expect(payload.message.html).toContain('Beige');
+
+      // 2. Total a transferir con envío y Gift Card
+      expect(payload.message.text).toContain('Costo de Envío: +$2.000');
+      expect(payload.message.text).toContain('Gift Card (GIFT-5000): -$5.000');
+      expect(payload.message.text).toContain('TOTAL A TRANSFERIR: $41.000');
+
+      expect(payload.message.html).toContain('+$2.000');
+      expect(payload.message.html).toContain('-$5.000');
+      expect(payload.message.html).toContain('$41.000');
+
+      // 3. Datos de la cuenta bancaria
+      expect(payload.message.text).toContain('Titular: Danisa Guzman');
+      expect(payload.message.text).toContain('Banco: Banco Santander');
+      expect(payload.message.text).toContain('Alias: Danisa.guz.03');
+      expect(payload.message.text).toContain('CBU / CVU: 0000003100037658598052');
+
+      expect(payload.message.html).toContain('Danisa Guzman');
+      expect(payload.message.html).toContain('Banco Santander');
+      expect(payload.message.html).toContain('Danisa.guz.03');
+      expect(payload.message.html).toContain('0000003100037658598052');
+
+      // 4. Alerta de expiración de 24 horas
+      const expirationNotice = 'Tenés un plazo de 24 horas para realizar la transferencia y adjuntar tu comprobante. Pasado ese tiempo, la reserva de las prendas se cancela automáticamente y vuelven al stock disponible.';
+      expect(payload.message.text).toContain(expirationNotice);
+      expect(payload.message.html).toContain('Tenés un plazo de <strong>24 horas</strong> para realizar la transferencia');
+    });
+  });
 });
