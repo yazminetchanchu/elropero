@@ -31,7 +31,7 @@ vi.mock('../services/webOrderFulfillment', async (importOriginal) => ({
 vi.mock('firebase/firestore', () => ({
   doc: vi.fn(),
   onSnapshot: vi.fn(),
-  getDoc: vi.fn(),
+  getDoc: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
   updateDoc: vi.fn(),
   setDoc: vi.fn(),
   deleteDoc: vi.fn(),
@@ -186,6 +186,7 @@ describe('Flujos Detallados del Storefront (Página Web)', () => {
   it('Seguridad Anti-Bypass: no invoca fulfillment de órdenes si se accede con ?pago=ok en la URL', async () => {
     delete (window as any).location;
     window.location = new URL('https://elropero.ar/?pago=ok&orderId=ord-malicious') as any;
+    window.history.replaceState = vi.fn();
 
     const { fulfillWebOrder } = await import('../services/webOrderFulfillment');
 

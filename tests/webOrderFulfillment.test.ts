@@ -6,6 +6,9 @@ import {
   releaseExpiredReservations,
   cancelWebOrderReservation,
   isOrderExpired,
+  deductInventory,
+  restoreInventory,
+  verifyStock,
   WebOrderForFulfillment,
 } from '../services/webOrderFulfillment';
 import { InventoryItem, GiftCard } from '../types';
@@ -124,6 +127,50 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
       expect(sale.items[0].descripcion).toContain('Remera Negra (T:S C:Negro)');
       expect(sale.giftCardUsada).toEqual({ codigo: 'GIFT-100', montoUsado: 500 });
     });
+
+    it('asigna 100% de pago en efectivo cuando el método de pago no es tarjeta', () => {
+      const webOrder: WebOrderForFulfillment = {
+        fecha: '2026-07-28T12:00:00.000Z',
+        items: [
+          {
+            productId: 'prod-1',
+            descripcion: 'Remera Negra',
+            sku: 'SKU-001',
+            cantidad: 1,
+            precioUnitario: 2000,
+            payMethod: 'transferencia',
+          },
+        ],
+        total: 2000,
+      };
+
+      const sale = buildSaleFromWebOrder(webOrder, 'order-cash', sampleInventory);
+      expect(sale.pago.efectivo).toBe(100);
+      expect(sale.pago.tarjeta).toBe(0);
+    });
+
+    it('procesa correctamente ítems de Gift Card Virtual sin variante física', () => {
+      const webOrder: WebOrderForFulfillment = {
+        fecha: '2026-07-28T12:00:00.000Z',
+        items: [
+          {
+            productId: 'virtual_gift_card_123',
+            descripcion: 'Gift Card $100.000',
+            sku: 'GIFT-CARD',
+            cantidad: 1,
+            precioUnitario: 100000,
+            isVirtualGiftCard: true,
+          },
+        ],
+        total: 100000,
+      };
+
+      const sale = buildSaleFromWebOrder(webOrder, 'order-gc', sampleInventory);
+      expect(sale.items).toHaveLength(1);
+      expect(sale.items[0].sku).toBe('GIFT-CARD');
+      expect(sale.items[0].descripcion).toBe('Gift Card $100.000');
+      expect(sale.items[0].costo).toBe(0);
+    });
   });
 
   describe('reserveWebOrderStock', () => {
@@ -195,6 +242,19 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
 
       await expect(reserveWebOrderStock('ROPERO', 'ord-invalido', invalidOrderData)).rejects.toThrow(
         /ya no existe en el catálogo/
+      );
+    });
+
+    it('mapea errores de red o internos a un mensaje comprensible de conexión', async () => {
+      mockHttpsCallableFn.mockRejectedValueOnce({
+        code: 'functions/unavailable',
+        message: 'network error failed to fetch',
+      });
+
+      await expect(
+        reserveWebOrderStock('ROPERO', 'ord-network-fail', { items: [] })
+      ).rejects.toThrow(
+        'Hubo un problema de conexión con el servidor al verificar el stock. Por favor, intentá nuevamente.'
       );
     });
   });
@@ -335,6 +395,65 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
       const recentExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       expect(isOrderExpired({ estado: 'PENDING_PAYMENT', expiresAt: recentExpiresAt })).toBe(false);
       expect(isOrderExpired({ estado: 'Confirmado', expiresAt: new Date(Date.now() - 1000).toISOString() })).toBe(false);
+    });
+
+    it('aplica ventana de 24 horas para órdenes por transferencia bancaria (pending_transfer)', () => {
+      const now = Date.now();
+      // Orden creada hace 12 horas (dentro de las 24h) -> NO expirada
+      const activeTransfer = {
+        estado: 'pending_transfer',
+        fecha: new Date(now - 12 * 60 * 60 * 1000).toISOString(),
+      };
+      expect(isOrderExpired(activeTransfer)).toBe(false);
+
+      // Orden creada hace 26 horas -> EXPIRADA
+      const expiredTransfer = {
+        estado: 'pending_transfer',
+        fecha: new Date(now - 26 * 60 * 60 * 1000).toISOString(),
+      };
+      expect(isOrderExpired(expiredTransfer)).toBe(true);
+    });
+  });
+
+  describe('Manejo de Gift Cards Virtuales en inventario local', () => {
+    it('verifyStock no arroja error para ítems virtuales aunque su productId no exista en inventario', () => {
+      const virtualItems = [
+        {
+          productId: 'virtual_gift_card_inexistente',
+          descripcion: 'Gift Card $80.000',
+          sku: 'GIFT-CARD',
+          cantidad: 1,
+          precioUnitario: 80000,
+          isVirtualGiftCard: true,
+        },
+      ];
+      expect(() => verifyStock(sampleInventory, virtualItems)).not.toThrow();
+    });
+
+    it('deductInventory no modifica el inventario físico para compras de Gift Cards virtuales', () => {
+      const virtualItems = [
+        {
+          productId: 'virtual_gift_card_999',
+          descripcion: 'Gift Card Virtual',
+          cantidad: 1,
+          isVirtualGiftCard: true,
+        },
+      ];
+      const result = deductInventory(sampleInventory, virtualItems as any);
+      expect(result).toEqual(sampleInventory);
+    });
+
+    it('restoreInventory no modifica el inventario físico ante devoluciones o cancelaciones de Gift Cards virtuales', () => {
+      const virtualItems = [
+        {
+          productId: 'virtual_gift_card_999',
+          descripcion: 'Gift Card Virtual',
+          cantidad: 1,
+          isVirtualGiftCard: true,
+        },
+      ];
+      const result = restoreInventory(sampleInventory, virtualItems as any);
+      expect(result).toEqual(sampleInventory);
     });
   });
 

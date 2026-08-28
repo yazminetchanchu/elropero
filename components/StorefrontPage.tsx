@@ -372,13 +372,21 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     }
   }, []);
 
+  const safeReplaceState = (data: any, title: string, url: string) => {
+    try {
+      window.history.replaceState(data, title, url);
+    } catch {
+      // Ignorar errores de sandbox o cross-origin en replaceState
+    }
+  };
+
   // Abrir modal de login si se proviene de una restauración de contraseña exitosa
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('showLogin') === 'true') {
       setShowAuthModal(true);
       const cleanUrl = window.location.origin + window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
+      safeReplaceState({}, document.title, cleanUrl);
     }
     
     const pagoStatus = params.get('pago');
@@ -394,7 +402,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           try {
             const cambioRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'pending_cambios', targetCambioId);
             const snap = await getDoc(cambioRef);
-            if (snap.exists()) {
+            if (snap?.exists?.()) {
               const data = snap.data();
               if (data.estado === 'Confirmado') {
                 localStorage.removeItem('ropero_last_pending_cambio');
@@ -408,7 +416,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             console.error('Error al verificar cambio de Ualá:', e);
           } finally {
             const cleanUrl = window.location.origin + window.location.pathname;
-            window.history.replaceState({}, document.title, cleanUrl);
+            safeReplaceState({}, document.title, cleanUrl);
           }
         };
         verifyCambioReturn();
@@ -417,14 +425,14 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       localStorage.removeItem('ropero_last_pending_cambio');
       showAlert('El pago de la diferencia con Ualá Bis no se completó. Tu pedido original no sufrió ninguna modificación.', 'Pago Cancelado', 'info');
       const cleanUrl = window.location.origin + window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
+      safeReplaceState({}, document.title, cleanUrl);
     } else if (pagoStatus === 'ok' && orderId) {
       const verifyOrderReturn = async () => {
         try {
           const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', orderId);
           const snap = await getDoc(orderRef);
           
-          if (snap.exists()) {
+          if (snap?.exists?.()) {
             const data = snap.data();
             if (['PAID', 'APPROVED', 'Confirmado', 'Confirmada'].includes(data.estado)) {
               localStorage.removeItem('ropero_last_pending_order');
@@ -439,7 +447,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           console.error('Error al verificar retorno de pago:', e);
         } finally {
           const cleanUrl = window.location.origin + window.location.pathname;
-          window.history.replaceState({}, document.title, cleanUrl);
+          safeReplaceState({}, document.title, cleanUrl);
         }
       };
       verifyOrderReturn();
@@ -448,7 +456,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         try {
           const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', orderId);
           const snap = await getDoc(orderRef);
-          if (snap.exists()) {
+          if (snap?.exists?.()) {
             const data = snap.data();
             if (data.estado === 'Confirmado' || data.estado === 'Confirmada') {
               localStorage.removeItem('ropero_last_pending_order');
@@ -470,7 +478,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           setPendingPaymentOrder({ orderId });
         } finally {
           const cleanUrl = window.location.origin + window.location.pathname;
-          window.history.replaceState({}, document.title, cleanUrl);
+          safeReplaceState({}, document.title, cleanUrl);
         }
       };
       handlePaymentErrorReturn();
@@ -1468,7 +1476,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     const url = new URL(window.location.href);
     url.searchParams.delete('product');
     url.searchParams.delete('producto');
-    window.history.replaceState({}, '', url.toString());
+    safeReplaceState({}, '', url.toString());
   };
 
   const openQuickView = (product: InventoryItem) => {
@@ -1492,7 +1500,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
     const url = new URL(window.location.href);
     url.searchParams.set('product', product.id);
-    window.history.replaceState({}, '', url.toString());
+    safeReplaceState({}, '', url.toString());
   };
 
 

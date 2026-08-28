@@ -47,7 +47,16 @@ service cloud.firestore {
 
       // Subcolección de órdenes del showroom (web orders)
       match /orders/{orderId} {
-        allow read, create, update, delete: if isAuthenticated();
+        // Solo Admin puede listar todas las órdenes; un cliente solo puede leer su propio pedido específico
+        allow get: if isAdmin() || (isAuthenticated() && resource.data.customerId == request.auth.uid);
+        allow list: if isAdmin();
+
+        // Creación permitida solo si el pedido se asigna al UID del usuario autenticado o es Admin
+        allow create: if isAdmin() || (isAuthenticated() && request.resource.data.customerId == request.auth.uid);
+
+        // Modificación y borrado estrictamente restringidos a Administradores
+        allow update: if isAdmin();
+        allow delete: if isAdmin();
       }
     }
 
