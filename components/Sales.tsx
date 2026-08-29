@@ -31,7 +31,7 @@ interface CartItem {
 interface SalesProps {
   inventory: InventoryItem[];
   giftCards?: GiftCard[];
-  onAddSale: (sale: Omit<Sale, 'id'>) => void;
+  onAddSale: (sale: Omit<Sale, 'id'>) => Promise<void> | void;
   recentSales: Sale[];
   onDeleteSale: (id: string) => void;
   onUpdateSalePago?: (saleId: string, pago: { efectivo: number; tarjeta: number }) => void;
@@ -53,6 +53,7 @@ const Sales: React.FC<SalesProps> = ({
   const [showResults, setShowResults] = React.useState(false);
   const [cart, setCart] = React.useState<CartItem[]>([]);
   const [addedToast, setAddedToast] = React.useState<string | null>(null);
+  const [isSavingSale, setIsSavingSale] = React.useState(false);
 
   const [pagoEfectivo, setPagoEfectivo] = React.useState(100);
   const [pagoTarjeta, setPagoTarjeta] = React.useState(0);
@@ -330,21 +331,6 @@ const Sales: React.FC<SalesProps> = ({
 
   const totalBruto = totals.total;
 
-  // Calcular automáticamente cuánto usar de la gift card
-  // Si el saldo es menor o igual al total, usar todo el saldo
-  // Si el saldo es mayor, usar solo lo necesario para igualar el total
-  const montoGiftUsar = React.useMemo(() => {
-    if (!giftCardSeleccionada || modoCambio) return 0;
-    
-    if (totalBruto <= 0) return 0;
-    
-    // Usar el mínimo entre el saldo disponible y el total de la venta
-    return Math.min(giftCardSeleccionada.saldo, totalBruto);
-  }, [giftCardSeleccionada, totalBruto, modoCambio]);
-
-  // Total normal de la venta (después de aplicar gift card)
-  const totalVentaNormal = Math.max(0, totalBruto - montoGiftUsar);
-
   // =======================
   // CAMBIO: totales y diferencia
   // =======================
@@ -379,25 +365,39 @@ const Sales: React.FC<SalesProps> = ({
     }, 0);
   }, [modoCambio, itemsDevueltos, ventaOriginal]);
 
-  const totalNuevo = modoCambio
-    ? cart.reduce((sum, item) => {
-        const desc = item.descuento || 0;
-        const pT = item.precioTarjeta * (1 - desc / 100);
-        const descuentoExtraEfectivo = Math.max(0, desc - 20);
-        const pE = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
+  const totalNuevo = React.useMemo(() => {
+    if (!modoCambio) return 0;
+    return cart.reduce((sum, item) => {
+      const desc = item.descuento || 0;
+      const pT = item.precioTarjeta * (1 - desc / 100);
+      const descuentoExtraEfectivo = Math.max(0, desc - 20);
+      const pE = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
 
-        const valPesado = pE * (pagoEfectivo / 100) + pT * (pagoTarjeta / 100);
-        return sum + valPesado * item.cantidad;
-      }, 0)
-    : totalVentaNormal;
+      const valPesado = pE * (pagoEfectivo / 100) + pT * (pagoTarjeta / 100);
+      return sum + valPesado * item.cantidad;
+    }, 0);
+  }, [modoCambio, cart, pagoEfectivo, pagoTarjeta]);
 
-  let diferenciaCambio = 0;
-  if (modoCambio) {
-    diferenciaCambio = totalNuevo - totalDevuelto;
-  }
-  
-
+  const diferenciaCambio = modoCambio ? totalNuevo - totalDevuelto : 0;
   const diferenciaAbs = Math.abs(diferenciaCambio);
+
+  // Calcular automáticamente cuánto usar de la gift card
+  // Si es un cambio con diferencia a pagar (diferenciaCambio > 0), cubre hasta esa diferencia.
+  // Si es una venta normal, cubre hasta el total bruto.
+  const montoGiftUsar = React.useMemo(() => {
+    if (!giftCardSeleccionada) return 0;
+    
+    if (modoCambio) {
+      if (diferenciaCambio <= 0) return 0;
+      return Math.min(giftCardSeleccionada.saldo, diferenciaCambio);
+    }
+
+    if (totalBruto <= 0) return 0;
+    return Math.min(giftCardSeleccionada.saldo, totalBruto);
+  }, [giftCardSeleccionada, totalBruto, modoCambio, diferenciaCambio]);
+
+  // Total normal de la venta (después de aplicar gift card)
+  const totalVentaNormal = Math.max(0, totalBruto - montoGiftUsar);
 
   // Label del medio de pago usado para el valor devuelto
   const pagoOriginal = ventaOriginal?.pago || (ventaOriginal?.metodoPago?.toLowerCase().includes('tarjeta') ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 });
@@ -413,12 +413,24 @@ const Sales: React.FC<SalesProps> = ({
   const etiquetaDiferencia =
     diferenciaCambio > 0 ? 'A PAGAR' : diferenciaCambio < 0 ? 'A FAVOR (GIFT)' : 'SIN DIFERENCIA';
 
-  const totalFinal = modoCambio ? Math.max(0, diferenciaCambio) : totalVentaNormal;
+  const totalFinal = modoCambio
+    ? Math.max(0, diferenciaCambio - montoGiftUsar)
+    : totalVentaNormal;
+
+  const subtotalEfectivo = modoCambio
+    ? Math.round(totalFinal * (pagoEfectivo / 100))
+    : (montoGiftUsar > 0 ? Math.round(totalFinal * (pagoEfectivo / 100)) : totals.efectivo);
+
+  const subtotalTarjeta = modoCambio
+    ? Math.round(totalFinal * (pagoTarjeta / 100))
+    : (montoGiftUsar > 0 ? Math.round(totalFinal * (pagoTarjeta / 100)) : totals.tarjeta);
 
   // =======================
   // CONFIRMAR
   // =======================
   const confirmSale = async () => {
+    if (isSavingSale) return;
+
     // =======================
     // CAMBIO
     // =======================
@@ -479,7 +491,9 @@ const Sales: React.FC<SalesProps> = ({
         }
       }
 
-      if (diferenciaCambio > 0 && pagoEfectivo + pagoTarjeta !== 100) {
+      // Si la diferencia a pagar queda totalmente cubierta por la Gift Card, no se exige medio de pago adicional
+      const montoPendienteCambio = Math.max(0, diferenciaCambio - montoGiftUsar);
+      if (montoPendienteCambio > 0 && pagoEfectivo + pagoTarjeta !== 100) {
         showAlert('El pago del cambio debe sumar 100%', 'Pago Incompleto', 'warning');
         return;
       }
@@ -535,21 +549,33 @@ const Sales: React.FC<SalesProps> = ({
         };
       }
 
-      onAddSale(saleData);
+      try {
+        setIsSavingSale(true);
+        await onAddSale(saleData);
 
-      // reset
-      setCart([]);
-      setItemsDevueltos([]);
-      setCantDevueltasInput({});
-      setVentaOriginal(null);
-      setPagoEfectivo(100);
-      setPagoTarjeta(0);
-      setGiftCardSeleccionada(null);
-      setGiftDestinatario('');
-      setGiftEmail('');
-      setGiftMensaje('');
-      setGiftDeParteDe('');
-      setModoCambio(false);
+        // Solo si guardó con éxito:
+        setCart([]);
+        setItemsDevueltos([]);
+        setCantDevueltasInput({});
+        setVentaOriginal(null);
+        setPagoEfectivo(100);
+        setPagoTarjeta(0);
+        setGiftCardSeleccionada(null);
+        setGiftDestinatario('');
+        setGiftEmail('');
+        setGiftMensaje('');
+        setGiftDeParteDe('');
+        setModoCambio(false);
+      } catch (error) {
+        console.error('Error al guardar la venta:', error);
+        showAlert(
+          'No se pudo registrar la venta. Verificá la conexión e intentá de nuevo. El carrito se mantuvo intacto.',
+          'Error al guardar',
+          'error'
+        );
+      } finally {
+        setIsSavingSale(false);
+      }
       return;
     }
 
@@ -570,7 +596,7 @@ const Sales: React.FC<SalesProps> = ({
       }
     }
 
-    if (pagoEfectivo + pagoTarjeta !== 100) {
+    if (totalFinal > 0 && pagoEfectivo + pagoTarjeta !== 100) {
       showAlert('El pago debe sumar 100%', 'Pago Incompleto', 'warning');
       return;
     }
@@ -612,14 +638,25 @@ const Sales: React.FC<SalesProps> = ({
       };
     }
 
-    onAddSale(saleData);
-    
-    // Resetear gift card después de la venta
-    setGiftCardSeleccionada(null);
+    try {
+      setIsSavingSale(true);
+      await onAddSale(saleData);
 
-    setCart([]);
-    setPagoEfectivo(100);
-    setPagoTarjeta(0);
+      // Solo si guardó con éxito:
+      setGiftCardSeleccionada(null);
+      setCart([]);
+      setPagoEfectivo(100);
+      setPagoTarjeta(0);
+    } catch (error) {
+      console.error('Error al guardar la venta:', error);
+      showAlert(
+        'No se pudo registrar la venta. Verificá la conexión e intentá de nuevo. El carrito se mantuvo intacto.',
+        'Error al guardar',
+        'error'
+      );
+    } finally {
+      setIsSavingSale(false);
+    }
   };
 
   // =======================
@@ -1062,7 +1099,15 @@ const Sales: React.FC<SalesProps> = ({
 
       {/* FORMAS DE PAGO */}
       <div className="border border-stone-200/60 bg-white rounded-2xl p-6 space-y-4 shadow-2xs">
-        <h3 className="font-serif text-lg italic text-stone-900">Forma de pago</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="font-serif text-lg italic text-stone-900">Forma de pago</h3>
+          {((modoCambio && diferenciaCambio > 0 && montoGiftUsar >= diferenciaCambio) ||
+            (!modoCambio && totalBruto > 0 && montoGiftUsar >= totalBruto)) && (
+            <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-lg">
+              ✓ Cubierto 100% con Gift Card
+            </span>
+          )}
+        </div>
 
         {/* EFECTIVO */}
         <div className="flex justify-between items-center border-b border-stone-100 pb-3">
@@ -1095,7 +1140,7 @@ const Sales: React.FC<SalesProps> = ({
           </div>
 
           <div className="font-serif text-xl italic text-stone-900">
-            $ {totals.efectivo.toLocaleString()}
+            $ {subtotalEfectivo.toLocaleString()}
           </div>
         </div>
 
@@ -1130,7 +1175,7 @@ const Sales: React.FC<SalesProps> = ({
           </div>
 
           <div className="font-serif text-xl italic text-stone-900">
-            $ {totals.tarjeta.toLocaleString()}
+            $ {subtotalTarjeta.toLocaleString()}
           </div>
         </div>
       </div>
@@ -1158,7 +1203,7 @@ const Sales: React.FC<SalesProps> = ({
         ))}
     </select>
 
-    {giftCardSeleccionada && !modoCambio && (
+    {giftCardSeleccionada && (
       <div className="space-y-2 border border-stone-200/60 bg-stone-50/60 rounded-xl p-4">
         <div className="flex justify-between items-center text-xs">
           <span className="text-stone-600 font-medium">Saldo disponible:</span>
@@ -1166,8 +1211,12 @@ const Sales: React.FC<SalesProps> = ({
         </div>
         
         <div className="flex justify-between items-center text-xs">
-          <span className="text-stone-600 font-medium">Total de la venta:</span>
-          <span className="font-serif text-base italic text-stone-900">$ {totals.total.toLocaleString()}</span>
+          <span className="text-stone-600 font-medium">
+            {modoCambio ? 'Diferencia a pagar:' : 'Total de la venta:'}
+          </span>
+          <span className="font-serif text-base italic text-stone-900">
+            $ {(modoCambio ? Math.max(0, diferenciaCambio) : totals.total).toLocaleString()}
+          </span>
         </div>
         
         <div className="border-t border-stone-200/50 pt-3 mt-3">
@@ -1176,14 +1225,14 @@ const Sales: React.FC<SalesProps> = ({
             <span className="font-serif text-lg italic text-stone-900 font-semibold">$ {montoGiftUsar.toLocaleString()}</span>
           </div>
           
-          {giftCardSeleccionada.saldo > totals.total && (
+          {giftCardSeleccionada.saldo > (modoCambio ? Math.max(0, diferenciaCambio) : totals.total) && (
             <div className="flex justify-between items-center mt-2 text-[10px] text-stone-400">
               <span>Saldo restante en la gift card:</span>
               <span className="font-mono font-medium">$ {(giftCardSeleccionada.saldo - montoGiftUsar).toLocaleString()}</span>
             </div>
           )}
           
-          {giftCardSeleccionada.saldo <= totals.total && montoGiftUsar > 0 && (
+          {giftCardSeleccionada.saldo <= (modoCambio ? Math.max(0, diferenciaCambio) : totals.total) && montoGiftUsar > 0 && (
             <div className="mt-2 text-[10px] text-amber-700 font-medium">
               ⚠️ Se usará el 100% del saldo de la gift card
             </div>
@@ -1243,10 +1292,10 @@ const Sales: React.FC<SalesProps> = ({
       {/* CONFIRMAR */}
       <button
         onClick={confirmSale}
-        disabled={isSyncing}
+        disabled={isSavingSale || isSyncing}
         className="w-full bg-stone-900 hover:bg-black text-white py-4 rounded-xl text-xs font-medium tracking-[0.2em] uppercase transition-all duration-200 ease-out shadow-sm hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {isSyncing
+        {isSavingSale || isSyncing
           ? '⏳ GUARDANDO...'
           : modoCambio ? 'CONFIRMAR CAMBIO' : 'CONFIRMAR VENTA'
         }

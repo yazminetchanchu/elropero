@@ -848,8 +848,14 @@ async function executeFulfillWebCambio(db, showroomId, payload) {
             const sales = srData.sales || [];
             const inventory = srData.inventory || [];
             const giftCards = srData.giftCards || [];
-            // Validate original sale exists
-            const ventaOriginal = sales.find((s) => s.id === ventaOriginalId);
+            // Validate original sale exists (buffer o subcolección)
+            let ventaOriginal = sales.find((s) => s.id === ventaOriginalId);
+            if (!ventaOriginal) {
+                const vSnap = await transaction.get(showroomRef.collection('sales').doc(ventaOriginalId));
+                if (vSnap.exists) {
+                    ventaOriginal = vSnap.data();
+                }
+            }
             if (!ventaOriginal) {
                 throw new functions.https.HttpsError('failed-precondition', 'No se encontró la venta original en caja. Confirmá el pedido desde el panel si aún está pendiente.');
             }
@@ -1118,9 +1124,10 @@ async function executeFulfillWebCambio(db, showroomId, payload) {
             // ─────────────────────────────────────────────────────────────────
             // 3. TODAS LAS ESCRITURAS (WRITES) AL FINAL DE LA TRANSACCIÓN
             // ─────────────────────────────────────────────────────────────────
+            transaction.set(showroomRef.collection('sales').doc(saleId), sanitize(newSale));
             transaction.update(showroomRef, sanitize({
                 inventory: nextInventory,
-                sales: [...sales, newSale],
+                sales: [...sales, newSale].slice(-50),
                 giftCards: nextGiftCards,
                 lastSync: Date.now(),
             }));
@@ -1229,8 +1236,8 @@ exports.fulfillWebOrderServer = functions.https.onCall(async (data, context) => 
             const inventory = srData.inventory || [];
             const giftCards = srData.giftCards || [];
             // Idempotencia: si la venta ya existe o la orden ya fue procesada
-            if (sales.some((s) => s.id === saleId)) {
-                console.log(`[fulfillWebOrderServer] Venta ${saleId} ya existe en el showroom. Omitiendo duplicación.`);
+            if ((existingOrder === null || existingOrder === void 0 ? void 0 : existingOrder.estado) === 'Confirmado' || (existingOrder === null || existingOrder === void 0 ? void 0 : existingOrder.saleId) || sales.some((s) => s.id === saleId)) {
+                console.log(`[fulfillWebOrderServer] Venta ${saleId} u orden ya confirmada. Omitiendo duplicación.`);
                 return;
             }
             // 2. Construir la Venta con precios verificados contra catálogo
@@ -1340,8 +1347,9 @@ exports.fulfillWebOrderServer = functions.https.onCall(async (data, context) => 
             // Helper sanitize para evitar undefined en Firestore
             const sanitize = (obj) => JSON.parse(JSON.stringify(obj, (k, v) => v === undefined ? null : v));
             // 6. Escrituras atómicas
+            transaction.set(showroomRef.collection('sales').doc(saleId), sanitize(saleRecord));
             transaction.update(showroomRef, sanitize({
-                sales: [...sales, saleRecord],
+                sales: [...sales, saleRecord].slice(-50),
                 giftCards: nextGiftCards,
                 inventory: confirmedInventory,
                 lastSync: Date.now(),

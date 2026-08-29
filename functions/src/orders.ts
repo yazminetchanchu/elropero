@@ -1075,8 +1075,14 @@ export async function executeFulfillWebCambio(
       const inventory = srData.inventory || [];
       const giftCards = srData.giftCards || [];
 
-      // Validate original sale exists
-      const ventaOriginal = sales.find((s: any) => s.id === ventaOriginalId);
+      // Validate original sale exists (buffer o subcolección)
+      let ventaOriginal = sales.find((s: any) => s.id === ventaOriginalId);
+      if (!ventaOriginal) {
+        const vSnap = await transaction.get(showroomRef.collection('sales').doc(ventaOriginalId));
+        if (vSnap.exists) {
+          ventaOriginal = vSnap.data();
+        }
+      }
       if (!ventaOriginal) {
         throw new functions.https.HttpsError(
           'failed-precondition',
@@ -1426,9 +1432,11 @@ export async function executeFulfillWebCambio(
       // ─────────────────────────────────────────────────────────────────
       // 3. TODAS LAS ESCRITURAS (WRITES) AL FINAL DE LA TRANSACCIÓN
       // ─────────────────────────────────────────────────────────────────
+      transaction.set(showroomRef.collection('sales').doc(saleId), sanitize(newSale));
+
       transaction.update(showroomRef, sanitize({
         inventory: nextInventory,
-        sales: [...sales, newSale],
+        sales: [...sales, newSale].slice(-50),
         giftCards: nextGiftCards,
         lastSync: Date.now(),
       }));
@@ -1577,8 +1585,8 @@ export const fulfillWebOrderServer = functions.https.onCall(async (data, context
       const giftCards = srData.giftCards || [];
 
       // Idempotencia: si la venta ya existe o la orden ya fue procesada
-      if (sales.some((s: any) => s.id === saleId)) {
-        console.log(`[fulfillWebOrderServer] Venta ${saleId} ya existe en el showroom. Omitiendo duplicación.`);
+      if (existingOrder?.estado === 'Confirmado' || existingOrder?.saleId || sales.some((s: any) => s.id === saleId)) {
+        console.log(`[fulfillWebOrderServer] Venta ${saleId} u orden ya confirmada. Omitiendo duplicación.`);
         return;
       }
 
@@ -1710,8 +1718,10 @@ export const fulfillWebOrderServer = functions.https.onCall(async (data, context
       const sanitize = (obj: any): any => JSON.parse(JSON.stringify(obj, (k, v) => v === undefined ? null : v));
 
       // 6. Escrituras atómicas
+      transaction.set(showroomRef.collection('sales').doc(saleId), sanitize(saleRecord));
+
       transaction.update(showroomRef, sanitize({
-        sales: [...sales, saleRecord],
+        sales: [...sales, saleRecord].slice(-50),
         giftCards: nextGiftCards,
         inventory: confirmedInventory,
         lastSync: Date.now(),

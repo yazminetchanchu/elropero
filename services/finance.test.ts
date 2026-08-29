@@ -63,6 +63,73 @@ describe('Lógica Financiera Avanzada (finance.ts)', () => {
     expect(ganancia).toBe(500);
   });
 
+  it('Bug 9: Cambio con Gift Card 100% de la diferencia no genera saldo en efectivo ni tarjeta (caja cuadrada)', () => {
+    const sale: Sale = {
+      id: 'c_gc_full',
+      fecha: '2026-04-12T10:00:00',
+      tipo: 'cambio',
+      items: [],
+      total: 8000,
+      diferencia: 8000,
+      itemsDevueltos: [mockItem1],
+      itemsNuevos: [mockItem2],
+      ventaOriginalId: 'orig_1',
+      pago: { efectivo: 100, tarjeta: 0 },
+      giftCardUsada: { codigo: 'GC-8000', montoUsado: 8000 }
+    };
+
+    const { efectivo, tarjeta, totalCobrado } = computeSaleBreakdown(sale, salesHistory);
+    expect(efectivo).toBe(0);
+    expect(tarjeta).toBe(0);
+    expect(totalCobrado).toBe(0);
+  });
+
+  it('Bug 9: Cambio con Gift Card parcial distribuye sólo el remanente real cobrado entre los medios de pago', () => {
+    const sale: Sale = {
+      id: 'c_gc_partial',
+      fecha: '2026-04-12T10:00:00',
+      tipo: 'cambio',
+      items: [],
+      total: 8000,
+      diferencia: 8000,
+      itemsDevueltos: [mockItem1],
+      itemsNuevos: [mockItem2],
+      ventaOriginalId: 'orig_1',
+      pago: { efectivo: 60, tarjeta: 40 },
+      giftCardUsada: { codigo: 'GC-3000', montoUsado: 3000 }
+    };
+
+    // Diferencia: 8000 - Gift Card: 3000 = 5000 a cobrar efectivamente
+    // Efectivo 60% de 5000 = 3000
+    // Tarjeta 40% de 5000 = 2000
+    // Total cobrado = 5000
+    const { efectivo, tarjeta, totalCobrado } = computeSaleBreakdown(sale, salesHistory);
+    expect(efectivo).toBe(3000);
+    expect(tarjeta).toBe(2000);
+    expect(totalCobrado).toBe(5000);
+  });
+
+  it('Bug 9: Cambio con giftCardUsada en formato numérico directo', () => {
+    const sale: Sale = {
+      id: 'c_gc_num',
+      fecha: '2026-04-12T10:00:00',
+      tipo: 'cambio',
+      items: [],
+      total: 8000,
+      diferencia: 8000,
+      itemsDevueltos: [mockItem1],
+      itemsNuevos: [mockItem2],
+      ventaOriginalId: 'orig_1',
+      pago: { efectivo: 100, tarjeta: 0 },
+      giftCardUsada: 8000 as any
+    };
+
+    const { efectivo, tarjeta, totalCobrado } = computeSaleBreakdown(sale, salesHistory);
+    expect(efectivo).toBe(0);
+    expect(tarjeta).toBe(0);
+    expect(totalCobrado).toBe(0);
+  });
+
   it('IsMonth: Robustez ante formatos de fecha argentinos (DD/MM/YYYY)', () => {
     // Estas fechas solían fallar por ambigüedad Mes/Día en JSDOM
     expect(isMonth('12/04/2026', 4, 2026)).toBe(true);

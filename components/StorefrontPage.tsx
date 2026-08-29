@@ -2694,12 +2694,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                         disabled={hasStockIssues}
                         onClick={() => {
                           setShowCart(false);
-                          if (user) {
-                            setShowCheckout(true);
-                          } else {
-                            setPendingCheckout(true);
-                            setShowAuthModal(true);
-                          }
+                          setShowCheckout(true);
                         }} 
                         className={`w-full py-3.5 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none flex items-center justify-center gap-2 ${
                           hasStockIssues
@@ -3388,6 +3383,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         isOpen={showAuthModal} 
         customTitle={pendingCheckout ? 'INICIAR COMPRA' : pendingBuyGiftCard ? 'COMPRAR GIFT CARD' : undefined}
         customSubtitle={pendingCheckout ? 'Iniciá sesión o registrate para completar tu pedido' : pendingBuyGiftCard ? 'Iniciá sesión o registrate para continuar' : undefined}
+        onContinueAsGuest={pendingCheckout ? () => {
+          setShowCheckout(true);
+          setPendingCheckout(false);
+        } : undefined}
         onClose={() => {
           setShowAuthModal(false);
           if (pendingCheckout && user) {

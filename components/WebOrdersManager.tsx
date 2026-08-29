@@ -79,6 +79,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
   const [orders, setOrders] = React.useState<WebOrder[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isConfirmingSale, setIsConfirmingSale] = React.useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<string>('todos');
   const [selectedOrder, setSelectedOrder] = React.useState<WebOrder | null>(null);
@@ -87,6 +88,20 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
   const [isCheckingTracking, setIsCheckingTracking] = React.useState(false);
   const [trackingInfo, setTrackingInfo] = React.useState<any | null>(null);
   const [selectedOrderIds, setSelectedOrderIds] = React.useState<string[]>([]);
+
+  const safeConfirm = async (
+    param1: string | { message?: string; title?: string; type?: string; confirmText?: string; cancelText?: string },
+    param2?: string,
+    param3?: 'warning' | 'info' | 'error' | 'success'
+  ) => {
+    if (typeof param1 === 'object' && param1 !== null) {
+      const msg = param1.message || '';
+      const title = param1.title || 'Confirmación';
+      const rawType = param1.type === 'danger' ? 'error' : (param1.type as any) || 'warning';
+      return await showConfirm(msg, title, rawType);
+    }
+    return await showConfirm(param1, param2, param3);
+  };
 
   const handleSelectAll = (filteredList: WebOrder[]) => {
     if (selectedOrderIds.length === filteredList.length) {
@@ -115,9 +130,9 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
       const ord = orders.find(o => o.id === id);
       if (ord) {
         if (newStatus === 'Confirmado') {
-          await handleConfirmSale(ord);
+          await handleConfirmSale(ord, true);
         } else {
-          await handleUpdateStatus(ord.id, ord.customerId, newStatus);
+          await handleUpdateStatus(ord.id, newStatus, { skipConfirm: true, skipAlert: true });
         }
       }
     }
@@ -256,24 +271,74 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
 
   const handleUpdateStatus = async (
     orderId: string,
-    customerId: string,
-    newStatus: 'Pendiente' | 'Enviado' | 'Entregado' | 'Confirmado' | 'Cancelado'
+    arg2: string,
+    arg3?: WebOrder['estado'] | { skipConfirm?: boolean; skipAlert?: boolean },
+    arg4?: { skipConfirm?: boolean; skipAlert?: boolean }
   ) => {
+    let customerId = '';
+    let newStatus: WebOrder['estado'];
+    let options: { skipConfirm?: boolean; skipAlert?: boolean } = {};
+
+    const validStatuses = ['Pendiente', 'Enviado', 'Entregado', 'Confirmado', 'Cancelado', 'PENDING_PAYMENT', 'pending_transfer', 'PAID', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED', 'parcialmente_cambiado', 'Completado'];
+
+    if (validStatuses.includes(arg2)) {
+      newStatus = arg2 as WebOrder['estado'];
+      if (arg3 && typeof arg3 === 'object') {
+        options = arg3;
+      }
+    } else {
+      customerId = arg2;
+      newStatus = arg3 as WebOrder['estado'];
+      if (arg4 && typeof arg4 === 'object') {
+        options = arg4;
+      }
+    }
+
+    const currentOrder = orders.find(o => o.id === orderId);
+    if (!currentOrder || currentOrder.estado === newStatus) return;
+    if (!customerId) {
+      customerId = currentOrder.customerId || '';
+    }
+
+    // Confirmación preventiva al cancelar
+    if (!options.skipConfirm && newStatus === 'Cancelado') {
+      const confirmed = await safeConfirm({
+        title: 'Cancelar Pedido',
+        message: `¿Estás seguro de que deseas cancelar el pedido #${orderId.substring(0, 8)}? Se liberará el stock reservado al público.`,
+        confirmText: 'Sí, cancelar pedido',
+        cancelText: 'Volver',
+        type: 'danger'
+      });
+      if (!confirmed) return;
+    }
+
+    // Confirmación preventiva al revertir una orden ya confirmada
+    if (!options.skipConfirm && (currentOrder.estado === 'Confirmado' || currentOrder.saleId) && newStatus === 'Pendiente') {
+      const confirmed = await safeConfirm({
+        title: 'Revertir Pedido Confirmado',
+        message: `El pedido #${orderId.substring(0, 8)} ya fue registrado como venta en caja. ¿Deseas volverlo a Pendiente?`,
+        confirmText: 'Sí, revertir',
+        cancelText: 'Volver',
+        type: 'warning'
+      });
+      if (!confirmed) return;
+    }
+
     try {
+      setUpdatingStatusId(orderId);
       const showroomId = database.getShowroomID();
-      const orderToUpdate = orders.find(o => o.id === orderId);
 
       if (newStatus === 'Cancelado') {
-        const isAlreadyCancelled = orderToUpdate && ['Cancelado', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(orderToUpdate.estado);
+        const isAlreadyCancelled = ['Cancelado', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(currentOrder.estado);
         
-        if (orderToUpdate && !isAlreadyCancelled) {
+        if (!isAlreadyCancelled) {
           const showroomRef = doc(db, 'showrooms', showroomId);
           await runTransaction(db, async (transaction) => {
             const srSnap = await transaction.get(showroomRef);
             if (srSnap.exists()) {
               const srData = srSnap.data() || {};
               const currentInv = srData.inventory || [];
-              const nextInv = restoreInventory(currentInv, orderToUpdate.items || []);
+              const nextInv = restoreInventory(currentInv, currentOrder.items || []);
               transaction.update(showroomRef, { inventory: nextInv, lastSync: Date.now() });
             }
             const orderRef = doc(db, 'showrooms', showroomId, 'orders', orderId);
@@ -284,13 +349,17 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
             }
           });
 
-          await sendOrderCancelledEmail(
-            orderToUpdate.id,
-            orderToUpdate.customerNombre,
-            orderToUpdate.customerEmail,
-            orderToUpdate.items || [],
-            orderToUpdate.total
-          );
+          try {
+            await sendOrderCancelledEmail(
+              currentOrder.id,
+              currentOrder.customerNombre,
+              currentOrder.customerEmail,
+              currentOrder.items || [],
+              currentOrder.total
+            );
+          } catch (e) {
+            console.error('Error enviando email de cancelación:', e);
+          }
         } else {
           const batch = writeBatch(db);
           const orderRef = doc(db, 'showrooms', showroomId, 'orders', orderId);
@@ -314,21 +383,25 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
         await batch.commit();
 
         if (newStatus === 'Confirmado') {
-          if (orderToUpdate && orderToUpdate.estado !== 'Confirmado') {
-            await sendSaleConfirmationEmail(
-              {
-                id: orderToUpdate.saleId || orderToUpdate.id,
-                fecha: orderToUpdate.fecha,
-                metodoPago: orderToUpdate.metodoPago,
-                costoEnvio: orderToUpdate.costoEnvio,
-                items: orderToUpdate.items || [],
-                total: orderToUpdate.total || 0,
-                giftCardUsada: orderToUpdate.giftCardUsada
-              },
-              orderToUpdate.customerNombre,
-              orderToUpdate.customerEmail,
-              'web'
-            );
+          if (currentOrder.estado !== 'Confirmado') {
+            try {
+              await sendSaleConfirmationEmail(
+                {
+                  id: currentOrder.saleId || currentOrder.id,
+                  fecha: currentOrder.fecha,
+                  metodoPago: currentOrder.metodoPago,
+                  costoEnvio: currentOrder.costoEnvio,
+                  items: currentOrder.items || [],
+                  total: currentOrder.total || 0,
+                  giftCardUsada: currentOrder.giftCardUsada
+                },
+                currentOrder.customerNombre,
+                currentOrder.customerEmail,
+                'web'
+              );
+            } catch (e) {
+              console.error('Error enviando email de confirmación:', e);
+            }
           }
         }
       }
@@ -338,25 +411,37 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(prev => prev ? { ...prev, estado: newStatus } : null);
       }
+
+      if (!options.skipAlert) {
+        if (newStatus === 'Cancelado') {
+          showAlert('El pedido ha sido cancelado y el stock fue liberado.', 'Pedido Cancelado', 'info');
+        } else {
+          showAlert(`El pedido #${orderId.substring(0, 8)} se actualizó a "${newStatus}" correctamente.`, 'Estado Actualizado', 'success');
+        }
+      }
     } catch (err) {
-      console.error('Error updating order status:', err);
-      showAlert('Error al actualizar el estado del pedido.', 'Error de Actualización', 'error');
+      console.error('Error al actualizar estado:', err);
+      showAlert('No se pudo actualizar el estado del pedido. Verificá la conexión.', 'Error', 'error');
+    } finally {
+      setUpdatingStatusId(null);
     }
   };
 
-  const handleConfirmSale = async (order: WebOrder) => {
+  const handleConfirmSale = async (order: WebOrder, skipConfirm: boolean = false) => {
     if (order.saleId) {
       showAlert('Este pedido ya fue registrado en caja.', 'Pedido Registrado', 'warning');
       return;
     }
 
-    const ok = await showConfirm(
-      `¿Confirmar venta del pedido #${order.id.substring(0, 8)}?\n\n` +
-      `Se descontará el stock y se registrará en caja, ganancias e historial por $${order.total.toLocaleString('es-AR')}.`,
-      'Confirmar Venta y Stock',
-      'info'
-    );
-    if (!ok) return;
+    if (!skipConfirm) {
+      const ok = await showConfirm(
+        `¿Confirmar venta del pedido #${order.id.substring(0, 8)}?\n\n` +
+        `Se descontará el stock y se registrará en caja, ganancias e historial por $${order.total.toLocaleString('es-AR')}.`,
+        'Confirmar Venta y Stock',
+        'info'
+      );
+      if (!ok) return;
+    }
 
     setIsConfirmingSale(true);
     try {
@@ -371,20 +456,24 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
         customerId: order.customerId,
       });
 
-      await sendSaleConfirmationEmail(
-        {
-          id: order.id,
-          fecha: order.fecha,
-          metodoPago: order.metodoPago,
-          costoEnvio: order.costoEnvio,
-          items: order.items || [],
-          total: order.total || 0,
-          giftCardUsada: order.giftCardUsada
-        },
-        order.customerNombre,
-        order.customerEmail,
-        'web'
-      );
+      try {
+        await sendSaleConfirmationEmail(
+          {
+            id: order.id,
+            fecha: order.fecha,
+            metodoPago: order.metodoPago,
+            costoEnvio: order.costoEnvio,
+            items: order.items || [],
+            total: order.total || 0,
+            giftCardUsada: order.giftCardUsada
+          },
+          order.customerNombre,
+          order.customerEmail,
+          'web'
+        );
+      } catch (e) {
+        console.error('Error enviando email de confirmación:', e);
+      }
 
       setOrders(prev =>
         prev.map(o =>
@@ -397,7 +486,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
           : prev
       );
       onOrderFulfilled?.();
-      showAlert(`Venta registrada correctamente (${saleId}).`, 'Venta Confirmada', 'success');
+      showAlert(`Venta registrada correctamente (${saleId}). Se registró en caja y se actualizó el stock.`, 'Venta Confirmada', 'success');
     } catch (err) {
       console.error(err);
       showAlert('No se pudo confirmar la venta. Verificá conexión y que el pedido no esté duplicado.', 'Error al Confirmar Venta', 'error');
@@ -745,27 +834,35 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                 <div className="space-y-2">
                   <p className="text-[8px] tracking-[1.5px] uppercase text-black/40 font-bold">Cambiar estado a:</p>
                   <div className="flex border border-black/10 rounded-lg overflow-hidden bg-white flex-wrap">
-                    {(['Pendiente', 'Confirmado', 'Cancelado'] as const).map(status => (
-                      <button
-                        key={status}
-                        onClick={() => {
-                          if (status === 'Confirmado') {
-                            handleConfirmSale(selectedOrder);
-                          } else {
-                            handleUpdateStatus(selectedOrder.id, selectedOrder.customerId, status);
-                          }
-                        }}
-                        className={`px-3 py-2 text-[9px] tracking-[1px] uppercase font-bold transition-all ${
-                          selectedOrder.estado === status || 
-                          (status === 'Pendiente' && (selectedOrder.estado === 'PENDING_PAYMENT' || selectedOrder.estado === 'pending_transfer')) ||
-                          (status === 'Cancelado' && ['CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(selectedOrder.estado))
-                            ? 'bg-black text-white' 
-                            : 'bg-white text-black hover:bg-neutral-50'
-                        }`}
-                      >
-                        {status}
-                      </button>
-                    ))}
+                    {(['Pendiente', 'Confirmado', 'Enviado', 'Entregado', 'Cancelado'] as const).map(status => {
+                      const isUpdatingThis = updatingStatusId === selectedOrder.id;
+                      const isSelected = selectedOrder.estado === status || 
+                        (status === 'Pendiente' && (selectedOrder.estado === 'PENDING_PAYMENT' || selectedOrder.estado === 'pending_transfer')) ||
+                        (status === 'Cancelado' && ['CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(selectedOrder.estado));
+
+                      return (
+                        <button
+                          key={status}
+                          disabled={isConfirmingSale || isUpdatingThis}
+                          onClick={() => {
+                            if (status === 'Confirmado') {
+                              handleConfirmSale(selectedOrder);
+                            } else {
+                              handleUpdateStatus(selectedOrder.id, status);
+                            }
+                          }}
+                          className={`px-3 py-2 text-[9px] tracking-[1px] uppercase font-bold transition-all disabled:opacity-50 flex items-center gap-1 cursor-pointer ${
+                            isSelected
+                              ? 'bg-black text-white' 
+                              : 'bg-white text-black hover:bg-neutral-50'
+                          }`}
+                        >
+                          {isUpdatingThis && status !== 'Confirmado' && <Loader2 size={10} className="animate-spin" />}
+                          {isConfirmingSale && status === 'Confirmado' && <Loader2 size={10} className="animate-spin" />}
+                          {status}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -971,10 +1068,41 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
             <div className="p-6 bg-neutral-50/50 border-t border-black/5 flex flex-col gap-3">
               
               <div className="flex flex-col sm:flex-row gap-3">
-                
+                {/* Botón directo Confirmar Pedido */}
+                {!selectedOrder.saleId && selectedOrder.estado !== 'Confirmado' && !['Cancelado', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(selectedOrder.estado) && (
+                  <button
+                    onClick={() => handleConfirmSale(selectedOrder)}
+                    disabled={isConfirmingSale || updatingStatusId === selectedOrder.id}
+                    className="flex-1 bg-stone-900 hover:bg-black text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    {isConfirmingSale ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <CheckCircle size={13} className="text-emerald-400" />
+                    )}
+                    Confirmar Pedido
+                  </button>
+                )}
+
+                {/* Badge Pedido Confirmado */}
+                {(selectedOrder.saleId || selectedOrder.estado === 'Confirmado') && (
+                  <div className="flex-1 bg-emerald-50 border border-emerald-200 text-emerald-800 py-4 px-4 text-[10px] tracking-[2px] uppercase font-bold rounded-xl flex items-center justify-center gap-2">
+                    <CheckCircle size={14} className="text-emerald-600" />
+                    Pedido Confirmado {selectedOrder.saleId ? `(#${selectedOrder.saleId.substring(0, 8)})` : ''}
+                  </div>
+                )}
+
+                {/* Badge Pedido Cancelado */}
+                {['Cancelado', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(selectedOrder.estado) && (
+                  <div className="flex-1 bg-red-50 border border-red-200 text-red-700 py-4 px-4 text-[10px] tracking-[2px] uppercase font-bold rounded-xl flex items-center justify-center gap-2">
+                    <X size={14} className="text-red-600" />
+                    Pedido Cancelado
+                  </div>
+                )}
+
                 <button
                   onClick={() => handleContactCustomer(selectedOrder)}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <MessageSquare size={13} /> WhatsApp
                 </button>
@@ -984,7 +1112,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                     <button
                       onClick={() => handleDownloadLabel(selectedOrder.id)}
                       disabled={isDownloadingLabel}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
                     >
                       {isDownloadingLabel ? (
                         <Loader2 size={13} className="animate-spin" />
@@ -1008,7 +1136,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
                     <button
                       onClick={() => handleGenerarEnvio(selectedOrder)}
                       disabled={isGeneratingLabel}
-                      className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
                     >
                       {isGeneratingLabel ? (
                         <Loader2 size={13} className="animate-spin" />
@@ -1024,7 +1152,7 @@ const WebOrdersManager: React.FC<WebOrdersManagerProps> = ({ onOrderFulfilled })
 
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="w-full border border-black/20 hover:border-black text-black py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors"
+                className="w-full border border-black/20 hover:border-black text-black py-4 text-[10px] tracking-[3px] uppercase font-bold rounded-xl transition-colors cursor-pointer"
               >
                 Cerrar Detalles
               </button>

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import Sales from './Sales';
 import { InventoryItem, WebSettings, Sale } from '../types';
@@ -383,5 +383,284 @@ describe('Componente Sales', () => {
     // Intentar ingresar 5 debe clampear a 4
     fireEvent.change(qtyInput, { target: { value: '5' } });
     expect(qtyInput).toHaveValue(4);
+  });
+
+  it('Bug 9: Permite realizar un cambio con diferencia abonada 100% con Gift Card sin exigir medios de pago tradicionales', async () => {
+    const customInventory: InventoryItem[] = [
+      {
+        id: 'prod-1',
+        sku: 'SKU1',
+        descripcion: 'Remera Negra',
+        proveedor: 'P1',
+        categoria: 'REMERAS',
+        cantidad: 10,
+        costo: 1000,
+        ventaEfectivo: 2000,
+        ventaTarjeta: 2500,
+        talles: [],
+        colores: [],
+        imagenes: []
+      },
+      {
+        id: 'prod-2',
+        sku: 'SKU2',
+        descripcion: 'Pantalon Jean',
+        proveedor: 'P1',
+        categoria: 'PANTALONES',
+        cantidad: 10,
+        costo: 1500,
+        ventaEfectivo: 3000,
+        ventaTarjeta: 3000,
+        talles: [],
+        colores: [],
+        imagenes: []
+      }
+    ];
+
+    const saleOriginal: Sale = {
+      id: 'sale-orig-bug9',
+      fecha: new Date().toISOString(),
+      tipo: 'venta',
+      total: 2000,
+      pago: { efectivo: 100, tarjeta: 0 },
+      items: [
+        {
+          id: 'prod-1',
+          sku: 'SKU1',
+          descripcion: 'Remera Negra',
+          cantidad: 1,
+          costo: 1000,
+          precioEfectivo: 2000,
+          precioTarjeta: 2500,
+          descuento: 0,
+        }
+      ]
+    };
+
+    const mockGiftCards = [
+      {
+        id: 'gc-test-1',
+        codigo: 'GC-DIFF',
+        saldo: 1000,
+        estado: 'ACTIVA' as const,
+        destinatario: 'Cliente Test'
+      }
+    ];
+
+    const onAddSaleMock = vi.fn();
+
+    render(
+      <Sales
+        inventory={customInventory}
+        onAddSale={onAddSaleMock}
+        onDeleteSale={vi.fn()}
+        recentSales={[saleOriginal]}
+        giftCards={mockGiftCards}
+      />
+    );
+
+    // 1. Iniciar modo cambio desde la venta original
+    const cambioBtn = screen.getByRole('button', { name: /cambio/i });
+    fireEvent.click(cambioBtn);
+
+    // 2. Devolver la prenda original ($2.000)
+    const devCheckbox = screen.getByRole('checkbox');
+    fireEvent.click(devCheckbox);
+
+    // 3. Buscar y agregar nueva prenda al carrito ($3.000 -> diferencia $1.000)
+    const searchInput = screen.getByPlaceholderText(/Buscar producto.../i);
+    fireEvent.change(searchInput, { target: { value: 'Jean' } });
+    const jeanItem = screen.getByText('Pantalon Jean').closest('div');
+    if (jeanItem) {
+      fireEvent.mouseDown(jeanItem);
+    }
+
+    // Verificar diferencia a pagar ($1.000)
+    expect(screen.getByText('A PAGAR')).toBeInTheDocument();
+
+    // 4. Seleccionar la Gift Card de $1.000
+    const gcSelect = screen.getByDisplayValue('Seleccionar Gift Card');
+    fireEvent.change(gcSelect, { target: { value: 'GC-DIFF' } });
+
+    // La UI debe mostrar que está cubierto 100% con Gift Card
+    expect(screen.getByText(/✓ Cubierto 100% con Gift Card/i)).toBeInTheDocument();
+    expect(screen.getByText(/Se usará de la gift card:/i)).toBeInTheDocument();
+
+    // Modificar los inputs de pago a 0% para demostrar que NO exige sumar 100%
+    const inputs = screen.getAllByRole('spinbutton');
+    // inputs[0] es cantidad de item devuelto, inputs[1] es descuento o similar, busquemos el de efectivo
+    const efInput = inputs.find(input => input.getAttribute('value') === '100');
+    if (efInput) {
+      fireEvent.change(efInput, { target: { value: '0' } });
+    }
+
+    // 5. Confirmar el cambio
+    const confirmBtn = screen.getByRole('button', { name: /confirmar cambio/i });
+    await fireEvent.click(confirmBtn);
+
+    // Debe confirmarse exitosamente sin alertas de pago incompleto
+    expect(onAddSaleMock).toHaveBeenCalledTimes(1);
+    const salePayload = onAddSaleMock.mock.calls[0][0];
+    expect(salePayload.tipo).toBe('cambio');
+    expect(salePayload.diferencia).toBe(1000);
+    expect(salePayload.giftCardUsada).toEqual({
+      codigo: 'GC-DIFF',
+      montoUsado: 1000
+    });
+  });
+
+  describe('Bug 8: Protección de carrito ante fallas de red y prevención de doble clic', () => {
+    it('evita la pérdida del carrito y muestra alerta clara si onAddSale falla al cobrar una venta', async () => {
+      const onAddSaleMock = vi.fn().mockRejectedValue(new Error('Network disconnected'));
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+      render(
+        <Sales
+          inventory={mockInventory}
+          onAddSale={onAddSaleMock}
+          onDeleteSale={vi.fn()}
+          recentSales={[]}
+          giftCards={[]}
+        />
+      );
+
+      // 1. Agregar producto al carrito
+      const searchInput = screen.getByPlaceholderText(/Buscar producto.../i);
+      fireEvent.change(searchInput, { target: { value: 'Remera' } });
+      const productItem = screen.getByText('Remera Negra').closest('div');
+      if (productItem) {
+        fireEvent.mouseDown(productItem);
+      }
+
+      // El producto debe estar en el carrito
+      expect(screen.getAllByText('Remera Negra').length).toBeGreaterThan(0);
+
+      // 2. Intentar confirmar venta
+      const confirmBtn = screen.getByRole('button', { name: /confirmar venta/i });
+      await act(async () => {
+        fireEvent.click(confirmBtn);
+      });
+
+      // onAddSale fue llamado
+      expect(onAddSaleMock).toHaveBeenCalledTimes(1);
+
+      // 3. Como onAddSale falló, el producto NO debe desaparecer del carrito
+      expect(screen.getAllByText('Remera Negra').length).toBeGreaterThan(0);
+
+      // 4. El botón vuelve a estar habilitado con el texto normal para permitir reintento
+      await waitFor(() => {
+        expect(confirmBtn).not.toBeDisabled();
+      });
+      expect(confirmBtn).toHaveTextContent(/confirmar venta/i);
+
+      alertSpy.mockRestore();
+    });
+
+    it('deshabilita el botón mientras se guarda la venta para evitar doble submit', async () => {
+      let resolvePromise: (value?: any) => void;
+      const delayedPromise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+      const onAddSaleMock = vi.fn().mockReturnValue(delayedPromise);
+
+      render(
+        <Sales
+          inventory={mockInventory}
+          onAddSale={onAddSaleMock}
+          onDeleteSale={vi.fn()}
+          recentSales={[]}
+          giftCards={[]}
+        />
+      );
+
+      // Agregar producto al carrito
+      const searchInput = screen.getByPlaceholderText(/Buscar producto.../i);
+      fireEvent.change(searchInput, { target: { value: 'Remera' } });
+      const productItem = screen.getByText('Remera Negra').closest('div');
+      if (productItem) {
+        fireEvent.mouseDown(productItem);
+      }
+
+      const confirmBtn = screen.getByRole('button', { name: /confirmar venta/i });
+      
+      // Primer click
+      fireEvent.click(confirmBtn);
+
+      // Botón debe estar deshabilitado y mostrar estado de guardando
+      expect(confirmBtn).toBeDisabled();
+      expect(confirmBtn).toHaveTextContent(/guardando/i);
+
+      // Intento de segundo click mientras guarda
+      fireEvent.click(confirmBtn);
+
+      // onAddSale solo se ejecutó una única vez
+      expect(onAddSaleMock).toHaveBeenCalledTimes(1);
+
+      // Resolvemos la promesa simulando éxito del backend
+      await act(async () => {
+        resolvePromise!();
+      });
+
+      // El carrito ahora sí se vació tras el éxito
+      expect(screen.queryByTitle('Eliminar del carrito')).not.toBeInTheDocument();
+      expect(confirmBtn).not.toBeDisabled();
+    });
+
+    it('mantiene el carrito y los datos en modo cambio si onAddSale falla', async () => {
+      const onAddSaleMock = vi.fn().mockRejectedValue(new Error('Firestore connection timeout'));
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+      const saleOriginal: Sale = {
+        id: 'sale-orig-err',
+        fecha: new Date().toISOString(),
+        tipo: 'venta',
+        total: 2000,
+        pago: { efectivo: 100, tarjeta: 0 },
+        items: [
+          {
+            id: 'prod-1',
+            sku: 'SKU1',
+            descripcion: 'Remera Negra',
+            cantidad: 1,
+            costo: 1000,
+            precioEfectivo: 2000,
+            precioTarjeta: 2500,
+            descuento: 0,
+          }
+        ]
+      };
+
+      render(
+        <Sales
+          inventory={mockInventory}
+          onAddSale={onAddSaleMock}
+          onDeleteSale={vi.fn()}
+          recentSales={[saleOriginal]}
+          giftCards={[]}
+        />
+      );
+
+      // Iniciar cambio
+      const cambioBtn = screen.getByRole('button', { name: /cambio/i });
+      fireEvent.click(cambioBtn);
+
+      // Seleccionar item a devolver
+      const devCheckbox = screen.getByRole('checkbox');
+      fireEvent.click(devCheckbox);
+
+      // Confirmar cambio devolviendo 100% como gift card
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const confirmBtn = screen.getByRole('button', { name: /confirmar cambio/i });
+      await fireEvent.click(confirmBtn);
+
+      expect(onAddSaleMock).toHaveBeenCalledTimes(1);
+
+      // Tras el error, sigue en modo cambio y conserva la selección
+      expect(screen.getByRole('button', { name: /confirmar cambio/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /confirmar cambio/i })).not.toBeDisabled();
+
+      confirmSpy.mockRestore();
+      alertSpy.mockRestore();
+    });
   });
 });

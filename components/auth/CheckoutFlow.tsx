@@ -130,7 +130,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
   initialAppliedGiftCard
 }) => {
   const { showAlert } = useModal();
-  const { user, customerProfile, signUpWithEmail, updateProfile, refreshOrders } = useAuth();
+  const { user, customerProfile, signUpWithEmail, updateProfile, refreshOrders, isAdminLoggedIn } = useAuth();
   
   const [step, setStep] = React.useState<CheckoutStep>('identification');
   const [isLoading, setIsLoading] = React.useState(false);
@@ -849,6 +849,10 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
   // Convertir Invitado a Miembro Post-Checkout
   const handleGuestConversion = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAdminLoggedIn) {
+      showAlert('Modo Administrador: compra registrada como Invitado (GUEST) sin modificar la sesión del panel.', 'Modo Administrador', 'info');
+      return;
+    }
     if (!guestPassword || guestPassword.length < 6) {
       showAlert('La contraseña debe tener al menos 6 caracteres.', 'Contraseña Insegura', 'warning');
       return;

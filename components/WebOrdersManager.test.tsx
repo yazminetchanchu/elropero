@@ -17,6 +17,11 @@ vi.mock('../services/storage', () => ({
 
 const mockGetDocs = vi.fn();
 const mockUpdateDoc = vi.fn();
+const mockRunTransaction = vi.fn(async (_db, fn) => fn({
+  get: vi.fn().mockResolvedValue({ exists: () => true, data: () => ({ inventory: [] }) }),
+  update: vi.fn(),
+  set: vi.fn()
+}));
 
 vi.mock('firebase/firestore', () => ({
   collection: vi.fn(),
@@ -28,6 +33,7 @@ vi.mock('firebase/firestore', () => ({
     set: vi.fn(),
     commit: vi.fn().mockResolvedValue(undefined),
   }),
+  runTransaction: (...args: any[]) => mockRunTransaction(...args),
 }));
 
 vi.mock('../services/webOrderFulfillment', async (importOriginal) => {
@@ -41,7 +47,8 @@ vi.mock('../services/webOrderFulfillment', async (importOriginal) => {
 
 vi.mock('../services/emailService', () => ({
   sendNotificationEmail: vi.fn(),
-  sendSaleConfirmationEmail: vi.fn()
+  sendSaleConfirmationEmail: vi.fn(),
+  sendOrderCancelledEmail: vi.fn()
 }));
 
 // Mock icons
@@ -261,5 +268,110 @@ describe('WebOrdersManager', () => {
     // Debe seguir mostrándose
     expect(screen.getByText(/Lucia Fernandez/i)).toBeInTheDocument();
   });
+
+  it('pide confirmación previa al cancelar un pedido y no ejecuta si el usuario cancela', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    render(<WebOrdersManager />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Juan Perez/i)).toBeInTheDocument();
+    });
+
+    const eyeBtn = screen.getByTitle('Ver Detalles');
+    fireEvent.click(eyeBtn);
+
+    const cancelarBtn = screen.getByRole('button', { name: /^Cancelado$/i });
+    fireEvent.click(cancelarBtn);
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('¿Estás seguro de que deseas cancelar el pedido'));
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it('cancela el pedido, libera stock y muestra alerta si el usuario confirma', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    render(<WebOrdersManager />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Juan Perez/i)).toBeInTheDocument();
+    });
+
+    const eyeBtn = screen.getByTitle('Ver Detalles');
+    fireEvent.click(eyeBtn);
+
+    const cancelarBtn = screen.getByRole('button', { name: /^Cancelado$/i });
+    fireEvent.click(cancelarBtn);
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('¿Estás seguro de que deseas cancelar el pedido'));
+
+    await waitFor(() => {
+      expect(mockRunTransaction).toHaveBeenCalled();
+      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('El pedido ha sido cancelado y el stock fue liberado'));
+    });
+  });
+
+  it('permite confirmar venta directamente desde el botón "Confirmar Pedido" en el pie del modal', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    render(<WebOrdersManager onOrderFulfilled={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Juan Perez/i)).toBeInTheDocument();
+    });
+
+    const eyeBtn = screen.getByTitle('Ver Detalles');
+    fireEvent.click(eyeBtn);
+
+    const directConfirmBtn = screen.getByRole('button', { name: /Confirmar Pedido/i });
+    expect(directConfirmBtn).toBeInTheDocument();
+    fireEvent.click(directConfirmBtn);
+
+    expect(confirmSpy).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('Venta registrada correctamente'));
+      expect(screen.getByText(/Pedido Confirmado/i)).toBeInTheDocument();
+    });
+  });
+
+  it('pide confirmación al intentar revertir un pedido confirmado a pendiente', async () => {
+    const confirmedOrder = {
+      ...mockOrder,
+      id: 'order-confirmed-1',
+      customerNombre: 'Marcos Soto',
+      estado: 'Confirmado',
+      saleId: 'SALE_EXISTING'
+    };
+
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'order-confirmed-1', data: () => confirmedOrder }
+      ]
+    });
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    render(<WebOrdersManager />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Marcos Soto/i)).toBeInTheDocument();
+    });
+
+    const eyeBtn = screen.getByTitle('Ver Detalles');
+    fireEvent.click(eyeBtn);
+
+    const pendienteBtn = screen.getByRole('button', { name: /^Pendiente$/i });
+    fireEvent.click(pendienteBtn);
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('¿Deseas volverlo a Pendiente?'));
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
 });
+
 

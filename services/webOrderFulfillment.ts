@@ -2,7 +2,7 @@ import { doc, runTransaction, updateDoc, collection, getDocs, query, where } fro
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './firebase';
 import { InventoryItem, Sale, SaleItem, GiftCard } from '../types';
-import { DatabaseState } from './storage';
+import type { DatabaseState } from './storage';
 import { sendGiftCardEmail } from './emailService';
 
 export interface WebOrderItem {

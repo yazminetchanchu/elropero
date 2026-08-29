@@ -18,7 +18,6 @@ import WebOrdersManager from './components/WebOrdersManager';
 import InnovativeLoader from './components/InnovativeLoader';
 import { computeSaleBreakdown, isMonth, getItemSnapshot } from './services/finance';
 import { deductSaleFromInventory, restoreSaleToInventory } from './services/webOrderFulfillment';
-import { mergeEntities } from './utils/mergeEntities';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import NetworkStatus from './components/NetworkStatus';
@@ -220,55 +219,9 @@ const App: React.FC = () => {
       return confirmed;
 
     } catch (error: any) {
-      if (error?.type === 'CONFLICT' && error.serverState) {
-        console.warn('⚠️ Conflicto detectado: el servidor tiene datos más nuevos. Intentando merge inteligente...');
-        const serverState: DatabaseState = error.serverState;
-
-        try {
-          // Merge por ID: preserva tanto ventas/datos remotos (e.g. ventas web)
-          // como modificaciones locales sin pisar registros concurrentes.
-          const mergedSales = mergeEntities(newSales, serverState.sales);
-          const mergedGiftCards = mergeEntities(newGift, serverState.giftCards);
-          const mergedInventory = mergeEntities(newInv, serverState.inventory);
-          const mergedExpenses = mergeEntities(newExp, serverState.expenses);
-          const mergedClosures = mergeEntities(newClosures, serverState.closures);
-          const mergedWebSettings = newWebSettings !== webSettings ? newWebSettings : (serverState.webSettings || webSettings);
-
-          const confirmedRetry = await database.persistSafe(
-            {
-              inventory: mergedInventory,
-              sales: mergedSales,
-              expenses: mergedExpenses,
-              giftCards: mergedGiftCards,
-              closures: mergedClosures,
-              webSettings: mergedWebSettings
-            },
-            serverState.lastSync || Date.now()
-          );
-
-          setInventory(mergedInventory);
-          setSales(mergedSales);
-          setExpenses(mergedExpenses);
-          setGiftCards(mergedGiftCards);
-          setClosures(mergedClosures);
-          setWebSettings(mergedWebSettings);
-
-          setLastUpdate(confirmedRetry.lastSync ?? Date.now());
-          database.updateLocalOnly(confirmedRetry);
-          console.log('✅ Conflicto resuelto exitosamente mediante auto-merge.');
-          return confirmedRetry;
-        } catch (retryErr) {
-          console.warn('⚠️ No se pudo resolver automáticamente el conflicto, sincronizando con servidor:', retryErr);
-          applyRemoteData(serverState);
-          alert(
-            '⚠️ Datos actualizados desde otro dispositivo o proceso en segundo plano.\n' +
-            'Se sincronizó tu dispositivo. Por favor, verificá los últimos cambios y reintentá tu última acción si no aparece.'
-          );
-        }
-      } else {
-        console.error('❌ Error al guardar cambios:', error);
-        alert('❌ Error general: No se pudo guardar en la base de datos. La operación fue cancelada.');
-      }
+      console.error('❌ Error al guardar cambios en la base de datos:', error);
+      alert('❌ Error general: No se pudo guardar en la base de datos. La operación fue cancelada.');
+      throw error;
     } finally {
       setIsSyncing(false);
     }
@@ -367,7 +320,7 @@ const App: React.FC = () => {
     if (hasChanges) {
       console.log('🔧 Reparando tipos de datos en ventas...');
       setHasMigrated(true); // Bloquear futuras ejecuciones inmediatamente
-      handleDataChange(inventory, repairedSales, expenses, giftCards).catch(console.error);
+      database.updatePartial({ sales: repairedSales }).catch(console.error);
     } else {
       setHasMigrated(true);
     }
@@ -422,7 +375,7 @@ const App: React.FC = () => {
           fechaCierre: new Date().toISOString()
         };
         setClosures(prev => [...prev, zeroClosure]);
-        handleDataChange(inventory, sales, expenses, giftCards, [...closures, zeroClosure]);
+        database.addClosure(zeroClosure).catch(console.error);
         return;
       }
 
@@ -462,7 +415,7 @@ const App: React.FC = () => {
 
       console.log('✅ Cierre calculado con éxito:', newClosure);
       setClosures(prev => [...prev, newClosure]);
-      handleDataChange(inventory, sales, expenses, giftCards, [...closures, newClosure]);
+      database.addClosure(newClosure).catch(console.error);
     }
   }, [isEntered, isSyncing, sales, expenses, closures]);
 
@@ -748,9 +701,9 @@ const App: React.FC = () => {
   }, [showroomID, applyRemoteData]);
 
   // =======================
-  // INVENTORY
+  // INVENTORY (GRANULAR)
   // =======================
-  const handleAddItem = (item: Omit<InventoryItem, 'id'>) => {
+  const handleAddItem = async (item: Omit<InventoryItem, 'id'>) => {
     const newItem: InventoryItem = {
       ...item,
       id: `inv_${Date.now()}`,
@@ -762,18 +715,33 @@ const App: React.FC = () => {
       categoria: (item as any).categoria || ''
     };
   
-    const next = [...inventory, newItem];
-    handleDataChange(next, sales, expenses, giftCards).catch(console.error);
+    try {
+      await database.addInventoryItem(newItem);
+    } catch (error) {
+      console.error('❌ Error al agregar producto:', error);
+      alert('❌ Error: No se pudo agregar el producto. Verificá tu conexión a internet.');
+      throw error;
+    }
   };
 
-  const handleUpdateItem = (updatedItem: InventoryItem) => {
-    const next = inventory.map(item => item.id === updatedItem.id ? updatedItem : item);
-    handleDataChange(next, sales, expenses, giftCards).catch(console.error);
+  const handleUpdateItem = async (updatedItem: InventoryItem) => {
+    try {
+      await database.updateInventoryItem(updatedItem);
+    } catch (error) {
+      console.error('❌ Error al actualizar producto:', error);
+      alert('❌ Error: No se pudo actualizar el producto.');
+      throw error;
+    }
   };
 
-  const handleDeleteItem = (id: string) => {
-    const next = inventory.filter(item => item.id !== id);
-    handleDataChange(next, sales, expenses, giftCards).catch(console.error);
+  const handleDeleteItem = async (id: string) => {
+    try {
+      await database.deleteInventoryItem(id);
+    } catch (error) {
+      console.error('❌ Error al eliminar producto:', error);
+      alert('❌ Error: No se pudo eliminar el producto.');
+      throw error;
+    }
   };
 
   // =======================
@@ -930,14 +898,12 @@ const App: React.FC = () => {
       id: saleId,
       ...(giftGenerada?.id ? { giftGeneradaId: giftGenerada.id } : {})
     };
-  
-    const nextInv = deductSaleFromInventory(inventory, newSale);
-    
-    const nextSales = [...sales, newSale];
-    const finalGiftCards = giftGenerada ? [...nextGiftCards, giftGenerada] : nextGiftCards;
 
     try {
-      await handleDataChange(nextInv, nextSales, expenses, finalGiftCards);
+      setIsSyncing(true);
+      await database.recordSale(newSale, {
+        newGiftCard: giftGenerada
+      });
       
       // Enviar emails SOLO si se guardó exitosamente
       if (giftGenerada && saleData.giftEmail && saleData.giftEmail.trim() !== '') {
@@ -960,7 +926,11 @@ const App: React.FC = () => {
         );
       }
     } catch (err) {
-      console.error("Venta cancelada o fallida, no se enviaron correos.");
+      console.error("Venta cancelada o fallida, no se enviaron correos.", err);
+      alert('❌ Error al registrar la venta en la base de datos. La operación fue cancelada.');
+      throw err;
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -968,75 +938,47 @@ const App: React.FC = () => {
   // ✏️ UPDATE SALE PAGO/MEDIO
   // =======================
   const handleUpdateSalePago = (saleId: string, pago: { efectivo: number; tarjeta: number }) => {
-    const next = sales.map(s => s.id === saleId ? { ...s, pago } : s);
-    handleDataChange(inventory, next, expenses, giftCards).catch(console.error);
+    database.updateSalePago(saleId, pago).catch(err => {
+      console.error('❌ Error al actualizar medio de pago:', err);
+      alert('❌ Error al actualizar el medio de pago.');
+    });
   };
 
   // =======================
   // 🗑️ DELETE SALE (REVERSA CONTABLE COMPLETA)
   // =======================
   const handleDeleteSale = async (saleId: string) => {
-    const sale = sales.find(s => s.id === saleId);
-    if (!sale) return;
-
-    // 1. Devolver stock de forma atómica y completa
-    const nextInv = restoreSaleToInventory(inventory, sale);
-
-    // 2. Devolver saldo a gift si hubo
-    let nextGiftCards = [...giftCards];
-    if (sale.giftCardUsada) {
-      nextGiftCards = giftCards.map(gc => {
-        if (gc.codigo === sale.giftCardUsada!.codigo) {
-          return {
-            ...gc,
-            saldo: gc.saldo + sale.giftCardUsada!.montoUsado,
-            estado: 'ACTIVA' as const
-          };
-        }
-        return gc;
-      });
-    }
-
-    // 3. Si fue una venta de gift card, eliminar la gift card del array
-    if (sale.tipo === 'gift') {
-      const giftSku = sale.items?.[0]?.sku;
-      if (giftSku) {
-        nextGiftCards = nextGiftCards.filter(gc => gc.codigo !== giftSku);
-      }
-    }
-
-    // 4. Si se generó una gift card en este cambio, eliminarla
-    if (sale.giftGeneradaId) {
-      nextGiftCards = nextGiftCards.filter(gc => gc.id !== sale.giftGeneradaId);
-    }
-
-    // 5. Eliminar la venta
-    const nextSales = sales.filter(s => s.id !== saleId);
-
-    // 6. Guardar todo y sincronizar de forma asíncrona fuera de setters
     try {
-      await handleDataChange(nextInv, nextSales, expenses, nextGiftCards);
+      await database.deleteSale(saleId);
     } catch (error) {
       console.error('❌ Error al sincronizar la eliminación de venta:', error);
+      alert('❌ Error al eliminar la venta.');
     }
   };
 
   // =======================
-  // EXPENSES
+  // EXPENSES (GRANULAR)
   // =======================
   const handleAddExpense = (expenseData: Omit<Expense, 'id'>) => {
     const newExp = { ...expenseData, id: `exp_${Date.now()}` };
-    handleDataChange(inventory, sales, [...expenses, newExp], giftCards).catch(console.error);
+    database.addExpense(newExp).catch(err => {
+      console.error('❌ Error al registrar egreso:', err);
+      alert('❌ Error al registrar egreso.');
+    });
   };
 
   const handleUpdateExpense = (updatedExpense: Expense) => {
-    const nextExp = expenses.map(e => e.id === updatedExpense.id ? updatedExpense : e);
-    handleDataChange(inventory, sales, nextExp, giftCards).catch(console.error);
+    database.updateExpense(updatedExpense).catch(err => {
+      console.error('❌ Error al actualizar egreso:', err);
+      alert('❌ Error al actualizar egreso.');
+    });
   };
 
   const handleDeleteExpense = (id: string) => {
-    const nextExp = expenses.filter(e => e.id !== id);
-    handleDataChange(inventory, sales, nextExp, giftCards).catch(console.error);
+    database.deleteExpense(id).catch(err => {
+      console.error('❌ Error al eliminar egreso:', err);
+      alert('❌ Error al eliminar egreso.');
+    });
   };
 
  // =======================
@@ -1104,12 +1046,7 @@ const handleAddGiftCard = async (data: { destinatario: string; montoInicial: num
 
   // 3. GUARDAR TODO JUNTO (Si no se hace así, una lista pisa a la otra)
   try {
-    await handleDataChange(
-      inventory,
-      [...sales, newSale], // Añadimos la venta a la caja
-      expenses,
-      [...giftCards, newGift] // Añadimos la gift al listado
-    );
+    await database.addGiftCard(newGift, newSale);
 
     // 4. Enviar email al destinatario
     if (data.email && data.email.trim() !== '') {
@@ -1133,57 +1070,49 @@ const handleAddGiftCard = async (data: { destinatario: string; montoInicial: num
       ).catch(err => console.error("Error sending gift card purchase receipt:", err));
     }
   } catch (err) {
-    console.error("Compra de Gift Card fallida, no se enviaron correos.");
+    console.error("Compra de Gift Card fallida, no se enviaron correos.", err);
+    alert('❌ Error al registrar la Gift Card.');
+    throw err;
   }
 };
 
 const handleUpdateGiftCard = (updated: GiftCard) => {
-  // 1. Actualizar la tarjeta
-  const nextGift = giftCards.map(gc => (gc.id === updated.id ? updated : gc));
+  const matchingSale = sales.find(s => s.items?.some(item => item.sku === updated.codigo));
+  let updatedSale: Sale | undefined = undefined;
+  if (matchingSale) {
+    const pagoData = (matchingSale.pago && (matchingSale.pago.efectivo + matchingSale.pago.tarjeta === 100)) ? matchingSale.pago : { efectivo: 100, tarjeta: 0 };
+    const portionEfectivo = pagoData.efectivo / 100;
+    const portionTarjeta = pagoData.tarjeta / 100;
+    const rawTarjeta = (updated.montoInicial * portionTarjeta) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100);
+    const rawEfectivo = updated.montoInicial * portionEfectivo;
+    const finalTotal = Math.round(rawEfectivo + rawTarjeta);
 
-  // 2. Sincronizar con la venta existente para que la ganancia en Dashboard cambie
-  const nextSales = sales.map(s => {
-    const esVentaDeEstaGift = s.items?.some(item => item.sku === updated.codigo);
-    if (esVentaDeEstaGift) {
-      const pagoData = (s.pago && (s.pago.efectivo + s.pago.tarjeta === 100)) ? s.pago : { efectivo: 100, tarjeta: 0 };
-      const portionEfectivo = pagoData.efectivo / 100;
-      const portionTarjeta = pagoData.tarjeta / 100;
-      const rawTarjeta = (updated.montoInicial * portionTarjeta) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100);
-      const rawEfectivo = updated.montoInicial * portionEfectivo;
-      const finalTotal = Math.round(rawEfectivo + rawTarjeta);
+    updatedSale = {
+      ...matchingSale,
+      total: finalTotal,
+      pago: pagoData,
+      items: (matchingSale.items ?? []).map(item =>
+        item.sku === updated.codigo
+          ? { ...item, precioEfectivo: updated.montoInicial, precioTarjeta: Math.round(updated.montoInicial / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)), descripcion: `Gift Card: ${updated.destinatario}` }
+          : item
+      )
+    };
+  }
 
-      return {
-        ...s,
-        total: finalTotal,
-        pago: pagoData, // Conservar el método de pago original o resetear si está corrupto
-        items: (s.items ?? []).map(item =>
-          item.sku === updated.codigo
-            ? { ...item, precioEfectivo: updated.montoInicial, precioTarjeta: Math.round(updated.montoInicial / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)), descripcion: `Gift Card: ${updated.destinatario}` }
-            : item
-        )
-      };
-    }
-    return s;
+  database.updateGiftCard(updated, updatedSale).catch(err => {
+    console.error('❌ Error al actualizar Gift Card:', err);
+    alert('❌ Error al actualizar la Gift Card.');
   });
-
-  handleDataChange(inventory, nextSales, expenses, nextGift).catch(console.error);
 };
 
 const handleCancelGiftCard = (id: string) => {
   const gift = giftCards.find(g => g.id === id);
   if (!gift) return;
 
-  // BUSCA EN EL HISTORIAL LA VENTA QUE TIENE EL SKU DE LA GIFT
-  const nextSales = sales.filter(s => {
-    // Si alguno de los items de la venta tiene el código de la gift como SKU, se elimina
-    const esVentaDeEstaGift = s.items?.some(item => item.sku === gift.codigo);
-    return !esVentaDeEstaGift; 
+  database.cancelGiftCard(id, gift.codigo).catch(err => {
+    console.error('❌ Error al cancelar Gift Card:', err);
+    alert('❌ Error al cancelar la Gift Card.');
   });
-
-  const nextGift = giftCards.filter(gc => gc.id !== id);
-
-  // Al guardar, la venta desaparece de Caja, Ventas y Ganancias
-  handleDataChange(inventory, nextSales, expenses, nextGift).catch(console.error);
 };
 
   // =======================
@@ -1448,8 +1377,8 @@ const handleCancelGiftCard = (id: string) => {
                       webSettings={webSettings}
                       selectedCategory={selectedCategory}
                       onSelectCategory={(cat) => setSelectedCategory(cat)}
-                      onUpdateInventory={(next) => handleDataChange(next, sales, expenses, giftCards)}
-                      onUpdateSettings={(next) => handleDataChange(inventory, sales, expenses, giftCards, closures, next)}
+                      onUpdateInventory={(next) => database.updateInventory(next)}
+                      onUpdateSettings={(next) => database.updateWebSettings(next)}
                       initialEditingItemId={webManagerEditItemId}
                       onClearEditItem={() => setWebManagerEditItemId(null)}
                     />

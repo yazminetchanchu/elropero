@@ -48,12 +48,13 @@ vi.mock('../services/storage', () => ({
 }));
 
 const TestComponent = () => {
-  const { user, customerProfile, isLoading } = useAuth();
+  const { user, customerProfile, isLoading, isAdminLoggedIn } = useAuth();
   if (isLoading) return <div data-testid="loading">Cargando...</div>;
   return (
     <div>
       <div data-testid="user-status">{user ? user.email : 'INVITADO'}</div>
       <div data-testid="profile-status">{customerProfile ? customerProfile.email : 'SIN_PERFIL'}</div>
+      <div data-testid="admin-status">{isAdminLoggedIn ? 'ADMIN_LOGGED_IN' : 'NOT_ADMIN'}</div>
     </div>
   );
 };
@@ -88,6 +89,7 @@ describe('AuthContext - Prevención de Auto-Login de Admin en Tienda', () => {
     await waitFor(() => {
       expect(screen.getByTestId('user-status').textContent).toBe('INVITADO');
       expect(screen.getByTestId('profile-status').textContent).toBe('SIN_PERFIL');
+      expect(screen.getByTestId('admin-status').textContent).toBe('ADMIN_LOGGED_IN');
     });
   });
 
@@ -114,6 +116,7 @@ describe('AuthContext - Prevención de Auto-Login de Admin en Tienda', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('user-status').textContent).toBe('cliente.nuevo@gmail.com');
+      expect(screen.getByTestId('admin-status').textContent).toBe('NOT_ADMIN');
     });
   });
 

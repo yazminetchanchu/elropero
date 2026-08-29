@@ -114,6 +114,7 @@ interface AuthContextType {
   customerProfile: CustomerProfile | null;
   orders: CustomerOrder[];
   isLoading: boolean;
+  isAdminLoggedIn: boolean;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name?: string, phone?: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
@@ -136,6 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [customerProfile, setCustomerProfile] = React.useState<CustomerProfile | null>(null);
   const [orders, setOrders] = React.useState<CustomerOrder[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = React.useState(false);
   const ordersUnsubscribe = React.useRef<() => void>();
 
   // Obtener referencia al documento del cliente
@@ -273,6 +275,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Si el usuario autenticado en Firebase es una cuenta de administración de la tienda,
           // la tienda pública del cliente se mantiene estrictamente en modo INVITADO.
           console.log('[Auth] Email de administración detectado. La tienda pública permanece en modo INVITADO.');
+          setIsAdminLoggedIn(true);
           setUser(null);
           setCustomerProfile(null);
           setOrders([]);
@@ -281,6 +284,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ordersUnsubscribe.current = undefined;
           }
         } else {
+          setIsAdminLoggedIn(false);
           setUser(firebaseUser);
           try {
             await ensureProfile(firebaseUser);
@@ -289,6 +293,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } else {
+        setIsAdminLoggedIn(false);
         setUser(null);
         setCustomerProfile(null);
         setOrders([]);
@@ -313,6 +318,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (ADMIN_EMAILS.includes(clean)) {
       throw new Error('Este correo pertenece a la administración de la tienda. Para ingresar como administrador, usá el panel de gestión.');
     }
+    const currentAuthEmail = auth.currentUser?.email?.trim().toLowerCase();
+    if (currentAuthEmail && ADMIN_EMAILS.includes(currentAuthEmail)) {
+      throw new Error('Hay una sesión de administración activa en el panel. No se puede iniciar sesión de cliente en este navegador para proteger la sesión del administrador.');
+    }
     await signInWithEmailAndPassword(auth, email, pass);
   };
 
@@ -321,11 +330,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (ADMIN_EMAILS.includes(clean)) {
       throw new Error('Este correo pertenece a la administración de la tienda.');
     }
+    const currentAuthEmail = auth.currentUser?.email?.trim().toLowerCase();
+    if (currentAuthEmail && ADMIN_EMAILS.includes(currentAuthEmail)) {
+      throw new Error('Hay una sesión de administración activa en el panel. No se puede crear una cuenta de cliente para proteger la sesión del administrador.');
+    }
     const credential = await createUserWithEmailAndPassword(auth, email, pass);
     await ensureProfile(credential.user, { nombre: name, telefono: phone });
   };
 
   const loginWithGoogle = async () => {
+    const currentAuthEmail = auth.currentUser?.email?.trim().toLowerCase();
+    if (currentAuthEmail && ADMIN_EMAILS.includes(currentAuthEmail)) {
+      throw new Error('Hay una sesión de administración activa en el panel. Cerrá sesión en el panel de gestión antes de autenticarte con Google.');
+    }
     const credential = await signInWithPopup(auth, googleProvider);
     const clean = credential.user.email?.trim().toLowerCase();
     if (clean && ADMIN_EMAILS.includes(clean)) {
@@ -464,6 +481,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       customerProfile,
       orders,
       isLoading,
+      isAdminLoggedIn,
       loginWithEmail,
       signUpWithEmail,
       loginWithGoogle,

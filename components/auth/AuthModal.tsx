@@ -9,11 +9,12 @@ interface AuthModalProps {
   onClose: () => void;
   customTitle?: string;
   customSubtitle?: string;
+  onContinueAsGuest?: () => void;
 }
 
 type TabType = 'login' | 'register' | 'forgot';
 
-const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, customTitle, customSubtitle }) => {
+const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, customTitle, customSubtitle, onContinueAsGuest }) => {
   const { loginWithEmail, signUpWithEmail, loginWithGoogle, resetPassword } = useAuth();
   
   const [tab, setTab] = React.useState<TabType>('login');
@@ -335,6 +336,21 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, customTitle, cus
               </svg>
               Google
             </button>
+
+            {onContinueAsGuest && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onContinueAsGuest();
+                }}
+                disabled={isLoading}
+                className="w-full bg-neutral-100 hover:bg-neutral-200 text-black py-2.5 text-[9px] tracking-[0.2em] uppercase font-light transition-all flex items-center justify-center gap-1.5 rounded-none"
+              >
+                <span>Continuar como invitado</span>
+                <ArrowRight size={11} strokeWidth={1.2} />
+              </button>
+            )}
           </div>
         )}
 

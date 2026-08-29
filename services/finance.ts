@@ -75,7 +75,12 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
   // Exchange (cambio) – calculate gain based on returned vs new items.
   if (sale.tipo === 'cambio') {
     const diferencia = sale.diferencia ?? sale.total ?? 0;
-    const cobrado = Math.max(0, diferencia);
+    const cobradoBruto = Math.max(0, diferencia);
+    const rawGift = (sale as any).giftCardUsada;
+    const giftCardDiscount = typeof rawGift === 'number'
+      ? rawGift
+      : (rawGift?.montoUsado ?? 0);
+    const cobrado = Math.max(0, cobradoBruto - giftCardDiscount);
     const pctE = sale.pago?.efectivo ?? 100;
     const pctT = sale.pago?.tarjeta ?? 0;
 
@@ -172,7 +177,10 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
   });
 
   // Apply gift card usage if present.
-  const gift = sale.giftCardUsada?.montoUsado ?? 0;
+  const rawGift = (sale as any).giftCardUsada;
+  const gift = typeof rawGift === 'number'
+    ? rawGift
+    : (rawGift?.montoUsado ?? 0);
   if (gift > 0) {
     const totalAntes = efectivo + tarjeta;
     if (totalAntes > 0) {

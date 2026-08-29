@@ -56,6 +56,11 @@ service cloud.firestore {
         // Modificación y borrado estrictamente restringidos a Administradores
         allow update, delete: if isAdmin();
       }
+
+      // Subcolección de ventas del showroom (evita límite de 1 MB en doc showroom)
+      match /sales/{saleId} {
+        allow read, write: if isAdmin();
+      }
     }
 
     // Colección root de clientes para retrocompatibilidad
