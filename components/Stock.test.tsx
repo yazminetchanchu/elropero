@@ -8,7 +8,8 @@ vi.mock('lucide-react', () => ({
   Tag: () => <span>Tag</span>,
   Sparkles: () => <span>Sparkles</span>,
   PackagePlus: () => <span>PackagePlus</span>,
-  CheckCircle2: () => <span>CheckCircle2</span>
+  CheckCircle2: () => <span>CheckCircle2</span>,
+  Loader2: () => <span>Loader2</span>
 }));
 
 describe('Componente Stock: Carga de Mercadería', () => {

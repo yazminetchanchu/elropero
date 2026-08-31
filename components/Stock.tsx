@@ -1,15 +1,17 @@
 import React from 'react';
 import { InventoryItem, WebSettings } from '../types';
-import { Tag, Sparkles, PackagePlus, CheckCircle2 } from 'lucide-react';
+import { Tag, Sparkles, PackagePlus, CheckCircle2, Loader2 } from 'lucide-react';
 import { calculatePricesFromCost } from '../services/finance';
+import { useModal } from '../contexts/ModalContext';
 
 interface StockProps {
-  onAddItem: (item: Omit<InventoryItem, 'id'>) => void;
+  onAddItem: (item: Omit<InventoryItem, 'id'>) => Promise<void> | void;
   inventory: InventoryItem[];
   webSettings: WebSettings;
 }
 
 const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
+  const { showAlert } = useModal();
   const [formData, setFormData] = React.useState({
     descripcion: '',
     proveedor: '',
@@ -89,21 +91,27 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
       visible: false // Hidden by default when adding stock
     };
 
-    onAddItem(newItem);
+    try {
+      await onAddItem(newItem);
 
-    // Mantener en lista local de la sesión
-    setRecentlyAdded(prev => [newItem, ...prev].slice(0, 5));
-    
-    // Feedback de éxito
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+      // Mantener en lista local de la sesión
+      setRecentlyAdded(prev => [newItem, ...prev].slice(0, 5));
+      
+      // Feedback de éxito
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
 
-    // Reset form
-    setFormData({ descripcion: '', proveedor: '', cantidad: 1, costo: 0, categoria: '' });
-    setVentaEfectivo(0);
-    setVentaTarjeta(0);
-    setGeneratedSku('');
-    setIsSaving(false);
+      // Reset form únicamente ante éxito confirmado
+      setFormData({ descripcion: '', proveedor: '', cantidad: 1, costo: 0, categoria: '' });
+      setVentaEfectivo(0);
+      setVentaTarjeta(0);
+      setGeneratedSku('');
+    } catch (error: any) {
+      console.error('❌ Error al agregar producto en stock:', error);
+      showAlert('No se pudo guardar la prenda. Verificá tu conexión a internet e intentá nuevamente.', 'Error al Guardar', 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -245,14 +253,28 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
               <button 
                 type="submit" 
                 disabled={!generatedSku || isSaving}
-                className={`group flex items-center gap-2 px-5 py-2.5 text-[9px] tracking-[0.18em] font-medium uppercase transition-all duration-200 ease-out shrink-0 rounded-xl shadow-xs hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 ${
+                className={`group flex items-center gap-2 px-5 py-2.5 text-[9px] tracking-[0.18em] font-medium uppercase transition-all duration-200 ease-out shrink-0 rounded-xl shadow-xs hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed ${
                   showSuccess 
                     ? 'bg-emerald-800 text-white' 
                     : 'bg-stone-900 text-white hover:bg-black'
                 }`}
               >
-                <span>{isSaving ? 'Guardando...' : showSuccess ? '¡Confirmado!' : 'Confirmar'}</span>
-                {showSuccess ? <CheckCircle2 size={12} strokeWidth={1.5} /> : <Sparkles size={12} strokeWidth={1.5} className="group-hover:rotate-12 transition-transform" />}
+                {isSaving ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" />
+                    <span>Guardando...</span>
+                  </>
+                ) : showSuccess ? (
+                  <>
+                    <span>¡Confirmado!</span>
+                    <CheckCircle2 size={12} strokeWidth={1.5} />
+                  </>
+                ) : (
+                  <>
+                    <span>Confirmar</span>
+                    <Sparkles size={12} strokeWidth={1.5} className="group-hover:rotate-12 transition-transform" />
+                  </>
+                )}
               </button>
           </div>
         </form>

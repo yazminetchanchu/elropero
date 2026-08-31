@@ -1,15 +1,17 @@
 import React from 'react';
 import { Expense } from '../types';
-import { Edit2, Trash2, X } from 'lucide-react';
+import { Edit2, Trash2, X, Loader2 } from 'lucide-react';
+import { useModal } from '../contexts/ModalContext';
 
 interface ExpensesProps {
   expenses: Expense[];
-  onAddExpense: (expense: Omit<Expense, 'id'>) => void;
-  onUpdateExpense: (expense: Expense) => void;
-  onDeleteExpense: (id: string) => void;
+  onAddExpense: (expense: Omit<Expense, 'id'>) => Promise<void> | void;
+  onUpdateExpense: (expense: Expense) => Promise<void> | void;
+  onDeleteExpense: (id: string) => Promise<void> | void;
 }
 
 const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExpense, onDeleteExpense }) => {
+  const { showAlert } = useModal();
   const [formData, setFormData] = React.useState({
     concepto: '',
     monto: 0
@@ -17,6 +19,8 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
   
   const [editingExpense, setEditingExpense] = React.useState<Expense | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [isEditing, setIsEditing] = React.useState(false);
 
   // Función de limpieza de precio consistente con el resto de la app
   const handlePriceInput = (value: string, callback: (num: number) => void) => {
@@ -25,23 +29,40 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
     callback(finalValue);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.concepto || formData.monto <= 0) return;
+    if (!formData.concepto || formData.monto <= 0 || isSaving) return;
 
-    onAddExpense({
-      fecha: new Date().toISOString(),
-      ...formData
-    });
+    setIsSaving(true);
+    try {
+      await onAddExpense({
+        fecha: new Date().toISOString(),
+        ...formData
+      });
 
-    setFormData({ concepto: '', monto: 0 });
+      // Limpiar formulario únicamente ante confirmación exitosa
+      setFormData({ concepto: '', monto: 0 });
+    } catch (err: any) {
+      console.error('Error al registrar egreso:', err);
+      showAlert('No se pudo registrar el egreso. Verificá tu conexión a internet e intentá nuevamente.', 'Error al Guardar', 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingExpense) {
-      onUpdateExpense(editingExpense);
+    if (!editingExpense || isEditing) return;
+
+    setIsEditing(true);
+    try {
+      await onUpdateExpense(editingExpense);
       setEditingExpense(null);
+    } catch (err: any) {
+      console.error('Error al actualizar egreso:', err);
+      showAlert('No se pudieron guardar los cambios en el egreso.', 'Error al Actualizar', 'error');
+    } finally {
+      setIsEditing(false);
     }
   };
 
@@ -94,9 +115,17 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
 
           <button
             type="submit"
-            className="w-full bg-stone-900 text-white py-3.5 text-[10px] tracking-[0.2em] font-medium uppercase hover:bg-black transition-all duration-200 ease-out rounded-xl shadow-xs hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
+            disabled={isSaving || !formData.concepto.trim() || formData.monto <= 0}
+            className="w-full bg-stone-900 text-white py-3.5 text-[10px] tracking-[0.2em] font-medium uppercase hover:bg-black transition-all duration-200 ease-out rounded-xl shadow-xs hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Registrar Egreso
+            {isSaving ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                <span>Registrando...</span>
+              </>
+            ) : (
+              <span>Registrar Egreso</span>
+            )}
           </button>
         </form>
       </section>
@@ -178,8 +207,19 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, onAddExpense, onUpdateExp
                   />
                 </div>
               </div>
-              <button type="submit" className="w-full bg-stone-900 text-white py-3 text-[10px] tracking-[0.2em] font-medium uppercase hover:bg-black transition-all rounded-xl shadow-xs">
-                Guardar Cambios
+              <button 
+                type="submit" 
+                disabled={isEditing}
+                className="w-full bg-stone-900 text-white py-3 text-[10px] tracking-[0.2em] font-medium uppercase hover:bg-black transition-all rounded-xl shadow-xs disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isEditing ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Guardando...</span>
+                  </>
+                ) : (
+                  <span>Guardar Cambios</span>
+                )}
               </button>
             </form>
           </div>

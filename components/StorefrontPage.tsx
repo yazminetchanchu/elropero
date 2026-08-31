@@ -342,34 +342,35 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
   // Escuchador en tiempo real para acreditación de pagos de Ualá Bis
   React.useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
     const rawLastPending = localStorage.getItem('ropero_last_pending_order');
     if (!rawLastPending) return;
 
     try {
       const parsed = JSON.parse(rawLastPending);
       const pendingId = parsed.orderId;
-      if (!pendingId) return;
-
-      const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', pendingId);
-      const unsubscribe = onSnapshot(orderRef, (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (['PAID', 'APPROVED', 'Confirmado', 'Confirmada'].includes(data.estado)) {
-            localStorage.removeItem('ropero_last_pending_order');
-            setPendingPaymentOrder(null);
-            showAlert('¡Excelente! Tu pago ha sido acreditado y confirmado con éxito.', '¡Pago Exitoso!', 'success');
+      if (pendingId) {
+        const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', pendingId);
+        unsubscribe = onSnapshot(orderRef, (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (['PAID', 'APPROVED', 'Confirmado', 'Confirmada'].includes(data.estado)) {
+              localStorage.removeItem('ropero_last_pending_order');
+              setPendingPaymentOrder(null);
+              showAlert('¡Excelente! Tu pago ha sido acreditado y confirmado con éxito.', '¡Pago Exitoso!', 'success');
+            }
           }
-        }
-      });
-
-      return () => {
-        if (typeof unsubscribe === 'function') {
-          unsubscribe();
-        }
-      };
+        });
+      }
     } catch (err) {
       console.error('Error escuchando orden pendiente:', err);
     }
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, []);
 
   const safeReplaceState = (data: any, title: string, url: string) => {

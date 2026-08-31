@@ -428,6 +428,19 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
     const files = e.target.files;
     if (!files || files.length === 0 || !editingItem) return;
 
+    // Validación de tamaño máximo (5 MB por archivo)
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].size > 5 * 1024 * 1024) {
+        showAlert(
+          `La imagen "${files[i].name}" supera el tamaño máximo permitido de 5 MB. Por favor seleccioná un archivo más liviano o comprimido.`,
+          "Archivo muy pesado",
+          "warning"
+        );
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+    }
+
     setIsUploading(true);
     try {
       const uploadedUrls: string[] = [];
@@ -725,6 +738,17 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
+
+                      if (file.size > 5 * 1024 * 1024) {
+                        showAlert(
+                          `La imagen seleccionada supera el tamaño máximo permitido de 5 MB. Por favor seleccioná una imagen más liviana.`,
+                          "Archivo muy pesado",
+                          "warning"
+                        );
+                        e.target.value = '';
+                        return;
+                      }
+
                       setIsUploading(true);
                       try {
                         const storageRef = ref(storage, `web/hero_${Date.now()}_${file.name}`);

@@ -303,31 +303,38 @@ const Sales: React.FC<SalesProps> = ({
   // =======================
   // TOTALES (LÓGICA CORREGIDA)
   // =======================
-  const totals = cart.reduce(
-    (acc, item) => {
-      const cant = item.cantidad;
-      const desc = item.descuento || 0;
+  const totals = React.useMemo(() => {
+    const raw = cart.reduce(
+      (acc, item) => {
+        const cant = item.cantidad;
+        const desc = item.descuento || 0;
 
-      // Tarjeta: se aplica el descuento manual completo
-      const precioTarjetaFinal = item.precioTarjeta * (1 - desc / 100);
+        // Tarjeta: se aplica el descuento manual completo
+        const precioTarjetaFinal = item.precioTarjeta * (1 - desc / 100);
 
-      // Efectivo: ya tiene un descuento implícito de ~20% vs tarjeta.
-      // El descuento manual solo aplica el excedente sobre ese 20%.
-      const DESCUENTO_BASE_EFECTIVO = 20; // el efectivo ya es ~20% más barato
-      const descuentoExtraEfectivo = Math.max(0, desc - DESCUENTO_BASE_EFECTIVO);
-      const precioEfectivoFinal = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
+        // Efectivo: ya tiene un descuento implícito de ~20% vs tarjeta.
+        // El descuento manual solo aplica el excedente sobre ese 20%.
+        const DESCUENTO_BASE_EFECTIVO = 20; // el efectivo ya es ~20% más barato
+        const descuentoExtraEfectivo = Math.max(0, desc - DESCUENTO_BASE_EFECTIVO);
+        const precioEfectivoFinal = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
 
-      const subTarjeta = precioTarjetaFinal * cant * (pagoTarjeta / 100);
-      const subEfectivo = precioEfectivoFinal * cant * (pagoEfectivo / 100);
+        const subTarjeta = precioTarjetaFinal * cant * (pagoTarjeta / 100);
+        const subEfectivo = precioEfectivoFinal * cant * (pagoEfectivo / 100);
 
-      acc.tarjeta += subTarjeta;
-      acc.efectivo += subEfectivo;
-      acc.total += subTarjeta + subEfectivo;
+        acc.tarjeta += subTarjeta;
+        acc.efectivo += subEfectivo;
+        acc.total += subTarjeta + subEfectivo;
 
-      return acc;
-    },
-    { efectivo: 0, tarjeta: 0, total: 0 }
-  );
+        return acc;
+      },
+      { efectivo: 0, tarjeta: 0, total: 0 }
+    );
+    return {
+      efectivo: Math.round(raw.efectivo),
+      tarjeta: Math.round(raw.tarjeta),
+      total: Math.round(raw.total)
+    };
+  }, [cart, pagoTarjeta, pagoEfectivo]);
 
   const totalBruto = totals.total;
 
@@ -351,7 +358,7 @@ const Sales: React.FC<SalesProps> = ({
     const efePerc = pagoOriginalCalc.efectivo ?? 100;
     const tarPerc = pagoOriginalCalc.tarjeta ?? 0;
 
-    return itemsDevueltos.reduce((sum, item) => {
+    const rawTotal = itemsDevueltos.reduce((sum, item) => {
       const cant = item.cantidad ?? 0;
       const desc = item.descuento || 0;
 
@@ -363,11 +370,12 @@ const Sales: React.FC<SalesProps> = ({
       const valPesado = pE * (efePerc / 100) + pT * (tarPerc / 100);
       return sum + valPesado * cant;
     }, 0);
+    return Math.round(rawTotal);
   }, [modoCambio, itemsDevueltos, ventaOriginal]);
 
   const totalNuevo = React.useMemo(() => {
     if (!modoCambio) return 0;
-    return cart.reduce((sum, item) => {
+    const rawTotal = cart.reduce((sum, item) => {
       const desc = item.descuento || 0;
       const pT = item.precioTarjeta * (1 - desc / 100);
       const descuentoExtraEfectivo = Math.max(0, desc - 20);
@@ -376,9 +384,10 @@ const Sales: React.FC<SalesProps> = ({
       const valPesado = pE * (pagoEfectivo / 100) + pT * (pagoTarjeta / 100);
       return sum + valPesado * item.cantidad;
     }, 0);
+    return Math.round(rawTotal);
   }, [modoCambio, cart, pagoEfectivo, pagoTarjeta]);
 
-  const diferenciaCambio = modoCambio ? totalNuevo - totalDevuelto : 0;
+  const diferenciaCambio = modoCambio ? Math.round(totalNuevo - totalDevuelto) : 0;
   const diferenciaAbs = Math.abs(diferenciaCambio);
 
   // Calcular automáticamente cuánto usar de la gift card
@@ -413,9 +422,9 @@ const Sales: React.FC<SalesProps> = ({
   const etiquetaDiferencia =
     diferenciaCambio > 0 ? 'A PAGAR' : diferenciaCambio < 0 ? 'A FAVOR (GIFT)' : 'SIN DIFERENCIA';
 
-  const totalFinal = modoCambio
+  const totalFinal = Math.round(modoCambio
     ? Math.max(0, diferenciaCambio - montoGiftUsar)
-    : totalVentaNormal;
+    : totalVentaNormal);
 
   const subtotalEfectivo = modoCambio
     ? Math.round(totalFinal * (pagoEfectivo / 100))
@@ -532,8 +541,8 @@ const Sales: React.FC<SalesProps> = ({
         itemsDevueltos,
         itemsNuevos,
         pago: { efectivo: pagoEfectivo, tarjeta: pagoTarjeta },
-        total: Math.max(0, diferenciaCambio),
-        diferencia: diferenciaCambio,
+        total: Math.round(Math.max(0, diferenciaCambio)),
+        diferencia: Math.round(diferenciaCambio),
         items: [], // Los cambios no usan items, usan itemsDevueltos e itemsNuevos
         giftGeneradaId, // Pasar el ID para que App.tsx cree la gift card
         giftDestinatario: destinatarioGift,
@@ -623,7 +632,7 @@ const Sales: React.FC<SalesProps> = ({
       fecha: new Date().toISOString(),
       tipo: 'venta',
       items: saleItems,
-      total: totalFinal,
+      total: Math.round(totalFinal),
       pago: {
         efectivo: pagoEfectivo,
         tarjeta: pagoTarjeta

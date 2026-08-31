@@ -64,11 +64,11 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
     const pctE = sale.pago?.efectivo ?? 100;
     const pctT = sale.pago?.tarjeta ?? 0;
     return {
-      efectivo: total * (pctE / 100),
-      tarjeta: total * (pctT / 100),
-      totalCobrado: total,
+      efectivo: Math.round(total * (pctE / 100)),
+      tarjeta: Math.round(total * (pctT / 100)),
+      totalCobrado: Math.round(total),
       costoTotal: 0,
-      ganancia: total,
+      ganancia: Math.round(total),
     };
   }
 
@@ -123,11 +123,11 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
       const costoDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
       const gananciaFinal = precioNuevos - costoDevueltos;
       return {
-        efectivo: cobrado * (pctE / 100),
-        tarjeta: cobrado * (pctT / 100),
-        totalCobrado: cobrado,
-        costoTotal: precioNuevos - costoDevueltos,
-        ganancia: gananciaFinal,
+        efectivo: Math.round(cobrado * (pctE / 100)),
+        tarjeta: Math.round(cobrado * (pctT / 100)),
+        totalCobrado: Math.round(cobrado),
+        costoTotal: Math.round(precioNuevos - costoDevueltos),
+        ganancia: Math.round(gananciaFinal),
       };
     }
 
@@ -141,19 +141,19 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
       return sum + valor;
     }, 0);
 
-      // Gain calculation for positive diferencia (store receives money).
-      const gananciaFinal = -gananciaDevueltos + gananciaNuevos;
-      const costoNuevos = (sale.itemsNuevos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
-      const costoDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
-      const costoNeto = costoNuevos - costoDevueltos;
+    // Gain calculation for positive diferencia (store receives money).
+    const gananciaFinal = -gananciaDevueltos + gananciaNuevos;
+    const costoNuevos = (sale.itemsNuevos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
+    const costoDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
+    const costoNeto = costoNuevos - costoDevueltos;
 
-      return {
-        efectivo: cobrado * (pctE / 100),
-        tarjeta: cobrado * (pctT / 100),
-        totalCobrado: cobrado,
-        costoTotal: costoNeto,
-        ganancia: gananciaFinal,
-      };
+    return {
+      efectivo: Math.round(cobrado * (pctE / 100)),
+      tarjeta: Math.round(cobrado * (pctT / 100)),
+      totalCobrado: Math.round(cobrado),
+      costoTotal: Math.round(costoNeto),
+      ganancia: Math.round(gananciaFinal),
+    };
   }
 
   // Regular sale logic.
@@ -192,7 +192,13 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
   const totalCobrado = efectivo + tarjeta;
   const ganancia = totalCobrado - costoTotal;
 
-  return { efectivo, tarjeta, totalCobrado, costoTotal, ganancia };
+  return {
+    efectivo: Math.round(efectivo),
+    tarjeta: Math.round(tarjeta),
+    totalCobrado: Math.round(totalCobrado),
+    costoTotal: Math.round(costoTotal),
+    ganancia: Math.round(ganancia),
+  };
 };
 
 /**

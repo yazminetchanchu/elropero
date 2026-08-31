@@ -959,26 +959,35 @@ const App: React.FC = () => {
   // =======================
   // EXPENSES (GRANULAR)
   // =======================
-  const handleAddExpense = (expenseData: Omit<Expense, 'id'>) => {
+  const handleAddExpense = async (expenseData: Omit<Expense, 'id'>) => {
     const newExp = { ...expenseData, id: `exp_${Date.now()}` };
-    database.addExpense(newExp).catch(err => {
+    try {
+      await database.addExpense(newExp);
+    } catch (err) {
       console.error('❌ Error al registrar egreso:', err);
       alert('❌ Error al registrar egreso.');
-    });
+      throw err;
+    }
   };
 
-  const handleUpdateExpense = (updatedExpense: Expense) => {
-    database.updateExpense(updatedExpense).catch(err => {
+  const handleUpdateExpense = async (updatedExpense: Expense) => {
+    try {
+      await database.updateExpense(updatedExpense);
+    } catch (err) {
       console.error('❌ Error al actualizar egreso:', err);
       alert('❌ Error al actualizar egreso.');
-    });
+      throw err;
+    }
   };
 
-  const handleDeleteExpense = (id: string) => {
-    database.deleteExpense(id).catch(err => {
+  const handleDeleteExpense = async (id: string) => {
+    try {
+      await database.deleteExpense(id);
+    } catch (err) {
       console.error('❌ Error al eliminar egreso:', err);
       alert('❌ Error al eliminar egreso.');
-    });
+      throw err;
+    }
   };
 
  // =======================
