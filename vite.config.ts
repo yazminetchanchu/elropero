@@ -69,6 +69,8 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, '.'),
         'firebase-admin': path.resolve(__dirname, 'functions/node_modules/firebase-admin'),
         'firebase-functions/v1': path.resolve(__dirname, 'functions/node_modules/firebase-functions/lib/v1'),
+        'firebase-functions/v2/https': path.resolve(__dirname, 'functions/node_modules/firebase-functions/lib/v2/providers/https'),
+        'firebase-functions/v2': path.resolve(__dirname, 'functions/node_modules/firebase-functions/lib/v2'),
         'firebase-functions': path.resolve(__dirname, 'functions/node_modules/firebase-functions'),
       }
     },

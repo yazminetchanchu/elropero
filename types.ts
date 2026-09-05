@@ -126,6 +126,7 @@ export interface WebSettings {
   contactWhatsapp?: string;
   categoriesOrder?: string[];
   discountBySection?: Record<string, number>; // e.g. { "REMERAS": 20, "PANTALONES": 10 }
+  maxDiscountPercentage?: number; // Maximum allowed global discount (default: 50%)
   instagramHandle?: string;
   /** Enlace de cobro Mercado Pago (transferencia) */
   mercadoPagoTransferUrl?: string;

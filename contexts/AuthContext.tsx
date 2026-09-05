@@ -11,7 +11,8 @@ import {
   EmailAuthProvider
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, collection, addDoc, getDocs, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { auth, db, googleProvider } from '../services/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions, googleProvider } from '../services/firebase';
 import { InventoryItem } from '../types';
 import { sendWelcomeEmail } from '../services/emailService';
 import { releaseExpiredReservations, isOrderExpired } from '../services/webOrderFulfillment';
@@ -359,17 +360,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const resetPassword = async (email: string) => {
     const continueUrl = window.location.origin;
     try {
-      // 1. Intentar enviar el correo de recuperación con estética web y botón propio del sistema a través de la Cloud Function
-      const response = await fetch('https://us-central1-el-ropero-8989a.cloudfunctions.net/sendCustomPasswordResetEmail', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: { email, continueUrl } }),
-      });
-      if (response.ok) {
-        console.log('[Auth] Correo de recuperación con estética web enviado exitosamente vía Cloud Function.');
+      // 1. Intentar enviar el correo de recuperación con estética web y botón propio del sistema a través de la Cloud Function Callable
+      const resetFn = httpsCallable<{ email: string; continueUrl: string }, { success: boolean }>(functions, 'requestPasswordReset');
+      const res = await resetFn({ email, continueUrl });
+      if (res.data?.success) {
+        console.log('[Auth] Correo de recuperación con estética web enviado exitosamente vía Cloud Function callable.');
         return;
       }
-      console.warn('[Auth] Endpoint de reseteo personalizado respondió con error, usando fallback de Firebase:', response.status);
     } catch (err) {
       console.warn('[Auth] No se pudo contactar a la Cloud Function de reseteo (puede no estar desplegada aún), usando fallback estándar:', err);
     }

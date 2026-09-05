@@ -43,6 +43,7 @@ exports.calculateExchangeBreakdownServer = calculateExchangeBreakdownServer;
 exports.parseSafeDate = parseSafeDate;
 exports.executeFulfillWebCambio = executeFulfillWebCambio;
 const functions = __importStar(require("firebase-functions/v1"));
+const https_1 = require("firebase-functions/v2/https");
 const admin = __importStar(require("firebase-admin"));
 // db will be initialized inside the functions to prevent app/no-app error during module loading.
 const DESCUENTO_BASE_TRANSFERENCIA = 20;
@@ -62,7 +63,7 @@ function recalculateOrderPricing(showroomData, orderData) {
     const rawItems = Array.isArray(orderData.items) ? orderData.items : [];
     let calculatedSubtotal = 0;
     const verifiedItems = rawItems.map((oi) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
         const qty = Math.max(1, Number(oi.cantidad || 1));
         if (oi.isVirtualGiftCard) {
             const baseMonto = Math.max(5000, Number(oi.precioUnitario || oi.monto || 5000));
@@ -79,9 +80,10 @@ function recalculateOrderPricing(showroomData, orderData) {
         const basePrice = isTransfer
             ? Number((_b = (_a = invItem.ventaEfectivo) !== null && _a !== void 0 ? _a : invItem.precioEfectivo) !== null && _b !== void 0 ? _b : 0)
             : Number((_e = (_d = (_c = invItem.ventaTarjeta) !== null && _c !== void 0 ? _c : invItem.precioTarjeta) !== null && _d !== void 0 ? _d : invItem.ventaEfectivo) !== null && _e !== void 0 ? _e : 0);
+        const maxDiscountCap = Number((_f = webSettings.maxDiscountPercentage) !== null && _f !== void 0 ? _f : 50);
         const itemDisc = Number(invItem.descuentoWeb || 0);
-        const sectionDisc = Number(((_f = webSettings.discountBySection) === null || _f === void 0 ? void 0 : _f[invItem.categoria]) || 0);
-        const disc = Math.max(itemDisc, sectionDisc);
+        const sectionDisc = Number(((_g = webSettings.discountBySection) === null || _g === void 0 ? void 0 : _g[invItem.categoria]) || 0);
+        const disc = Math.min(maxDiscountCap, Math.max(itemDisc, sectionDisc));
         let calculatedUnitPrice;
         if (isTransfer) {
             const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
@@ -90,8 +92,13 @@ function recalculateOrderPricing(showroomData, orderData) {
         else {
             calculatedUnitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
         }
+        // Bug #5: Protección de Costo Mayorista - ninguna prenda se vende por debajo del costo
+        const costo = Number((_h = invItem.costo) !== null && _h !== void 0 ? _h : 0);
+        if (costo > 0) {
+            calculatedUnitPrice = Math.max(costo, calculatedUnitPrice);
+        }
         calculatedSubtotal += calculatedUnitPrice * qty;
-        return Object.assign(Object.assign({}, oi), { productId: invItem.id, sku: invItem.sku || oi.sku || '---', descripcion: invItem.descripcion, costo: (_g = invItem.costo) !== null && _g !== void 0 ? _g : 0, cantidad: qty, precioUnitario: calculatedUnitPrice, precioEfectivo: isTransfer ? calculatedUnitPrice : Number((_h = invItem.ventaEfectivo) !== null && _h !== void 0 ? _h : calculatedUnitPrice), precioTarjeta: !isTransfer ? calculatedUnitPrice : Number((_j = invItem.ventaTarjeta) !== null && _j !== void 0 ? _j : calculatedUnitPrice), descuento: disc });
+        return Object.assign(Object.assign({}, oi), { productId: invItem.id, sku: invItem.sku || oi.sku || '---', descripcion: invItem.descripcion, costo: (_j = invItem.costo) !== null && _j !== void 0 ? _j : 0, cantidad: qty, precioUnitario: calculatedUnitPrice, precioEfectivo: isTransfer ? calculatedUnitPrice : Number((_k = invItem.ventaEfectivo) !== null && _k !== void 0 ? _k : calculatedUnitPrice), precioTarjeta: !isTransfer ? calculatedUnitPrice : Number((_l = invItem.ventaTarjeta) !== null && _l !== void 0 ? _l : calculatedUnitPrice), descuento: disc });
     });
     const tipoEnvio = String(orderData.tipoEnvio || '').toLowerCase();
     let costoEnvio = 0;
@@ -338,17 +345,41 @@ exports.reserveWebOrder = functions.https.onCall(async (data, context) => {
     });
     return { success: true, message: 'Stock reservado con éxito.' };
 });
+const PENDING_RESERVATION_STATES = ['PENDING_PAYMENT', 'pending_transfer', 'Pendiente'];
+const MAX_RELEASES_PER_RUN = 15;
+function isPendingReservation(estado) {
+    return PENDING_RESERVATION_STATES.includes(String(estado || ''));
+}
 // ── Core: Liberación de reservas vencidas (compartida entre Cron y Callable) ──
 async function executeReleaseExpiredReservations(db, showroomId) {
     const showroomRef = db.collection('showrooms').doc(showroomId);
     const ordersCol = showroomRef.collection('orders');
     const now = Date.now();
-    // Buscar órdenes en estado PENDING_PAYMENT, pending_transfer o Pendiente
-    const allOrdersSnap = await ordersCol.get();
-    const expiredDocs = allOrdersSnap.docs.filter(docSnap => {
+    // Solo pendientes: un get() de toda la colección de órdenes hacía timeout (y el browser lo reportaba como CORS).
+    let pendingSnap;
+    try {
+        if (typeof ordersCol.where === 'function') {
+            pendingSnap = await ordersCol.where('estado', 'in', PENDING_RESERVATION_STATES).get();
+        }
+        else if (typeof ordersCol.limit === 'function') {
+            pendingSnap = await ordersCol.limit(200).get();
+        }
+        else {
+            pendingSnap = await ordersCol.get();
+        }
+    }
+    catch (queryErr) {
+        console.error('[ReleaseExpired] Query por estado falló, usando límite o fallback:', queryErr);
+        if (typeof ordersCol.limit === 'function') {
+            pendingSnap = await ordersCol.limit(200).get();
+        }
+        else {
+            pendingSnap = await ordersCol.get();
+        }
+    }
+    const expiredDocs = (pendingSnap.docs || []).filter((docSnap) => {
         const data = docSnap.data();
-        const isPending = data.estado === 'PENDING_PAYMENT' || data.estado === 'pending_transfer' || data.estado === 'Pendiente';
-        if (!isPending)
+        if (!isPendingReservation(data.estado))
             return false;
         if (data.expiresAt) {
             return new Date(data.expiresAt).getTime() < now;
@@ -362,14 +393,15 @@ async function executeReleaseExpiredReservations(db, showroomId) {
         }
         return false;
     });
-    if (expiredDocs.length === 0) {
+    const toRelease = expiredDocs.slice(0, MAX_RELEASES_PER_RUN);
+    if (toRelease.length === 0) {
         console.log(`[ReleaseExpired] No hay reservas expiradas para el showroom ${showroomId}.`);
         return { releasedCount: 0, success: true };
     }
-    console.log(`[ReleaseExpired] Encontradas ${expiredDocs.length} reservas expiradas en ${showroomId}. Procesando...`);
+    console.log(`[ReleaseExpired] Encontradas ${expiredDocs.length} reservas expiradas en ${showroomId}. Procesando ${toRelease.length}...`);
     let releasedCount = 0;
     // Devolvemos el stock orden por orden usando transacciones
-    for (const docSnap of expiredDocs) {
+    for (const docSnap of toRelease) {
         const data = docSnap.data();
         try {
             await db.runTransaction(async (transaction) => {
@@ -377,8 +409,8 @@ async function executeReleaseExpiredReservations(db, showroomId) {
                 const freshDoc = await transaction.get(docSnap.ref);
                 if (!freshDoc.exists)
                     return;
-                const freshData = freshDoc.data() || {};
-                const isStillPending = freshData.estado === 'PENDING_PAYMENT' || freshData.estado === 'pending_transfer' || freshData.estado === 'Pendiente';
+                const freshData = (typeof freshDoc.data === 'function' ? freshDoc.data() : freshDoc.data) || {};
+                const isStillPending = isPendingReservation(freshData.estado);
                 if (!isStillPending)
                     return;
                 const srSnap = await transaction.get(showroomRef);
@@ -389,7 +421,7 @@ async function executeReleaseExpiredReservations(db, showroomId) {
                 const gcAmount = Number((_h = (_f = (_e = (_c = freshData.giftCardAmount) !== null && _c !== void 0 ? _c : (_d = freshData.giftCardUsada) === null || _d === void 0 ? void 0 : _d.montoUsado) !== null && _e !== void 0 ? _e : data.giftCardAmount) !== null && _f !== void 0 ? _f : (_g = data.giftCardUsada) === null || _g === void 0 ? void 0 : _g.montoUsado) !== null && _h !== void 0 ? _h : 0);
                 const gcRef = gcCode ? db.doc(`showrooms/${showroomId}/giftCards/${gcCode}`) : null;
                 const gcSnap = gcRef ? await transaction.get(gcRef) : null;
-                const srData = srSnap.data() || {};
+                const srData = (typeof srSnap.data === 'function' ? srSnap.data() : srSnap.data) || {};
                 const inventory = srData.inventory || [];
                 const nextInventory = [...inventory];
                 const items = data.items || [];
@@ -465,19 +497,39 @@ async function executeReleaseExpiredReservations(db, showroomId) {
 }
 // 2. releaseExpiredReservationsCron (PubSub Cron)
 // Ejecuta cada 5 minutos para buscar órdenes expiradas y devolver el stock.
-exports.releaseExpiredReservationsCron = functions.pubsub.schedule('every 5 minutes').onRun(async (context) => {
+exports.releaseExpiredReservationsCron = functions.runWith({ timeoutSeconds: 120, memory: '512MB' }).pubsub.schedule('every 5 minutes').onRun(async (context) => {
     const db = admin.firestore();
     const showroomId = process.env.SHOWROOM_ID || 'ROPERO';
     await executeReleaseExpiredReservations(db, showroomId);
     return null;
 });
-// 2b. releaseExpiredReservationsServer (Callable HTTPS)
-// Endpoint seguro bajo demanda para clientes frontend (evita violaciones de reglas de seguridad de Firestore)
-exports.releaseExpiredReservationsServer = functions.https.onCall(async (data, context) => {
-    const db = admin.firestore();
-    const showroomId = (data === null || data === void 0 ? void 0 : data.showroomId) || process.env.SHOWROOM_ID || 'ROPERO';
-    const result = await executeReleaseExpiredReservations(db, showroomId);
-    return result;
+const CALLABLE_CORS_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:4173',
+    'https://el-ropero-8989a.web.app',
+    'https://el-ropero-8989a.firebaseapp.com',
+];
+// 2b. releaseExpiredReservationsServer (Callable HTTPS v2)
+// Se mantiene callable (no HTTP onRequest) para que el SDK envíe el protocolo correcto.
+// CORS explícito + invoker público evitan el fallo de preflight desde Vite en localhost.
+exports.releaseExpiredReservationsServer = (0, https_1.onCall)({
+    region: 'us-central1',
+    cors: CALLABLE_CORS_ORIGINS,
+    timeoutSeconds: 120,
+    memory: '512MiB',
+    invoker: 'public',
+}, async (request) => {
+    var _a;
+    try {
+        const db = admin.firestore();
+        const showroomId = ((_a = request.data) === null || _a === void 0 ? void 0 : _a.showroomId) || process.env.SHOWROOM_ID || 'ROPERO';
+        return await executeReleaseExpiredReservations(db, showroomId);
+    }
+    catch (e) {
+        console.error('[releaseExpiredReservationsServer] Error no controlado:', e);
+        throw new https_1.HttpsError('internal', (e === null || e === void 0 ? void 0 : e.message) || 'Error al liberar reservas expiradas');
+    }
 });
 // 2c. cancelWebOrderReservationServer (Callable HTTPS)
 // Cancela una reserva activa específica inmediatamente y restituye el stock al inventario
@@ -648,7 +700,7 @@ function calcExchangeLineTotalServer(item, isTransferencia) {
  * contra el inventario y catálogo oficial.
  */
 function calculateExchangeBreakdownServer(options) {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const { ventaOriginal, itemsDevueltos, itemsNuevos, inventory, webSettings, payload } = options;
     let medioPagoOrigen = 'efectivo';
     if (ventaOriginal === null || ventaOriginal === void 0 ? void 0 : ventaOriginal.pago) {
@@ -703,15 +755,21 @@ function calculateExchangeBreakdownServer(options) {
             const basePrice = isTransferenciaNuevo
                 ? Number((_c = (_b = invItem.ventaEfectivo) !== null && _b !== void 0 ? _b : invItem.precioEfectivo) !== null && _c !== void 0 ? _c : 0)
                 : Number((_f = (_e = (_d = invItem.ventaTarjeta) !== null && _d !== void 0 ? _d : invItem.precioTarjeta) !== null && _e !== void 0 ? _e : invItem.ventaEfectivo) !== null && _f !== void 0 ? _f : 0);
+            const maxDiscountCap = Number((_g = webSettings.maxDiscountPercentage) !== null && _g !== void 0 ? _g : 50);
             const itemDisc = Number(invItem.descuentoWeb || 0);
-            const secDisc = Number(((_g = webSettings.discountBySection) === null || _g === void 0 ? void 0 : _g[invItem.categoria]) || 0);
-            const disc = Math.max(itemDisc, secDisc);
+            const secDisc = Number(((_h = webSettings.discountBySection) === null || _h === void 0 ? void 0 : _h[invItem.categoria]) || 0);
+            const disc = Math.min(maxDiscountCap, Math.max(itemDisc, secDisc));
             if (isTransferenciaNuevo) {
                 const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
                 unitPrice = Math.round(basePrice * (1 - extraDesc / 100));
             }
             else {
                 unitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
+            }
+            // Bug #5: Protección de Costo Mayorista
+            const costo = Number((_j = invItem.costo) !== null && _j !== void 0 ? _j : 0);
+            if (costo > 0) {
+                unitPrice = Math.max(costo, unitPrice);
             }
         }
         else {

@@ -35,10 +35,14 @@ vi.mock('../../contexts/ModalContext', () => ({
   }),
 }));
 
-const mockGetDoc = vi.fn();
+const mockGetDocs = vi.fn();
 vi.mock('firebase/firestore', () => ({
   doc: vi.fn(),
-  getDoc: (...args: any[]) => mockGetDoc(...args),
+  getDoc: vi.fn(),
+  collection: vi.fn(),
+  query: vi.fn(),
+  where: vi.fn(),
+  getDocs: (...args: any[]) => mockGetDocs(...args),
 }));
 
 vi.mock('../../services/firebase', () => ({
@@ -112,27 +116,28 @@ describe('UserDashboard Full Suite', () => {
       } as CustomerOrder,
     ];
 
-    mockGetDoc.mockResolvedValue({
-      exists: () => true,
-      data: () => ({
-        giftCards: [
-          {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 'gc-1',
+          data: () => ({
             id: 'gc-1',
             codigo: 'GC-PROMO-100',
             saldo: 15000,
             montoInicial: 20000,
             estado: 'ACTIVA',
+            active: true,
             destinatario: 'SOFIA',
             email: 'sofia@example.com',
             fechaCreacion: new Date().toISOString(),
-          } as GiftCard,
-        ],
-      }),
+          }),
+        },
+      ],
     });
   });
 
-  const renderDashboard = async () => {
-    const utils = render(
+  const renderDashboard = () => {
+    return render(
       <UserDashboard
         isOpen={true}
         onClose={mockOnClose}
@@ -141,26 +146,22 @@ describe('UserDashboard Full Suite', () => {
         onRequestExchange={mockRequestExchange}
       />
     );
-    await waitFor(() => {
-      expect(mockGetDoc).toHaveBeenCalled();
-    });
-    return utils;
   };
 
-  it('renderiza correctamente el Drawer con el email y pestañas', async () => {
-    await renderDashboard();
+  it('renderiza correctamente el Drawer con el email y pestañas', () => {
+    renderDashboard();
 
     expect(screen.getByText('Mi Cuenta')).toBeInTheDocument();
     expect(screen.getByText('sofia@example.com')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Compras/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Gift Cards/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Gift Cards/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Envío/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Favoritos/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Mis Datos/i })).toBeInTheDocument();
   });
 
-  it('pestaña Compras: muestra orden con tracking number y link a Mi Correo', async () => {
-    await renderDashboard();
+  it('pestaña Compras: muestra orden con tracking number y link a Mi Correo', () => {
+    renderDashboard();
 
     expect(screen.getAllByText('Remera Favorita').length).toBeGreaterThan(0);
     expect(screen.getByText(/Seguimiento: TN-998877/i)).toBeInTheDocument();
@@ -170,36 +171,10 @@ describe('UserDashboard Full Suite', () => {
     );
   });
 
-  it('pestaña Gift Cards: carga y visualiza tarjetas del usuario con opción de copiar', async () => {
-    // Mock navigator.clipboard
-    const writeTextMock = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, {
-      clipboard: { writeText: writeTextMock },
-    });
-
-    await renderDashboard();
-
-    // Cambiar a la pestaña Gift Cards
-    const giftCardsTabBtn = screen.getByRole('button', { name: /Gift Cards/i });
-    fireEvent.click(giftCardsTabBtn);
-
-    // Debe mostrar la Gift Card cargada desde Firestore
-    expect(await screen.findByText('GC-PROMO-100')).toBeInTheDocument();
-    expect(screen.getByText('$15.000')).toBeInTheDocument();
-    expect(screen.getByText('Disponible')).toBeInTheDocument();
-    expect(screen.getByText('SOFIA')).toBeInTheDocument();
-
-    // Copiar código
-    const copyBtn = screen.getByTitle('Copiar código');
-    fireEvent.click(copyBtn);
-
-    expect(writeTextMock).toHaveBeenCalledWith('GC-PROMO-100');
-  });
-
   it('pestaña Envío (Direcciones): permite abrir formulario y agregar nueva dirección', async () => {
     mockUpdateProfile.mockResolvedValue(undefined);
 
-    await renderDashboard();
+    renderDashboard();
 
     // Click en Envío
     fireEvent.click(screen.getByRole('button', { name: /Envío/i }));
@@ -238,8 +213,8 @@ describe('UserDashboard Full Suite', () => {
     });
   });
 
-  it('pestaña Favoritos: permite añadir al carrito y remover de la wishlist', async () => {
-    await renderDashboard();
+  it('pestaña Favoritos: permite añadir al carrito y remover de la wishlist', () => {
+    renderDashboard();
 
     // Click en Favoritos
     fireEvent.click(screen.getByRole('button', { name: /Favoritos/i }));
@@ -262,7 +237,7 @@ describe('UserDashboard Full Suite', () => {
   it('pestaña Mis Datos: permite actualizar nombre y teléfono, y cerrar sesión', async () => {
     mockUpdateProfile.mockResolvedValue(undefined);
 
-    await renderDashboard();
+    renderDashboard();
 
     // Click en Mis Datos
     fireEvent.click(screen.getByRole('button', { name: /Mis Datos/i }));

@@ -1649,148 +1649,103 @@ export const requestWelcomeEmail = functions.https.onCall(async (data, context) 
 /**
  * Genera y envía un código OTP de 6 dígitos por email para autenticación de dos factores (2FA) en el panel de administración.
  */
-export const sendAdmin2FACode = functions.https.onRequest(async (req, res) => {
-  const safeOrigin = getSafeCorsOrigin(req);
-  res.set("Access-Control-Allow-Origin", safeOrigin);
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+export const sendAdmin2FACode = functions.https.onCall(async (data, context) => {
+  const email = data?.email;
+  const cleanEmail = String(email || "").trim().toLowerCase();
 
-  if (req.method === "OPTIONS") {
-    res.status(204).send("");
-    return;
+  const allowedAdmins = ["elropero.informacion@gmail.com", "yazminetchanchu@gmail.com"];
+  if (!allowedAdmins.includes(cleanEmail)) {
+    throw new functions.https.HttpsError("permission-denied", "Email no autorizado para acceso administrativo.");
   }
 
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "Method Not Allowed" });
-    return;
-  }
+  // Generar código numérico de 6 dígitos
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutos de validez
 
-  try {
-    const { email } = req.body?.data || req.body || {};
-    const cleanEmail = String(email || "").trim().toLowerCase();
+  // Guardar en colección oculta _admin_otp
+  await db.collection("_admin_otp").doc(cleanEmail).set({
+    code: otpCode,
+    expiresAt,
+    attempts: 0,
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  });
 
-    const allowedAdmins = ["elropero.informacion@gmail.com", "yazminetchanchu@gmail.com"];
-    if (!allowedAdmins.includes(cleanEmail)) {
-      res.status(403).json({ error: "Email no autorizado para acceso administrativo." });
-      return;
-    }
-
-    // Generar código numérico de 6 dígitos
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutos de validez
-
-    // Guardar en colección oculta _admin_otp
-    await db.collection("_admin_otp").doc(cleanEmail).set({
-      code: otpCode,
-      expiresAt,
-      attempts: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    // Enviar correo electrónico con el código OTP
-    const htmlContent = `
-      <div style="font-family: 'Inter', system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px; background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; color: #111111;">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <p style="font-size: 10px; letter-spacing: 4px; text-transform: uppercase; color: #888888; margin: 0;">Acceso Administrativo Seguro</p>
-          <h2 style="font-size: 20px; letter-spacing: 6px; text-transform: uppercase; margin: 8px 0 0 0; font-weight: 600;">EL ROPERO</h2>
-        </div>
-
-        <div style="background-color: #f9f9f9; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 24px;">
-          <p style="font-size: 12px; color: #666666; margin: 0 0 12px 0;">Tu código de verificación de 2 factores (2FA) es:</p>
-          <div style="font-size: 36px; font-weight: 700; letter-spacing: 12px; color: #000000; margin: 12px 0;">${otpCode}</div>
-          <p style="font-size: 11px; color: #e53e3e; margin: 12px 0 0 0; font-weight: 500;">⏱️ Este código expira en 5 minutos.</p>
-        </div>
-
-        <p style="font-size: 12px; color: #666666; line-height: 1.5; margin: 0 0 16px 0;">
-          Si no solicitaste este acceso al panel de administración, ignorá este mensaje y asegurate de cambiar tu contraseña inmediatamente.
-        </p>
-
-        <div style="border-top: 1px solid #eeeeee; padding-top: 16px; margin-top: 24px; text-align: center;">
-          <p style="font-size: 10px; color: #aaaaaa; margin: 0;">EL ROPERO SHOWROOM · Sistema de Seguridad 2FA</p>
-        </div>
+  // Enviar correo electrónico con el código OTP
+  const htmlContent = `
+    <div style="font-family: 'Inter', system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px; background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; color: #111111;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <p style="font-size: 10px; letter-spacing: 4px; text-transform: uppercase; color: #888888; margin: 0;">Acceso Administrativo Seguro</p>
+        <h2 style="font-size: 20px; letter-spacing: 6px; text-transform: uppercase; margin: 8px 0 0 0; font-weight: 600;">EL ROPERO</h2>
       </div>
-    `;
 
-    await db.collection("mail").add({
-      to: cleanEmail,
-      message: {
-        subject: "🔒 Código de Verificación 2FA - El Ropero Admin",
-        html: htmlContent
-      }
-    });
+      <div style="background-color: #f9f9f9; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 24px;">
+        <p style="font-size: 12px; color: #666666; margin: 0 0 12px 0;">Tu código de verificación de 2 factores (2FA) es:</p>
+        <div style="font-size: 36px; font-weight: 700; letter-spacing: 12px; color: #000000; margin: 12px 0;">${otpCode}</div>
+        <p style="font-size: 11px; color: #e53e3e; margin: 12px 0 0 0; font-weight: 500;">⏱️ Este código expira en 5 minutos.</p>
+      </div>
 
-    res.status(200).json({ success: true, message: "Código 2FA enviado a tu email." });
-  } catch (err: any) {
-    console.error("Error al generar/enviar 2FA OTP:", err);
-    res.status(500).json({ error: "Error interno al enviar el código de verificación." });
-  }
+      <p style="font-size: 12px; color: #666666; line-height: 1.5; margin: 0 0 16px 0;">
+        Si no solicitaste este acceso al panel de administración, ignorá este mensaje y asegurate de cambiar tu contraseña inmediatamente.
+      </p>
+
+      <div style="border-top: 1px solid #eeeeee; padding-top: 16px; margin-top: 24px; text-align: center;">
+        <p style="font-size: 10px; color: #aaaaaa; margin: 0;">EL ROPERO SHOWROOM · Sistema de Seguridad 2FA</p>
+      </div>
+    </div>
+  `;
+
+  await db.collection("mail").add({
+    to: cleanEmail,
+    message: {
+      subject: "🔒 Código de Verificación 2FA - El Ropero Admin",
+      html: htmlContent
+    }
+  });
+
+  return { success: true, message: "Código 2FA enviado a tu email." };
 });
 
 /**
  * Valida el código OTP ingresado por el administrador.
  */
-export const verifyAdmin2FACode = functions.https.onRequest(async (req, res) => {
-  const safeOrigin = getSafeCorsOrigin(req);
-  res.set("Access-Control-Allow-Origin", safeOrigin);
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+export const verifyAdmin2FACode = functions.https.onCall(async (data, context) => {
+  const email = data?.email;
+  const code = data?.code;
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const cleanCode = String(code || "").trim();
 
-  if (req.method === "OPTIONS") {
-    res.status(204).send("");
-    return;
+  if (!cleanEmail || !cleanCode) {
+    throw new functions.https.HttpsError("invalid-argument", "Email y código son obligatorios.");
   }
 
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "Method Not Allowed" });
-    return;
+  const docRef = db.collection("_admin_otp").doc(cleanEmail);
+  const docSnap = await docRef.get();
+
+  if (!docSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "No hay un código 2FA activo. Por favor, solicitá uno nuevo.");
   }
 
-  try {
-    const { email, code } = req.body?.data || req.body || {};
-    const cleanEmail = String(email || "").trim().toLowerCase();
-    const cleanCode = String(code || "").trim();
+  const otpData = docSnap.data() || {};
 
-    if (!cleanEmail || !cleanCode) {
-      res.status(400).json({ error: "Email y código son obligatorios." });
-      return;
-    }
-
-    const docRef = db.collection("_admin_otp").doc(cleanEmail);
-    const docSnap = await docRef.get();
-
-    if (!docSnap.exists) {
-      res.status(400).json({ error: "No hay un código 2FA activo. Por favor, solicitá uno nuevo." });
-      return;
-    }
-
-    const data = docSnap.data() || {};
-
-    if (Date.now() > (data.expiresAt || 0)) {
-      await docRef.delete();
-      res.status(400).json({ error: "El código 2FA ha expirado (límite 5 min). Solicitá un nuevo código." });
-      return;
-    }
-
-    if ((data.attempts || 0) >= 3) {
-      await docRef.delete();
-      res.status(429).json({ error: "Demasiados intentos fallidos. Por seguridad, solicitá un nuevo código." });
-      return;
-    }
-
-    if (data.code !== cleanCode) {
-      await docRef.update({ attempts: admin.firestore.FieldValue.increment(1) });
-      res.status(400).json({ error: "Código de verificación incorrecto. Verificá tu correo." });
-      return;
-    }
-
-    // Código válido -> Eliminar documento de OTP usado
+  if (Date.now() > (otpData.expiresAt || 0)) {
     await docRef.delete();
-
-    res.status(200).json({ success: true, verified: true, message: "Autenticación 2FA exitosa." });
-  } catch (err: any) {
-    console.error("Error al verificar 2FA OTP:", err);
-    res.status(500).json({ error: "Error interno al verificar el código 2FA." });
+    throw new functions.https.HttpsError("deadline-exceeded", "El código 2FA ha expirado (límite 5 min). Solicitá un nuevo código.");
   }
+
+  if ((otpData.attempts || 0) >= 3) {
+    await docRef.delete();
+    throw new functions.https.HttpsError("resource-exhausted", "Demasiados intentos fallidos. Por seguridad, solicitá un nuevo código.");
+  }
+
+  if (otpData.code !== cleanCode) {
+    await docRef.update({ attempts: admin.firestore.FieldValue.increment(1) });
+    throw new functions.https.HttpsError("invalid-argument", "Código de verificación incorrecto. Verificá tu correo.");
+  }
+
+  // Código válido -> Eliminar documento de OTP usado
+  await docRef.delete();
+
+  return { success: true, verified: true, message: "Autenticación 2FA exitosa." };
 });
 
 

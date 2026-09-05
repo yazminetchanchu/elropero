@@ -119,8 +119,13 @@ interface StorefrontProps {
   settingsProp?: WebSettings;
 }
 
+// Filtro de Costos: Omitir el campo costo de todas las prendas públicas para proteger información comercial sensible
+const sanitizeCatalogInventory = (items: InventoryItem[] = []): InventoryItem[] => {
+  return items.map(({ costo, ...item }) => item as InventoryItem);
+};
+
 const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp }) => {
-  const [inventory, setInventory] = React.useState<InventoryItem[]>(inventoryProp || []);
+  const [inventory, setInventory] = React.useState<InventoryItem[]>(sanitizeCatalogInventory(inventoryProp));
   const [webSettings, setWebSettings] = React.useState<WebSettings>(settingsProp || {
     heroImageUrl: '/assets/hero.png',
     heroTitle: '',
@@ -610,7 +615,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
   React.useEffect(() => {
     if (inventoryProp) {
-      setInventory(inventoryProp);
+      setInventory(sanitizeCatalogInventory(inventoryProp));
       if (settingsProp) {
         setWebSettings({
           announcementText: '20% de descuento pagando por transferencia ★',
@@ -630,7 +635,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     const unsub = onSnapshot(ref, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        setInventory(data.inventory || []);
+        setInventory(sanitizeCatalogInventory(data.inventory || []));
         if (data.webSettings) {
           setWebSettings({
             announcementText: '20% de descuento pagando por transferencia ★',
@@ -674,20 +679,29 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     }
   }, [inventory, selectedProduct]);
 
-  // Discount helper: max of product-level and section-level discount
+  // Discount helper: max of product-level and section-level discount, capped by maxDiscountPercentage
   const getDiscount = React.useCallback((item: InventoryItem) => {
+    const maxCap = webSettings.maxDiscountPercentage ?? 50;
     const itemDisc = item.descuentoWeb || 0;
     const sectionDisc = webSettings.discountBySection?.[item.categoria] || 0;
-    return Math.max(itemDisc, sectionDisc);
-  }, [webSettings.discountBySection]);
+    return Math.min(maxCap, Math.max(itemDisc, sectionDisc));
+  }, [webSettings.discountBySection, webSettings.maxDiscountPercentage]);
 
-  const getDiscountedPrice = React.useCallback((price: number, discount: number, isTransferencia?: boolean) => {
+  const getDiscountedPrice = React.useCallback((price: number, discount: number, isTransferencia?: boolean, costo?: number) => {
+    let finalPrice: number;
     if (isTransferencia) {
       const extraDesc = Math.max(0, discount - DESCUENTO_BASE_TRANSFERENCIA);
-      return Math.round(price * (1 - extraDesc / 100));
+      finalPrice = Math.round(price * (1 - extraDesc / 100));
+    } else if (discount <= 0) {
+      finalPrice = price;
+    } else {
+      finalPrice = Math.round(price * (1 - discount / 100));
     }
-    if (discount <= 0) return price;
-    return Math.round(price * (1 - discount / 100));
+
+    if (costo && costo > 0) {
+      finalPrice = Math.max(costo, finalPrice);
+    }
+    return finalPrice;
   }, []);
 
   const mercadoPagoUrl = React.useMemo(() => {
@@ -825,7 +839,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         const p = item.product;
         const disc = getDiscount(p);
         const basePrice = isTransferenciaNuevo ? p.ventaEfectivo : p.ventaTarjeta;
-        return getDiscountedPrice(basePrice, disc, isTransferenciaNuevo);
+        return getDiscountedPrice(basePrice, disc, isTransferenciaNuevo, p?.costo);
       }
     });
 
@@ -1390,7 +1404,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     return cart.reduce((sum, c) => {
       const disc = getDiscount(c.product);
       const basePrice = isTransferencia ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-      const price = getDiscountedPrice(basePrice, disc, isTransferencia);
+      const price = getDiscountedPrice(basePrice, disc, isTransferencia, c.product.costo);
       return sum + price * c.quantity;
     }, 0);
   }, [cart, getDiscount, getDiscountedPrice, paymentMethod, exchangeSession, exchangePaymentMethod]);
@@ -1429,7 +1443,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         const p = item.product;
         const disc = getDiscount(p);
         const basePrice = isTransferenciaNuevo ? p.ventaEfectivo : p.ventaTarjeta;
-        return getDiscountedPrice(basePrice, disc, isTransferenciaNuevo);
+        return getDiscountedPrice(basePrice, disc, isTransferenciaNuevo, p?.costo);
       }
     });
   }, [
@@ -1459,7 +1473,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     let msg = `🛍️ *Pedido — ${store} Showroom*\n\n`;
     cart.forEach((c, i) => {
       const disc = getDiscount(c.product);
-      const price = getDiscountedPrice(c.product.ventaEfectivo, disc, true);
+      const price = getDiscountedPrice(c.product.ventaEfectivo, disc, true, c.product.costo);
       msg += `${i + 1}. ${c.product.descripcion}\n`;
       if (c.selectedTalle) msg += `   Talle: ${c.selectedTalle}\n`;
       if (c.selectedColor) msg += `   Color: ${c.selectedColor}\n`;
@@ -2244,8 +2258,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
               {(() => {
                 const disc = getDiscount(selectedProduct);
-                const efDisc = getDiscountedPrice(selectedProduct.ventaEfectivo, disc, true);
-                const tarDisc = getDiscountedPrice(selectedProduct.ventaTarjeta, disc, false);
+                const efDisc = getDiscountedPrice(selectedProduct.ventaEfectivo, disc, true, selectedProduct.costo);
+                const tarDisc = getDiscountedPrice(selectedProduct.ventaTarjeta, disc, false, selectedProduct.costo);
                 const cuotas3 = Math.round(tarDisc / 3);
                 const cuotas6 = Math.round(tarDisc / 6);
                 return (
@@ -2490,7 +2504,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 cart.map((c, i) => {
                   const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
                   const disc = getDiscount(c.product);
-                  const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+                  const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia', c.product.costo);
                   const hasDiscount = price < basePrice;
                   const liveStock = getVariantStock(c.product, c.selectedTalle, c.selectedColor);
                   const isOutOfStock = liveStock <= 0;

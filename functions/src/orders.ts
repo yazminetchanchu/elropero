@@ -1,4 +1,5 @@
 import * as functions from "firebase-functions/v1";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 
 // db will be initialized inside the functions to prevent app/no-app error during module loading.
@@ -66,9 +67,10 @@ export function recalculateOrderPricing(
       ? Number(invItem.ventaEfectivo ?? invItem.precioEfectivo ?? 0)
       : Number(invItem.ventaTarjeta ?? invItem.precioTarjeta ?? invItem.ventaEfectivo ?? 0);
 
+    const maxDiscountCap = Number(webSettings.maxDiscountPercentage ?? 50);
     const itemDisc = Number(invItem.descuentoWeb || 0);
     const sectionDisc = Number(webSettings.discountBySection?.[invItem.categoria] || 0);
-    const disc = Math.max(itemDisc, sectionDisc);
+    const disc = Math.min(maxDiscountCap, Math.max(itemDisc, sectionDisc));
 
     let calculatedUnitPrice: number;
     if (isTransfer) {
@@ -76,6 +78,12 @@ export function recalculateOrderPricing(
       calculatedUnitPrice = Math.round(basePrice * (1 - extraDesc / 100));
     } else {
       calculatedUnitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
+    }
+
+    // Bug #5: Protección de Costo Mayorista - ninguna prenda se vende por debajo del costo
+    const costo = Number(invItem.costo ?? 0);
+    if (costo > 0) {
+      calculatedUnitPrice = Math.max(costo, calculatedUnitPrice);
     }
 
     calculatedSubtotal += calculatedUnitPrice * qty;
@@ -422,19 +430,42 @@ export const reserveWebOrder = functions.https.onCall(async (data, context) => {
   return { success: true, message: 'Stock reservado con éxito.' };
 });
 
+const PENDING_RESERVATION_STATES = ['PENDING_PAYMENT', 'pending_transfer', 'Pendiente'];
+const MAX_RELEASES_PER_RUN = 15;
+
+function isPendingReservation(estado: unknown): boolean {
+  return PENDING_RESERVATION_STATES.includes(String(estado || ''));
+}
+
 // ── Core: Liberación de reservas vencidas (compartida entre Cron y Callable) ──
 export async function executeReleaseExpiredReservations(db: admin.firestore.Firestore, showroomId: string) {
   const showroomRef = db.collection('showrooms').doc(showroomId);
   const ordersCol = showroomRef.collection('orders');
   
   const now = Date.now();
-  
-  // Buscar órdenes en estado PENDING_PAYMENT, pending_transfer o Pendiente
-  const allOrdersSnap = await ordersCol.get();
-  const expiredDocs = allOrdersSnap.docs.filter(docSnap => {
+
+  // Solo pendientes: un get() de toda la colección de órdenes hacía timeout (y el browser lo reportaba como CORS).
+  let pendingSnap: any;
+  try {
+    if (typeof ordersCol.where === 'function') {
+      pendingSnap = await ordersCol.where('estado', 'in', PENDING_RESERVATION_STATES).get();
+    } else if (typeof ordersCol.limit === 'function') {
+      pendingSnap = await ordersCol.limit(200).get();
+    } else {
+      pendingSnap = await ordersCol.get();
+    }
+  } catch (queryErr) {
+    console.error('[ReleaseExpired] Query por estado falló, usando límite o fallback:', queryErr);
+    if (typeof ordersCol.limit === 'function') {
+      pendingSnap = await ordersCol.limit(200).get();
+    } else {
+      pendingSnap = await ordersCol.get();
+    }
+  }
+
+  const expiredDocs = (pendingSnap.docs || []).filter((docSnap: any) => {
     const data = docSnap.data();
-    const isPending = data.estado === 'PENDING_PAYMENT' || data.estado === 'pending_transfer' || data.estado === 'Pendiente';
-    if (!isPending) return false;
+    if (!isPendingReservation(data.estado)) return false;
 
     if (data.expiresAt) {
       return new Date(data.expiresAt).getTime() < now;
@@ -449,36 +480,38 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
     return false;
   });
 
-  if (expiredDocs.length === 0) {
+  const toRelease = expiredDocs.slice(0, MAX_RELEASES_PER_RUN);
+
+  if (toRelease.length === 0) {
     console.log(`[ReleaseExpired] No hay reservas expiradas para el showroom ${showroomId}.`);
     return { releasedCount: 0, success: true };
   }
 
-  console.log(`[ReleaseExpired] Encontradas ${expiredDocs.length} reservas expiradas en ${showroomId}. Procesando...`);
+  console.log(`[ReleaseExpired] Encontradas ${expiredDocs.length} reservas expiradas en ${showroomId}. Procesando ${toRelease.length}...`);
   let releasedCount = 0;
 
   // Devolvemos el stock orden por orden usando transacciones
-  for (const docSnap of expiredDocs) {
+  for (const docSnap of toRelease) {
     const data = docSnap.data();
     
     try {
       await db.runTransaction(async (transaction) => {
-        const freshDoc = await transaction.get(docSnap.ref);
+        const freshDoc: any = await transaction.get(docSnap.ref);
         if (!freshDoc.exists) return;
-        const freshData = freshDoc.data() || {};
-        const isStillPending = freshData.estado === 'PENDING_PAYMENT' || freshData.estado === 'pending_transfer' || freshData.estado === 'Pendiente';
+        const freshData = (typeof freshDoc.data === 'function' ? freshDoc.data() : freshDoc.data) || {};
+        const isStillPending = isPendingReservation(freshData.estado);
         if (!isStillPending) return;
 
-        const srSnap = await transaction.get(showroomRef);
+        const srSnap: any = await transaction.get(showroomRef);
         if (!srSnap.exists) return;
 
         // READ gcRef if gift card was used in this order
         const gcCode = (freshData.giftCardCode || freshData.giftCardUsada?.codigo || data.giftCardCode || data.giftCardUsada?.codigo || '').toString().trim().toUpperCase();
         const gcAmount = Number(freshData.giftCardAmount ?? freshData.giftCardUsada?.montoUsado ?? data.giftCardAmount ?? data.giftCardUsada?.montoUsado ?? 0);
         const gcRef = gcCode ? db.doc(`showrooms/${showroomId}/giftCards/${gcCode}`) : null;
-        const gcSnap = gcRef ? await transaction.get(gcRef) : null;
+        const gcSnap: any = gcRef ? await transaction.get(gcRef) : null;
 
-        const srData = srSnap.data() || {};
+        const srData = (typeof srSnap.data === 'function' ? srSnap.data() : srSnap.data) || {};
         const inventory = srData.inventory || [];
         const nextInventory = [...inventory];
         const items = data.items || [];
@@ -567,21 +600,43 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
 
 // 2. releaseExpiredReservationsCron (PubSub Cron)
 // Ejecuta cada 5 minutos para buscar órdenes expiradas y devolver el stock.
-export const releaseExpiredReservationsCron = functions.pubsub.schedule('every 5 minutes').onRun(async (context) => {
+export const releaseExpiredReservationsCron = functions.runWith({ timeoutSeconds: 120, memory: '512MB' }).pubsub.schedule('every 5 minutes').onRun(async (context) => {
   const db = admin.firestore();
   const showroomId = process.env.SHOWROOM_ID || 'ROPERO';
   await executeReleaseExpiredReservations(db, showroomId);
   return null;
 });
 
-// 2b. releaseExpiredReservationsServer (Callable HTTPS)
-// Endpoint seguro bajo demanda para clientes frontend (evita violaciones de reglas de seguridad de Firestore)
-export const releaseExpiredReservationsServer = functions.https.onCall(async (data, context) => {
-  const db = admin.firestore();
-  const showroomId = data?.showroomId || process.env.SHOWROOM_ID || 'ROPERO';
-  const result = await executeReleaseExpiredReservations(db, showroomId);
-  return result;
-});
+const CALLABLE_CORS_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'https://el-ropero-8989a.web.app',
+  'https://el-ropero-8989a.firebaseapp.com',
+];
+
+// 2b. releaseExpiredReservationsServer (Callable HTTPS v2)
+// Se mantiene callable (no HTTP onRequest) para que el SDK envíe el protocolo correcto.
+// CORS explícito + invoker público evitan el fallo de preflight desde Vite en localhost.
+export const releaseExpiredReservationsServer = onCall(
+  {
+    region: 'us-central1',
+    cors: CALLABLE_CORS_ORIGINS,
+    timeoutSeconds: 120,
+    memory: '512MiB',
+    invoker: 'public',
+  },
+  async (request) => {
+    try {
+      const db = admin.firestore();
+      const showroomId = request.data?.showroomId || process.env.SHOWROOM_ID || 'ROPERO';
+      return await executeReleaseExpiredReservations(db, showroomId);
+    } catch (e: any) {
+      console.error('[releaseExpiredReservationsServer] Error no controlado:', e);
+      throw new HttpsError('internal', e?.message || 'Error al liberar reservas expiradas');
+    }
+  }
+);
 
 // 2c. cancelWebOrderReservationServer (Callable HTTPS)
 // Cancela una reserva activa específica inmediatamente y restituye el stock al inventario
@@ -901,15 +956,22 @@ export function calculateExchangeBreakdownServer(options: {
         ? Number(invItem.ventaEfectivo ?? invItem.precioEfectivo ?? 0)
         : Number(invItem.ventaTarjeta ?? invItem.precioTarjeta ?? invItem.ventaEfectivo ?? 0);
 
+      const maxDiscountCap = Number(webSettings.maxDiscountPercentage ?? 50);
       const itemDisc = Number(invItem.descuentoWeb || 0);
       const secDisc = Number(webSettings.discountBySection?.[invItem.categoria] || 0);
-      const disc = Math.max(itemDisc, secDisc);
+      const disc = Math.min(maxDiscountCap, Math.max(itemDisc, secDisc));
 
       if (isTransferenciaNuevo) {
         const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
         unitPrice = Math.round(basePrice * (1 - extraDesc / 100));
       } else {
         unitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
+      }
+
+      // Bug #5: Protección de Costo Mayorista
+      const costo = Number(invItem.costo ?? 0);
+      if (costo > 0) {
+        unitPrice = Math.max(costo, unitPrice);
       }
     } else {
       // Fallback si no está en inventario

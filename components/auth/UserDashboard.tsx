@@ -1,11 +1,9 @@
 import React from 'react';
-import { X, ShoppingBag, MapPin, Heart, User, Trash2, Edit3, Plus, ArrowRight, Loader2, LogOut, CheckCircle, Package, RefreshCw, Gift, ExternalLink, Copy, Check } from 'lucide-react';
+import { X, ShoppingBag, MapPin, Heart, User, Trash2, Edit3, Plus, ArrowRight, Loader2, LogOut, CheckCircle, Package, RefreshCw, ExternalLink } from 'lucide-react';
 import { useAuth, ShippingAddress, CustomerOrder } from '../../contexts/AuthContext';
-import { InventoryItem, GiftCard } from '../../types';
+import { InventoryItem } from '../../types';
 import { isOrderEligibleForExchange, isGiftCardOrder, parseSafeDate } from '../../services/webOrderToSale';
 import { isOrderExpired } from '../../services/webOrderFulfillment';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../services/firebase';
 import { useModal } from '../../contexts/ModalContext';
 
 
@@ -18,11 +16,7 @@ interface UserDashboardProps {
   onRefreshOrders?: () => void;
 }
 
-import { getShowroomID } from '../../services/storage';
-
-const PUBLIC_SHOWROOM_ID = getShowroomID();
-
-type ActiveTab = 'compras' | 'giftcards' | 'direcciones' | 'favoritos' | 'datos';
+type ActiveTab = 'compras' | 'direcciones' | 'favoritos' | 'datos';
 
 const UserDashboard: React.FC<UserDashboardProps> = ({
   isOpen,
@@ -37,38 +31,6 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
   
   const [activeTab, setActiveTab] = React.useState<ActiveTab>('compras');
   const [comprasSubTab, setComprasSubTab] = React.useState<'actuales' | 'historial'>('actuales');
-
-  const [userGiftCards, setUserGiftCards] = React.useState<GiftCard[]>([]);
-  const [isLoadingGiftCards, setIsLoadingGiftCards] = React.useState(false);
-  const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!customerProfile || !isOpen) return;
-    const loadGifts = async () => {
-      try {
-        setIsLoadingGiftCards(true);
-        const srDoc = await getDoc(doc(db, 'showrooms', PUBLIC_SHOWROOM_ID));
-        if (srDoc.exists()) {
-          const allGifts: GiftCard[] = srDoc.data()?.giftCards || [];
-          const myCodes = new Set((customerProfile.giftCards || []).map(c => (c || '').trim().toUpperCase()));
-          const myEmail = customerProfile.email?.toLowerCase().trim();
-          const myUid = customerProfile.uid;
-
-          const filtered = allGifts.filter(g => 
-            (g.codigo && myCodes.has(g.codigo.trim().toUpperCase())) ||
-            (g.email && g.email.toLowerCase().trim() === myEmail) ||
-            ((g as any).customerId && (g as any).customerId === myUid)
-          );
-          setUserGiftCards(filtered);
-        }
-      } catch (e) {
-        console.error('Error al cargar Gift Cards del usuario:', e);
-      } finally {
-        setIsLoadingGiftCards(false);
-      }
-    };
-    loadGifts();
-  }, [customerProfile, isOpen]);
 
   const isCancelledOrder = (estado?: string) =>
     ['Cancelado', 'CANCELLED', 'REJECTED', 'EXPIRED', 'FAILED', 'REFUNDED'].includes(estado || '');
@@ -274,7 +236,6 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
         <div className="flex flex-wrap border-b border-black/5 bg-neutral-50/50 flex-shrink-0">
           {[
             { id: 'compras', icon: ShoppingBag, label: 'Compras' },
-            { id: 'giftcards', icon: Gift, label: 'Gift Cards' },
             { id: 'direcciones', icon: MapPin, label: 'Envío' },
             { id: 'favoritos', icon: Heart, label: 'Favoritos' },
             { id: 'datos', icon: User, label: 'Mis Datos' }
@@ -506,110 +467,6 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                   </div>
                 ));
               })()}
-            </div>
-          )}
-
-          {/* TAB: MIS GIFT CARDS */}
-          {activeTab === 'giftcards' && (
-            <div className="space-y-6">
-              {isLoadingGiftCards ? (
-                <div className="py-20 text-center text-neutral-400 space-y-3">
-                  <Loader2 size={24} className="animate-spin mx-auto text-black/40" />
-                  <p className="text-[10px] tracking-[2px] uppercase">Cargando tus Gift Cards...</p>
-                </div>
-              ) : userGiftCards.length === 0 ? (
-                <div className="py-20 text-center text-neutral-400 space-y-3">
-                  <Gift size={36} className="mx-auto text-neutral-300" strokeWidth={1} />
-                  <p className="text-[10px] tracking-[0.2em] uppercase font-light">
-                    No tenés Gift Cards ni créditos a favor activos
-                  </p>
-                  <p className="text-[9px] text-neutral-400 max-w-xs mx-auto normal-case">
-                    Cuando realices un cambio con saldo a favor o te regalen una tarjeta virtual, aparecerá registrada acá.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="p-3 bg-neutral-50 border border-neutral-200 text-[9px] text-neutral-600 space-y-1">
-                    <p className="font-semibold text-black uppercase tracking-wider">¿Cómo usar tus Gift Cards?</p>
-                    <p className="normal-case leading-relaxed">
-                      Copiá el código y pegalo en el campo <strong>Gift Card o Cupón</strong> durante el checkout para descontar tu saldo automáticamente.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3">
-                    {userGiftCards.map((gc) => {
-                      const isActiva = gc.estado === 'ACTIVA' && gc.saldo > 0;
-                      const isCopied = copiedCode === gc.codigo;
-
-                      return (
-                        <div 
-                          key={gc.id || gc.codigo}
-                          className={`p-5 border transition-all ${
-                            isActiva 
-                              ? 'border-neutral-900 bg-white shadow-xs' 
-                              : 'border-neutral-200 bg-neutral-50 opacity-70'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2 pb-3 border-b border-neutral-100">
-                            <div className="flex items-center gap-2">
-                              <Gift size={15} className={isActiva ? 'text-black' : 'text-neutral-400'} />
-                              <span className="text-[10px] tracking-[1.5px] uppercase font-bold text-black">
-                                {gc.destinatario || 'Gift Card'}
-                              </span>
-                            </div>
-                            <span className={`text-[8px] tracking-[1.5px] uppercase px-2 py-0.5 font-bold rounded ${
-                              isActiva 
-                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
-                                : 'bg-neutral-200 text-neutral-600'
-                            }`}>
-                              {isActiva ? 'Disponible' : gc.estado || 'Agotada'}
-                            </span>
-                          </div>
-
-                          <div className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                              <p className="text-[8px] uppercase tracking-[1.5px] text-neutral-400 mb-0.5">Saldo Disponible</p>
-                              <p className="text-xl font-bold tracking-tight text-black">
-                                ${gc.saldo.toLocaleString('es-AR')}
-                                {gc.montoInicial && gc.montoInicial !== gc.saldo && (
-                                  <span className="text-[10px] font-normal text-neutral-400 ml-2 line-through">
-                                    ${gc.montoInicial.toLocaleString('es-AR')}
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <div className="px-3 py-2 bg-neutral-100 border border-neutral-200 font-mono text-[12px] font-bold tracking-wider text-black select-all">
-                                {gc.codigo}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (navigator.clipboard) {
-                                    navigator.clipboard.writeText(gc.codigo);
-                                    setCopiedCode(gc.codigo);
-                                    setTimeout(() => setCopiedCode(null), 2000);
-                                  }
-                                }}
-                                title="Copiar código"
-                                className="p-2 border border-black bg-black text-white hover:bg-neutral-800 transition-colors"
-                              >
-                                {isCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[8px] text-neutral-400 uppercase tracking-wider">
-                            <span>Emisión: {new Date(gc.fechaCreacion || Date.now()).toLocaleDateString('es-AR')}</span>
-                            {gc.ventaOrigenId && <span>Origen: Cambio #{gc.ventaOrigenId.slice(-6).toUpperCase()}</span>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 

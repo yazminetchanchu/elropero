@@ -347,6 +347,22 @@ describe('webOrderFulfillment Service - Stock, Confirmaciones y Gift Cards', () 
       );
       consoleSpy.mockRestore();
     });
+
+    it('reporta errores internal/CORS sin lanzar al cliente', async () => {
+      mockHttpsCallableFn.mockRejectedValueOnce({
+        code: 'functions/internal',
+        message: 'internal',
+      });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await expect(releaseExpiredReservations('ROPERO')).resolves.toBeUndefined();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[releaseExpiredReservations] Error interno al verificar reservas expiradas:',
+        'internal'
+      );
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('cancelWebOrderReservation', () => {

@@ -109,7 +109,7 @@ interface CheckoutFlowProps {
   webSettings: WebSettings;
   onSuccess: () => void; // Limpia el carrito local y cierra
   getDiscount: (item: InventoryItem) => number;
-  getDiscountedPrice: (price: number, discount: number, isTransferencia?: boolean) => number;
+  getDiscountedPrice: (price: number, discount: number, isTransferencia?: boolean, costo?: number) => number;
   initialPaymentMethod: 'transferencia' | 'tarjeta';
   initialAppliedGiftCard: GiftCard | null;
 }
@@ -256,7 +256,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       const orderItems = cart.map(c => {
         const disc = getDiscount(c.product);
         const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-        const finalPrice = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+        const finalPrice = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia', c.product.costo);
         return {
           productId: c.product.id,
           descripcion: c.product.descripcion,
@@ -508,7 +508,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
     return cart.reduce((sum, c) => {
       const disc = getDiscount(c.product);
       const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-      const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+      const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia', c.product.costo);
       return sum + price * c.quantity;
     }, 0);
   }, [cart, getDiscount, getDiscountedPrice, paymentMethod]);
@@ -640,7 +640,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       const orderItems = cart.map(c => {
         const disc = getDiscount(c.product);
         const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-        const finalPrice = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+        const finalPrice = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia', c.product.costo);
         return {
           productId: c.product.id,
           descripcion: c.product.descripcion,
@@ -829,7 +829,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
       items: cart.map(c => {
         const disc = getDiscount(c.product);
         const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-        const finalPrice = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+        const finalPrice = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia', c.product.costo);
         return {
           descripcion: c.product.descripcion,
           talle: c.selectedTalle || '',
@@ -1287,7 +1287,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                 {cart.map((c, idx) => {
                   const disc = getDiscount(c.product);
                   const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-                  const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia');
+                  const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia', c.product.costo);
                   return (
                     <div key={idx} className="py-3 flex justify-between items-center text-[10px] tracking-[0.15em] uppercase font-light">
                       <div className="flex flex-col">

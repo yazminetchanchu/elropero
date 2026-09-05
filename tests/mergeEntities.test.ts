@@ -110,4 +110,59 @@ describe('mergeEntities - Resolución de Conflictos de Concurrencia', () => {
     expect(mergeEntities([sampleExpense], undefined as any)).toEqual([sampleExpense]);
     expect(mergeEntities([], [])).toEqual([]);
   });
+
+  describe('Bug #5 - Prevención de resurrección de eliminados y preservación de config web', () => {
+    it('no resucita ítems eliminados localmente con isDeleted o deleted', () => {
+      const serverItems: any[] = [
+        { id: 'prod-1', descripcion: 'Vestido Negro', cantidad: 5 },
+        { id: 'prod-2', descripcion: 'Pantalón Jean', cantidad: 3 }
+      ];
+
+      const localItems: any[] = [
+        { id: 'prod-1', isDeleted: true, updatedAt: '2026-08-31T10:00:00Z' }
+      ];
+
+      const merged = mergeEntities(localItems, serverItems);
+      expect(merged).toHaveLength(1);
+      expect(merged[0].id).toBe('prod-2');
+    });
+
+    it('ignora ítems eliminados en servidor marcados con deleted o deletedAt', () => {
+      const serverItems: any[] = [
+        { id: 'prod-1', descripcion: 'Remera Azul', deleted: true },
+        { id: 'prod-2', descripcion: 'Remera Roja', deletedAt: '2026-08-31T09:00:00Z' },
+        { id: 'prod-3', descripcion: 'Remera Blanca', cantidad: 4 }
+      ];
+
+      const localItems: any[] = [];
+
+      const merged = mergeEntities(localItems, serverItems);
+      expect(merged).toHaveLength(1);
+      expect(merged[0].id).toBe('prod-3');
+    });
+
+    it('resuelve conflictos respetando timestamps y preserva webDiscount', () => {
+      const serverItem: any = {
+        id: 'prod-1',
+        descripcion: 'Blusa Seda',
+        cantidad: 10,
+        webDiscount: 15,
+        updatedAt: '2026-08-31T08:00:00Z'
+      };
+
+      const localItem: any = {
+        id: 'prod-1',
+        descripcion: 'Blusa Seda Actualizada',
+        cantidad: 8,
+        updatedAt: '2026-08-31T10:00:00Z' // Más reciente
+      };
+
+      const merged = mergeEntities([localItem], [serverItem]);
+      expect(merged).toHaveLength(1);
+      expect(merged[0].descripcion).toBe('Blusa Seda Actualizada');
+      expect(merged[0].cantidad).toBe(8);
+      expect(merged[0].webDiscount).toBe(15); // Preserva webDiscount
+    });
+  });
 });
+

@@ -937,9 +937,44 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
           <div className="space-y-6 pt-10 border-t border-[#C9B8A8]/20">
             <div className="flex items-center gap-4 border-b border-[#C9B8A8]/20 pb-6">
               <Percent className="text-[#C9B8A8]" size={24} />
-              <h3 className="font-serif text-2xl italic text-[#1A1A1A]">Descuentos por Sección</h3>
+              <h3 className="font-serif text-2xl italic text-[#1A1A1A]">Descuentos y Promociones</h3>
             </div>
-            <p className="text-[10px] tracking-[2px] uppercase opacity-40 font-bold text-left">Aplicá un % de descuento a todas las prendas de una sección. Se muestra el precio original tachado y el precio con descuento.</p>
+            
+            {/* Tope Máximo Global de Descuento */}
+            <div className="p-4 bg-[#FDFBF7] border border-[#C9B8A8]/30 rounded-xl space-y-2 text-left">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold tracking-[2px] uppercase text-[#1A1A1A]">Tope Máximo Global de Descuento</h4>
+                  <p className="text-[10px] text-[#1A1A1A]/60 mt-0.5">
+                    Límite máximo que puede alcanzar cualquier promoción acumulada en la tienda web.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={5}
+                    max={90}
+                    step={5}
+                    value={localSettings.maxDiscountPercentage ?? 50}
+                    onChange={e => {
+                      const val = Math.max(5, Math.min(90, parseInt(e.target.value) || 50));
+                      setLocalSettings({
+                        ...localSettings,
+                        maxDiscountPercentage: val,
+                      });
+                    }}
+                    className="w-16 bg-white border border-[#C9B8A8]/40 rounded-lg px-2 py-1.5 text-xs font-bold text-center focus:outline-none focus:border-[#C9B8A8]"
+                  />
+                  <span className="text-[10px] opacity-60 font-bold">%</span>
+                </div>
+              </div>
+              <div className="text-[10px] text-amber-700 bg-amber-50/80 border border-amber-200/60 rounded-lg p-2 flex items-center gap-2">
+                <span>🛡️</span>
+                <span><strong>Protección de Costo Mayorista activa:</strong> Las prendas nunca se venderán por debajo de su costo de inventario, aun si el porcentaje de descuento resultara mayor.</span>
+              </div>
+            </div>
+
+            <p className="text-[10px] tracking-[2px] uppercase opacity-40 font-bold text-left">Descuento por categoría/sección:</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(localSettings?.categoriesOrder || []).map(cat => {
                 const disc = localSettings.discountBySection?.[cat] || 0;
@@ -952,10 +987,11 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
-                        min={0} max={90} step={5}
+                        min={0} max={localSettings.maxDiscountPercentage ?? 90} step={5}
                         value={disc}
                         onChange={e => {
-                          const val = Math.max(0, Math.min(90, parseInt(e.target.value) || 0));
+                          const maxCap = localSettings.maxDiscountPercentage ?? 90;
+                          const val = Math.max(0, Math.min(maxCap, parseInt(e.target.value) || 0));
                           setLocalSettings({
                             ...localSettings,
                             discountBySection: { ...(localSettings.discountBySection || {}), [cat]: val }

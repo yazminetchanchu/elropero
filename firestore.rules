@@ -20,10 +20,11 @@ service cloud.firestore {
       );
     }
 
-    // Reglas para el documento principal del showroom e inventario
+    // Reglas para el documento principal del showroom e inventario (Solo Admin)
     match /showrooms/{showroomId} {
-      // Lectura pública necesaria para el catálogo web y configuración del sitio
-      allow read: if true;
+      // Restringir lectura del documento monolítico exclusivamente a administradores
+      // Protege ventas históricas, egresos, costos mayoristas y tarjetas de regalo globales
+      allow read: if isAdmin();
       
       // Prohibir creación y borrado desde clientes no autorizados
       allow create, delete: if isAdmin();
@@ -61,12 +62,18 @@ service cloud.firestore {
       match /sales/{saleId} {
         allow read, write: if isAdmin();
       }
+
+      // Gift Cards del showroom: solo admin. Evita FirebaseError de permisos
+      // si un cliente lista esta colección desde el dashboard.
+      match /giftCards/{cardId} {
+        allow read, write: if isAdmin();
+      }
     }
 
-    // Colección root de clientes para retrocompatibilidad
+    // Colección root de clientes y subcolecciones privadas (orders, giftCards)
     match /customers/{customerId} {
       allow read, write: if isAuthenticated() && (request.auth.uid == customerId || isAdmin());
-      match /orders/{orderId} {
+      match /{document=**} {
         allow read, write: if isAuthenticated() && (request.auth.uid == customerId || isAdmin());
       }
     }
@@ -75,6 +82,10 @@ service cloud.firestore {
     match /gift_cards/{cardId} {
       allow read: if true; // Requerido para verificación por código en Checkout
       allow write: if isAdmin();
+    }
+
+    match /giftCards/{cardId} {
+      allow read, write: if isAdmin();
     }
 
     match /sales/{saleId} {

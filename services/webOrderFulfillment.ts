@@ -392,7 +392,13 @@ export async function releaseExpiredReservations(showroomId: string): Promise<vo
       console.log(`[releaseExpiredReservations] Se liberaron ${result.data.releasedCount} reservas expiradas en el servidor.`);
     }
   } catch (e: any) {
-    console.warn('[releaseExpiredReservations] Aviso al verificar reservas expiradas:', e?.message || e);
+    const code = String(e?.code || '');
+    const message = e?.message || e;
+    if (code.includes('internal') || code.includes('deadline') || /cors|internal/i.test(String(message))) {
+      console.warn('[releaseExpiredReservations] Error interno al verificar reservas expiradas:', message);
+    } else {
+      console.warn('[releaseExpiredReservations] Aviso al verificar reservas expiradas:', message);
+    }
   }
 }
 

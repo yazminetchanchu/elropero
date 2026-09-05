@@ -20,9 +20,10 @@ import { computeSaleBreakdown, isMonth, getItemSnapshot } from './services/finan
 import { deductSaleFromInventory, restoreSaleToInventory } from './services/webOrderFulfillment';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import NetworkStatus from './components/NetworkStatus';
 import { ModalProvider } from './contexts/ModalContext';
-import { auth } from './services/firebase';
+import NetworkStatus from './components/NetworkStatus';
+import { auth, functions } from './services/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
 
@@ -563,18 +564,13 @@ const App: React.FC = () => {
       return;
     }
 
-    // Paso 1C: Dispositivo nuevo -> Solicitar código 2FA OTP mediante Cloud Function
+    // Paso 1C: Dispositivo nuevo -> Solicitar código 2FA OTP mediante Cloud Function Callable
     setIsSendingOTP(true);
     try {
-      const response = await fetch('https://us-central1-el-ropero-8989a.cloudfunctions.net/sendAdmin2FACode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail })
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'No se pudo enviar el código de verificación 2FA por correo.');
+      const sendOtp = httpsCallable<{ email: string }, { success: boolean; message?: string; error?: string }>(functions, 'sendAdmin2FACode');
+      const result = await sendOtp({ email: cleanEmail });
+      if (!result.data?.success) {
+        throw new Error(result.data?.error || 'No se pudo enviar el código de verificación 2FA por correo.');
       }
 
       setStep2FA(true);
@@ -595,14 +591,10 @@ const App: React.FC = () => {
     setIsSendingOTP(true);
     setAuthError(null);
     try {
-      const response = await fetch('https://us-central1-el-ropero-8989a.cloudfunctions.net/sendAdmin2FACode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: adminEmail.trim() })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Error al reenviar código.');
+      const sendOtp = httpsCallable<{ email: string }, { success: boolean; message?: string; error?: string }>(functions, 'sendAdmin2FACode');
+      const result = await sendOtp({ email: adminEmail.trim() });
+      if (!result.data?.success) {
+        throw new Error(result.data?.error || 'Error al reenviar código.');
       }
       setOtpCountdown(300);
       alert('🔒 Código 2FA reenviado a tu email.');
@@ -627,15 +619,11 @@ const App: React.FC = () => {
     const cleanEmail = adminEmail.trim().toLowerCase();
 
     try {
-      const response = await fetch('https://us-central1-el-ropero-8989a.cloudfunctions.net/verifyAdmin2FACode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, code: otpCode.trim() })
-      });
+      const verifyOtp = httpsCallable<{ email: string; code: string }, { success: boolean; verified: boolean; error?: string; message?: string }>(functions, 'verifyAdmin2FACode');
+      const result = await verifyOtp({ email: cleanEmail, code: otpCode.trim() });
 
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.verified) {
-        throw new Error(data.error || 'Código 2FA incorrecto o expirado.');
+      if (!result.data?.verified) {
+        throw new Error(result.data?.error || 'Código 2FA incorrecto o expirado.');
       }
 
       // Código correcto -> Guardar este dispositivo como verificado/de confianza en este navegador
@@ -769,13 +757,15 @@ const App: React.FC = () => {
     // =======================
     if (saleData.tipo === 'cambio') {
       if (!saleData.itemsDevueltos?.length) {
-        alert('Un cambio o devolución debe tener al menos una prenda devuelta');
-        return;
+        const msg = 'Un cambio o devolución debe tener al menos una prenda devuelta';
+        alert(msg);
+        throw new Error(msg);
       }
       // Allow partial returns without new items or gift card if there is no monetary difference
       if (!saleData.itemsNuevos?.length && (saleData.diferencia ?? 0) > 0 && !saleData.giftGeneradaId) {
-        alert('Un cambio debe incluir prendas nuevas o generar una Gift Card a favor del cliente');
-        return;
+        const msg = 'Un cambio debe incluir prendas nuevas o generar una Gift Card a favor del cliente';
+        alert(msg);
+        throw new Error(msg);
       }
     }
 
@@ -783,8 +773,9 @@ const App: React.FC = () => {
     const diferencia = saleData.tipo === 'cambio' ? (saleData.diferencia ?? 0) : 0;
 
     if (saleData.tipo === 'cambio' && diferencia > 0 && !saleData.pago) {
-      alert('Debe especificarse el método de pago cuando hay diferencia a favor');
-      return;
+      const msg = 'Debe especificarse el método de pago cuando hay diferencia a favor';
+      alert(msg);
+      throw new Error(msg);
     }
 
     // Validar stock de las prendas nuevas (si las hay)
@@ -792,12 +783,14 @@ const App: React.FC = () => {
       for (const itemNuevo of saleData.itemsNuevos) {
         const invItem = inventory.find(i => i.id === itemNuevo.id);
         if (!invItem) {
-          alert('Producto no encontrado en stock');
-          return;
+          const msg = 'Producto no encontrado en stock';
+          alert(msg);
+          throw new Error(msg);
         }
         if (invItem.cantidad < itemNuevo.cantidad) {
-          alert(`Stock insuficiente para ${itemNuevo.descripcion}`);
-          return;
+          const msg = `Stock insuficiente para ${itemNuevo.descripcion}`;
+          alert(msg);
+          throw new Error(msg);
         }
       }
     }
@@ -805,16 +798,18 @@ const App: React.FC = () => {
     if (saleData.tipo === 'cambio' && saleData.ventaOriginalId) {
       const ventaOriginal = sales.find(s => s.id === saleData.ventaOriginalId);
       if (!ventaOriginal) {
-        alert('Venta original no encontrada');
-        return;
+        const msg = 'Venta original no encontrada';
+        alert(msg);
+        throw new Error(msg);
       }
 
       const diasTranscurridos = Math.floor(
         (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
       );
       if (diasTranscurridos > 15) {
-        alert('Ya han pasado 15 días desde la compra.');
-        return;
+        const msg = 'Ya han pasado 15 días desde la compra.';
+        alert(msg);
+        throw new Error(msg);
       }
 
       // Validar que cada prenda devuelta pertenezca a la venta original
@@ -822,18 +817,14 @@ const App: React.FC = () => {
       for (const devuelto of (saleData.itemsDevueltos || [])) {
         const enOriginal = itemsOriginales.find(i => i.id === devuelto.id && i.talle === devuelto.talle && i.color === devuelto.color);
         if (!enOriginal) {
-          alert(
-            `La prenda "${devuelto.descripcion}" no pertenece a la venta original seleccionada.\n` +
-            `Solo podés devolver prendas que fueron compradas en esa venta.`
-          );
-          return;
+          const msg = `La prenda "${devuelto.descripcion}" no pertenece a la venta original seleccionada.\nSolo podés devolver prendas que fueron compradas en esa venta.`;
+          alert(msg);
+          throw new Error(msg);
         }
         if (devuelto.cantidad > enOriginal.cantidad) {
-          alert(
-            `La cantidad devuelta de "${devuelto.descripcion}" (${devuelto.cantidad}) ` +
-            `no puede superar la cantidad comprada originalmente (${enOriginal.cantidad}).`
-          );
-          return;
+          const msg = `La cantidad devuelta de "${devuelto.descripcion}" (${devuelto.cantidad}) no puede superar la cantidad comprada originalmente (${enOriginal.cantidad}).`;
+          alert(msg);
+          throw new Error(msg);
         }
 
         // --- MEJORA #3: Verificar unidades ya devueltas en cambios anteriores ---
@@ -846,11 +837,9 @@ const App: React.FC = () => {
 
         const disponibleDevolver = enOriginal.cantidad - yaDevueltaEn;
         if (devuelto.cantidad > disponibleDevolver) {
-          alert(
-            `La prenda "${devuelto.descripcion}" tiene ${disponibleDevolver} unidad(es) disponibles para devolver ` +
-            `(ya se devolvieron ${yaDevueltaEn} en cambios anteriores).`
-          );
-          return;
+          const msg = `La prenda "${devuelto.descripcion}" tiene ${disponibleDevolver} unidad(es) disponibles para devolver (ya se devolvieron ${yaDevueltaEn} en cambios anteriores).`;
+          alert(msg);
+          throw new Error(msg);
         }
       }
     }
