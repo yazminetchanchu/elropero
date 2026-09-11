@@ -35,7 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.migrateMissingSaleItemVariants = void 0;
 exports.parseVariantFromDescripcion = parseVariantFromDescripcion;
-const functions = __importStar(require("firebase-functions"));
+const https_1 = require("firebase-functions/v2/https");
 const admin = __importStar(require("firebase-admin"));
 /** Helper to extract size (talle) and color from description */
 function parseVariantFromDescripcion(descripcion) {
@@ -56,11 +56,11 @@ function parseVariantFromDescripcion(descripcion) {
  *
  * Guarded: only users with admin privileges (or a designated service account) may invoke it.
  */
-exports.migrateMissingSaleItemVariants = functions.https.onCall(async (data, context) => {
+exports.migrateMissingSaleItemVariants = (0, https_1.onCall)(async (data, context) => {
     var _a;
     // Simple admin guard – adjust according to your auth model.
     if (!context.auth || !(((_a = context.auth.token) === null || _a === void 0 ? void 0 : _a.admin) || context.auth.uid === 'service-account')) {
-        throw new functions.https.HttpsError('permission-denied', 'Only administrators can run this migration');
+        throw new https_1.HttpsError('permission-denied', 'Only administrators can run this migration');
     }
     const db = admin.firestore();
     const showroomsSnap = await db.collection('showrooms').get();

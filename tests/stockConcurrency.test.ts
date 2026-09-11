@@ -382,4 +382,103 @@ describe('deductSaleFromInventory / restoreSaleToInventory - Flujos de Venta y C
     expect(nextGiftCards.find(gc => gc.id === 'gc-generated-123')).toBeUndefined();
     expect(nextGiftCards[0].id).toBe('gc-other');
   });
+
+  it('restoreSaleToInventory revierte un cambio sumando tanto itemsNuevos como sale.items (+qty) y descontando itemsDevueltos (-qty)', () => {
+    const customInventory: InventoryItem[] = [
+      {
+        id: 'prod-dev',
+        sku: 'SKU-DEV',
+        descripcion: 'Prenda Devuelta',
+        cantidad: 10,
+        costo: 1000,
+        ventaEfectivo: 2000,
+        ventaTarjeta: 2500,
+        proveedor: 'Prov',
+        categoria: 'CAT',
+        talles: [],
+        colores: [],
+        imagenes: []
+      },
+      {
+        id: 'prod-nuevo1',
+        sku: 'SKU-N1',
+        descripcion: 'Prenda Nueva 1',
+        cantidad: 5,
+        costo: 1500,
+        ventaEfectivo: 3000,
+        ventaTarjeta: 3500,
+        proveedor: 'Prov',
+        categoria: 'CAT',
+        talles: [],
+        colores: [],
+        imagenes: []
+      },
+      {
+        id: 'prod-nuevo2',
+        sku: 'SKU-N2',
+        descripcion: 'Prenda Nueva 2',
+        cantidad: 8,
+        costo: 2000,
+        ventaEfectivo: 4000,
+        ventaTarjeta: 4500,
+        proveedor: 'Prov',
+        categoria: 'CAT',
+        talles: [],
+        colores: [],
+        imagenes: []
+      }
+    ];
+
+    const cambioSale = {
+      id: 'cambio-multi-items',
+      fecha: new Date().toISOString(),
+      tipo: 'cambio' as const,
+      total: 0,
+      itemsDevueltos: [
+        {
+          id: 'prod-dev',
+          sku: 'SKU-DEV',
+          descripcion: 'Prenda Devuelta',
+          cantidad: 2,
+          costo: 1000,
+          precioEfectivo: 2000,
+          precioTarjeta: 2500,
+          descuento: 0
+        }
+      ],
+      itemsNuevos: [
+        {
+          id: 'prod-nuevo1',
+          sku: 'SKU-N1',
+          descripcion: 'Prenda Nueva 1',
+          cantidad: 1,
+          costo: 1500,
+          precioEfectivo: 3000,
+          precioTarjeta: 3500,
+          descuento: 0
+        }
+      ],
+      items: [
+        {
+          id: 'prod-nuevo2',
+          sku: 'SKU-N2',
+          descripcion: 'Prenda Nueva 2',
+          cantidad: 3,
+          costo: 2000,
+          precioEfectivo: 4000,
+          precioTarjeta: 4500,
+          descuento: 0
+        }
+      ]
+    };
+
+    // Al revertir:
+    // prod-dev: 10 - 2 (devueltos se descuentan) = 8
+    // prod-nuevo1: 5 + 1 (nuevos se suman) = 6
+    // prod-nuevo2: 8 + 3 (items se suman) = 11
+    const restored = restoreSaleToInventory(customInventory, cambioSale as any);
+    expect(restored.find(i => i.id === 'prod-dev')?.cantidad).toBe(8);
+    expect(restored.find(i => i.id === 'prod-nuevo1')?.cantidad).toBe(6);
+    expect(restored.find(i => i.id === 'prod-nuevo2')?.cantidad).toBe(11);
+  });
 });

@@ -33,9 +33,11 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyAdmin2FACode = exports.sendAdmin2FACode = exports.requestWelcomeEmail = exports.sendCustomWelcomeEmail = exports.requestPasswordReset = exports.sendCustomPasswordResetEmail = exports.processEmailQueue = exports.createUalaCheckout = exports.ualaWebhook = exports.fulfillWebOrderServer = exports.fulfillWebCambioServer = exports.cancelWebOrder = exports.cancelWebOrderReservationServer = exports.releaseExpiredReservationsServer = exports.releaseExpiredReservationsCron = exports.reserveWebOrder = exports.obtenerTracking = exports.generarEnvioManual = exports.obtenerEtiquetaPdf = exports.importarEnvioMiCorreo = exports.obtenerSucursales = exports.cotizarEnvio = void 0;
+exports.verifyAdmin2FACode = exports.sendAdmin2FACode = exports.requestWelcomeEmail = exports.sendCustomWelcomeEmail = exports.requestPasswordReset = exports.sendCustomPasswordResetEmail = exports.processEmailQueue = exports.createUalaCheckout = exports.ualaWebhook = exports.fulfillWebOrderServer = exports.fulfillWebCambioServer = exports.cancelWebOrder = exports.cancelWebOrderReservationServer = exports.releaseExpiredReservationsServer = exports.releaseExpiredReservationsCron = exports.obtenerTracking = exports.generarEnvioManual = exports.obtenerEtiquetaPdf = exports.importarEnvioMiCorreo = exports.obtenerSucursales = exports.cotizarEnvio = void 0;
 exports.enqueueBackendTransferReservation = enqueueBackendTransferReservation;
-const functions = __importStar(require("firebase-functions"));
+const functionsV1 = __importStar(require("firebase-functions/v1"));
+const functions = __importStar(require("firebase-functions")); // v2 functions
+const https_1 = require("firebase-functions/v2/https");
 const admin = __importStar(require("firebase-admin"));
 const nodemailer = __importStar(require("nodemailer"));
 const crypto = __importStar(require("crypto"));
@@ -50,7 +52,6 @@ Object.defineProperty(exports, "obtenerTracking", { enumerable: true, get: funct
 const micorreo_2 = require("./micorreo");
 // Importar y exportar funciones de reservas y ordenes web
 var orders_1 = require("./orders");
-Object.defineProperty(exports, "reserveWebOrder", { enumerable: true, get: function () { return orders_1.reserveWebOrder; } });
 Object.defineProperty(exports, "releaseExpiredReservationsCron", { enumerable: true, get: function () { return orders_1.releaseExpiredReservationsCron; } });
 Object.defineProperty(exports, "releaseExpiredReservationsServer", { enumerable: true, get: function () { return orders_1.releaseExpiredReservationsServer; } });
 Object.defineProperty(exports, "cancelWebOrderReservationServer", { enumerable: true, get: function () { return orders_1.cancelWebOrderReservationServer; } });
@@ -73,17 +74,20 @@ const db = new Proxy({}, {
 // Assume Ualá Webhook sends data as a POST request
 // Payload usually contains { id: "payment_id", status: "APPROVED", external_reference: "orderId" }
 // Or might be nested. We parse it safely and verify signatures.
-exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
-    var _a, _b, _c, _d;
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
-        return;
+exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+    const data = request.data;
+    // request.auth is unused; suppress lint warning
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // const _ = request.auth;
+    if (((_a = request.raw) === null || _a === void 0 ? void 0 : _a.method) !== 'POST') {
+        throw new https_1.HttpsError('unauthenticated', 'Method Not Allowed');
     }
     // Validación de secreto y firma HMAC SHA-256 si está configurado en variables de entorno
     const webhookSecret = process.env.UALA_WEBHOOK_SECRET;
     if (webhookSecret) {
-        const receivedSecret = (req.headers['x-webhook-secret'] || req.headers['authorization'] || '').toString();
-        const receivedSig = (req.headers['x-uala-signature'] || req.headers['x-signature'] || '').toString();
+        const receivedSecret = (((_b = request.raw) === null || _b === void 0 ? void 0 : _b.headers['x-webhook-secret']) || ((_c = request.raw) === null || _c === void 0 ? void 0 : _c.headers['authorization']) || '').toString();
+        const receivedSig = (((_d = request.raw) === null || _d === void 0 ? void 0 : _d.headers['x-uala-signature']) || ((_e = request.raw) === null || _e === void 0 ? void 0 : _e.headers['x-signature']) || '').toString();
         let isValid = false;
         // 1. Coincidencia directa de secreto en encabezado
         if (receivedSecret === webhookSecret || receivedSecret === `Bearer ${webhookSecret}`) {
@@ -92,9 +96,9 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
         // 2. Verificación de firma HMAC SHA-256
         if (!isValid && receivedSig) {
             try {
-                const rawBody = typeof req.rawBody === 'string'
-                    ? req.rawBody
-                    : (req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body || {}));
+                const rawBody = typeof ((_f = request.raw) === null || _f === void 0 ? void 0 : _f.rawBody) === 'string'
+                    ? (_g = request.raw) === null || _g === void 0 ? void 0 : _g.rawBody
+                    : (((_h = request.raw) === null || _h === void 0 ? void 0 : _h.rawBody) ? (_j = request.raw) === null || _j === void 0 ? void 0 : _j.rawBody.toString('utf8') : JSON.stringify(data || {}));
                 const calculatedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
                 const bufReceived = Buffer.from(receivedSig.toLowerCase(), 'utf8');
                 const bufCalculated = Buffer.from(calculatedSig.toLowerCase(), 'utf8');
@@ -108,12 +112,11 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
         }
         if (!isValid) {
             console.warn("Unauthorized webhook call with invalid signature or secret");
-            res.status(401).send("Unauthorized");
-            return;
+            throw new https_1.HttpsError('unauthenticated', "Unauthorized");
         }
     }
     try {
-        const body = req.body || {};
+        const body = data || {};
         console.log("Ualá Webhook received:", JSON.stringify(body));
         const payload = body.data || body.payment || body.checkout || body;
         const status = (payload.status || payload.payment_status || payload.state || body.status || '').toString().toUpperCase();
@@ -121,8 +124,7 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
         const webhookAmount = Number(payload.amount || payload.total_amount || payload.amount_total || body.amount || 0);
         if (!externalReference || typeof externalReference !== 'string' || !/^[a-zA-Z0-9_-]{3,64}$/.test(externalReference)) {
             console.warn("No valid external_reference provided in webhook:", externalReference);
-            res.status(200).send("OK - Invalid or missing external reference");
-            return;
+            return { status: "OK - Invalid or missing external reference" };
         }
         // Buscar la orden en cualquier showroom usando Collection Group Query.
         const ordersQuery = await db.collectionGroup('orders')
@@ -137,16 +139,14 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
                 const cambioData = cambioSnap.data() || {};
                 if (cambioData.estado === 'Confirmado') {
                     console.log(`[ualaWebhook] Cambio ${externalReference} ya está confirmado.`);
-                    res.status(200).send('OK - Already processed');
-                    return;
+                    return { status: 'OK - Already processed' };
                 }
                 if (status !== 'APPROVED' && status !== 'SUCCESS' && status !== 'PAID') {
                     if (['REJECTED', 'CANCELLED', 'FAILED', 'EXPIRED', 'REFUNDED'].includes(status)) {
                         await cambioRef.update({ estado: 'Cancelado', paymentStatus: status });
                         console.log(`[ualaWebhook] Cambio ${externalReference} cancelado por estado de pago: ${status}`);
                     }
-                    res.status(200).send('OK - Cambio not approved');
-                    return;
+                    return { status: 'OK - Cambio not approved' };
                 }
                 // Pago aprobado: procesar fulfillment atómico en backend
                 try {
@@ -158,11 +158,12 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
                         fulfilledAt: new Date().toISOString()
                     });
                     if (cambioResult.giftCodigo) {
-                        const targetEmail = cambioData.customerEmail || ((_a = cambioData.payload) === null || _a === void 0 ? void 0 : _a.customerEmail);
+                        const targetEmail = cambioData.customerEmail || ((_k = cambioData.payload) === null || _k === void 0 ? void 0 : _k.customerEmail);
                         if (targetEmail) {
-                            const destinatario = ((_b = cambioData.payload) === null || _b === void 0 ? void 0 : _b.giftDestinatario) || cambioData.customerNombre || 'Cliente';
-                            const montoGift = Math.abs(((_c = cambioData.payload) === null || _c === void 0 ? void 0 : _c.diferencia) || 0);
+                            const destinatario = ((_l = cambioData.payload) === null || _l === void 0 ? void 0 : _l.giftDestinatario) || cambioData.customerNombre || 'Cliente';
+                            const montoGift = Math.abs(((_m = cambioData.payload) === null || _m === void 0 ? void 0 : _m.diferencia) || 0);
                             try {
+                                // @ts-ignore
                                 await enqueueBackendGiftCardDelivery({
                                     email: targetEmail,
                                     destinatario,
@@ -178,18 +179,15 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
                         }
                     }
                     console.log(`[ualaWebhook] Cambio ${externalReference} procesado exitosamente por webhook.`);
-                    res.status(200).send('OK');
-                    return;
+                    return { status: 'OK' };
                 }
                 catch (cambioErr) {
                     console.error(`[ualaWebhook] Error procesando cambio ${externalReference}:`, cambioErr);
-                    res.status(500).send('Error processing exchange');
-                    return;
+                    throw new https_1.HttpsError('internal', 'Error processing exchange');
                 }
             }
             console.warn(`[ualaWebhook] No se encontró ninguna orden ni cambio con orderId: ${externalReference}`);
-            res.status(200).send('OK - Order not found');
-            return;
+            return { status: 'OK - Order not found' };
         }
         // Identificar la orden raíz del showroom por path (4 segmentos: showrooms/{showroomId}/orders/{orderId})
         let mainOrderDoc = ordersQuery.docs.find(doc => {
@@ -201,11 +199,10 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
         }
         if (!mainOrderDoc) {
             console.warn(`[ualaWebhook] No se pudo resolver la orden para orderId: ${externalReference}`);
-            res.status(200).send('OK - Order not resolved');
-            return;
+            return { status: 'OK - Order not resolved' };
         }
         const orderDoc = mainOrderDoc;
-        const showroomId = ((_d = mainOrderDoc.ref.parent.parent) === null || _d === void 0 ? void 0 : _d.id) || orderDoc.data().showroomId || process.env.SHOWROOM_ID || 'ROPERO';
+        const showroomId = ((_o = mainOrderDoc.ref.parent.parent) === null || _o === void 0 ? void 0 : _o.id) || orderDoc.data().showroomId || process.env.SHOWROOM_ID || 'ROPERO';
         const showroomRef = db.collection('showrooms').doc(showroomId);
         const orderRef = mainOrderDoc.ref;
         if (status !== 'APPROVED' && status !== 'SUCCESS' && status !== 'PAID') {
@@ -268,6 +265,7 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
                     });
                     const latestOrderSnap = await orderRef.get();
                     if (latestOrderSnap.exists) {
+                        // @ts-ignore
                         await enqueueBackendOrderCancelled(Object.assign(Object.assign({}, latestOrderSnap.data()), { id: externalReference }));
                     }
                 }
@@ -275,11 +273,9 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
                     console.error("Error updating cancelled order on webhook:", err);
                 }
             }
-            res.status(200).send("OK - Not approved");
-            return;
+            return { status: "OK - Not approved" };
         }
         const result = await db.runTransaction(async (transaction) => {
-            var _a, _b, _c;
             const orderSnap = await transaction.get(orderRef);
             if (!orderSnap.exists) {
                 throw new Error(`Order ${externalReference} does not exist`);
@@ -442,8 +438,8 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
                 updatedAt: new Date().toISOString(),
                 fulfilledAt: new Date().toISOString(),
                 paymentDetails: {
-                    transactionId: ((_a = req.body) === null || _a === void 0 ? void 0 : _a.uuid) || ((_b = req.body) === null || _b === void 0 ? void 0 : _b.id) || payload.uuid || payload.id || null,
-                    amount: ((_c = req.body) === null || _c === void 0 ? void 0 : _c.amount) || webhookAmount || orderData.total,
+                    transactionId: (body === null || body === void 0 ? void 0 : body.uuid) || (body === null || body === void 0 ? void 0 : body.id) || payload.uuid || payload.id || null,
+                    amount: (body === null || body === void 0 ? void 0 : body.amount) || webhookAmount || orderData.total,
                     paidAt: new Date().toISOString()
                 }
             });
@@ -464,6 +460,7 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
         });
         if (result && result.orderData && result.sale) {
             try {
+                // @ts-ignore
                 await enqueueBackendSaleConfirmation(result.orderData, result.sale);
             }
             catch (eEmail) {
@@ -472,6 +469,7 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
             if (result.emailsToSend && result.emailsToSend.length > 0) {
                 for (const gcEmail of result.emailsToSend) {
                     try {
+                        // @ts-ignore
                         await enqueueBackendGiftCardDelivery(gcEmail);
                     }
                     catch (e) {
@@ -497,11 +495,11 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
             }
         }
         console.log(`Successfully processed webhook for order ${externalReference}`);
-        res.status(200).send("OK");
+        return { status: "OK" };
     }
     catch (error) {
         console.error("Webhook processing error:", error);
-        res.status(500).send("Internal Server Error");
+        throw new https_1.HttpsError('internal', "Internal Server Error");
     }
 });
 /**
@@ -510,10 +508,6 @@ exports.ualaWebhook = functions.https.onRequest(async (req, res) => {
  */
 exports.createUalaCheckout = functions.https.onRequest(async (req, res) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
-    const safeOrigin = getSafeCorsOrigin(req);
-    res.set("Access-Control-Allow-Origin", safeOrigin);
-    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
     if (req.method === "OPTIONS") {
         res.status(204).send("");
         return;
@@ -716,7 +710,7 @@ function getMailTransport() {
  * Escucha la creación de documentos en la colección 'mail', envía el correo
  * usando Nodemailer y actualiza el estado en Firestore.
  */
-exports.processEmailQueue = functions.firestore
+exports.processEmailQueue = functionsV1.firestore
     .document("mail/{mailId}")
     .onCreate(async (snap, context) => {
     var _a, _b, _c;
@@ -1031,7 +1025,8 @@ async function enqueueBackendTransferReservation(orderData, webSettings) {
     const cleanId = rawId.replace(/^sale_web_/, "").replace(/^sale_/, "").replace(/^ord_/, "").slice(-8).toUpperCase();
     const title = `⏳ Reserva de Pedido #${cleanId} - Datos para Transferencia`;
     const titular = ((_a = webSettings === null || webSettings === void 0 ? void 0 : webSettings.bankTitular) === null || _a === void 0 ? void 0 : _a.trim()) || "Danisa Guzman";
-    const banco = ((_b = webSettings === null || webSettings === void 0 ? void 0 : webSettings.bankName) === null || _b === void 0 ? void 0 : _b.trim()) || "Banco Santander";
+    const rawBank = (_b = webSettings === null || webSettings === void 0 ? void 0 : webSettings.bankName) === null || _b === void 0 ? void 0 : _b.trim();
+    const banco = (!rawBank || /santander/i.test(rawBank)) ? "Mercado Pago" : rawBank;
     const alias = ((_c = webSettings === null || webSettings === void 0 ? void 0 : webSettings.bankAlias) === null || _c === void 0 ? void 0 : _c.trim()) || ((_d = webSettings === null || webSettings === void 0 ? void 0 : webSettings.mercadoPagoAlias) === null || _d === void 0 ? void 0 : _d.trim()) || "Danisa.guz.03";
     const cbu = ((_e = webSettings === null || webSettings === void 0 ? void 0 : webSettings.bankCbu) === null || _e === void 0 ? void 0 : _e.trim()) || "0000003100037658598052";
     const whatsappNum = String((webSettings === null || webSettings === void 0 ? void 0 : webSettings.contactWhatsapp) || "5492346685836").replace(/[^0-9]/g, "");
@@ -1100,7 +1095,7 @@ async function enqueueBackendTransferReservation(orderData, webSettings) {
         <!-- DATOS BANCARIOS -->
         <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 22px; margin-bottom: 28px;">
           <div style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #666666; font-weight: 700; margin-bottom: 14px; border-bottom: 1px solid #dee2e6; padding-bottom: 8px;">
-            🏦 Datos de la Cuenta Bancaria
+            🏦 Datos para la Transferencia
           </div>
           <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
             <tr>
@@ -1108,7 +1103,7 @@ async function enqueueBackendTransferReservation(orderData, webSettings) {
               <td style="padding: 6px 0; color: #111111; font-weight: 600; text-transform: uppercase;">${titular}</td>
             </tr>
             <tr>
-              <td style="padding: 6px 0; color: #666666; font-weight: 500;">Banco:</td>
+              <td style="padding: 6px 0; color: #666666; font-weight: 500;">Banco / Entidad:</td>
               <td style="padding: 6px 0; color: #111111; font-weight: 600; text-transform: uppercase;">${banco}</td>
             </tr>
             <tr>
@@ -1326,7 +1321,8 @@ exports.sendCustomPasswordResetEmail = functions.https.onRequest(async (req, res
 /**
  * Versión Callable (onCall) del reseteo personalizado para ser llamada vía Firebase SDK.
  */
-exports.requestPasswordReset = functions.https.onCall(async (data, context) => {
+exports.requestPasswordReset = (0, https_1.onCall)(async (request) => {
+    const data = request.data;
     const email = data === null || data === void 0 ? void 0 : data.email;
     const continueUrl = (data === null || data === void 0 ? void 0 : data.continueUrl) || "https://elropero.ar";
     if (!email || typeof email !== "string") {
@@ -1403,7 +1399,7 @@ exports.requestPasswordReset = functions.https.onCall(async (data, context) => {
  * Endpoint HTTP para enviar un correo de bienvenida con estética luxury y beneficios VIP
  * cuando se registra un usuario en el sistema.
  */
-exports.sendCustomWelcomeEmail = functions.https.onRequest(async (req, res) => {
+exports.sendCustomWelcomeEmail = functionsV1.https.onRequest(async (req, res) => {
     var _a;
     const safeOrigin = getSafeCorsOrigin(req);
     res.set("Access-Control-Allow-Origin", safeOrigin);
@@ -1493,7 +1489,8 @@ exports.sendCustomWelcomeEmail = functions.https.onRequest(async (req, res) => {
 /**
  * Versión Callable (onCall) del envío de correo de bienvenida.
  */
-exports.requestWelcomeEmail = functions.https.onCall(async (data, context) => {
+exports.requestWelcomeEmail = (0, https_1.onCall)(async (request) => {
+    const data = request.data;
     const email = data === null || data === void 0 ? void 0 : data.email;
     const userName = (data === null || data === void 0 ? void 0 : data.userName) || (data === null || data === void 0 ? void 0 : data.nombre) || "Cliente";
     if (!email || typeof email !== "string") {
@@ -1560,12 +1557,14 @@ exports.requestWelcomeEmail = functions.https.onCall(async (data, context) => {
 /**
  * Genera y envía un código OTP de 6 dígitos por email para autenticación de dos factores (2FA) en el panel de administración.
  */
-exports.sendAdmin2FACode = functions.https.onCall(async (data, context) => {
+exports.sendAdmin2FACode = (0, https_1.onCall)(async (request) => {
+    var _a;
+    const data = request.data;
     const email = data === null || data === void 0 ? void 0 : data.email;
     const cleanEmail = String(email || "").trim().toLowerCase();
-    const allowedAdmins = ["elropero.informacion@gmail.com", "yazminetchanchu@gmail.com"];
-    if (!allowedAdmins.includes(cleanEmail)) {
-        throw new functions.https.HttpsError("permission-denied", "Email no autorizado para acceso administrativo.");
+    // Guard: only admins or service account can run
+    if (!request.auth || !(((_a = request.auth.token) === null || _a === void 0 ? void 0 : _a.admin) || request.auth.uid === 'service-account')) {
+        throw new https_1.HttpsError('permission-denied', 'Only administrators can run this migration');
     }
     // Generar código numérico de 6 dígitos
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -1612,7 +1611,8 @@ exports.sendAdmin2FACode = functions.https.onCall(async (data, context) => {
 /**
  * Valida el código OTP ingresado por el administrador.
  */
-exports.verifyAdmin2FACode = functions.https.onCall(async (data, context) => {
+exports.verifyAdmin2FACode = (0, https_1.onCall)(async (request) => {
+    const data = request.data;
     const email = data === null || data === void 0 ? void 0 : data.email;
     const code = data === null || data === void 0 ? void 0 : data.code;
     const cleanEmail = String(email || "").trim().toLowerCase();

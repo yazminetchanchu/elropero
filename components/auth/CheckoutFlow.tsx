@@ -1481,7 +1481,7 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                     <div className="flex items-center gap-2 border-b border-neutral-100 pb-2">
                       <Landmark size={14} className="text-black" strokeWidth={1.3} />
                       <h4 className="text-[9px] tracking-[0.25em] uppercase font-medium text-black">
-                        Datos de la Cuenta Bancaria
+                        Datos para la Transferencia
                       </h4>
                     </div>
 
@@ -1491,12 +1491,16 @@ const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
                         <span className="font-normal text-black uppercase tracking-wider">{webSettings?.bankTitular?.trim() || 'Danisa Guzman'}</span>
                       </div>
 
-                      {webSettings?.bankName?.trim() && (
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-neutral-100/70">
-                          <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400">Banco</span>
-                          <span className="font-normal text-black uppercase tracking-wider">{webSettings.bankName.trim()}</span>
-                        </div>
-                      )}
+                      {(() => {
+                        const rawBank = webSettings?.bankName?.trim();
+                        const bankDisplay = (!rawBank || /santander/i.test(rawBank)) ? 'Mercado Pago' : rawBank;
+                        return (
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-neutral-100/70">
+                            <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400">Entidad / Cuenta</span>
+                            <span className="font-normal text-black uppercase tracking-wider">{bankDisplay}</span>
+                          </div>
+                        );
+                      })()}
 
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-neutral-100/70">
                         <div>

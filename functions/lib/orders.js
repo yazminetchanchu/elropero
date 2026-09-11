@@ -43,8 +43,8 @@ exports.calculateExchangeBreakdownServer = calculateExchangeBreakdownServer;
 exports.parseSafeDate = parseSafeDate;
 exports.executeFulfillWebCambio = executeFulfillWebCambio;
 const functions = __importStar(require("firebase-functions/v1"));
-const https_1 = require("firebase-functions/v2/https");
 const admin = __importStar(require("firebase-admin"));
+// v2 HTTPS callable functions with CORS support
 // db will be initialized inside the functions to prevent app/no-app error during module loading.
 const DESCUENTO_BASE_TRANSFERENCIA = 20;
 /**
@@ -503,32 +503,18 @@ exports.releaseExpiredReservationsCron = functions.runWith({ timeoutSeconds: 120
     await executeReleaseExpiredReservations(db, showroomId);
     return null;
 });
-const CALLABLE_CORS_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:4173',
-    'https://el-ropero-8989a.web.app',
-    'https://el-ropero-8989a.firebaseapp.com',
-];
 // 2b. releaseExpiredReservationsServer (Callable HTTPS v2)
 // Se mantiene callable (no HTTP onRequest) para que el SDK envíe el protocolo correcto.
 // CORS explícito + invoker público evitan el fallo de preflight desde Vite en localhost.
-exports.releaseExpiredReservationsServer = (0, https_1.onCall)({
-    region: 'us-central1',
-    cors: CALLABLE_CORS_ORIGINS,
-    timeoutSeconds: 120,
-    memory: '512MiB',
-    invoker: 'public',
-}, async (request) => {
-    var _a;
+exports.releaseExpiredReservationsServer = functions.https.onCall(async (data, context) => {
     try {
         const db = admin.firestore();
-        const showroomId = ((_a = request.data) === null || _a === void 0 ? void 0 : _a.showroomId) || process.env.SHOWROOM_ID || 'ROPERO';
+        const showroomId = (data === null || data === void 0 ? void 0 : data.showroomId) || process.env.SHOWROOM_ID || 'ROPERO';
         return await executeReleaseExpiredReservations(db, showroomId);
     }
     catch (e) {
         console.error('[releaseExpiredReservationsServer] Error no controlado:', e);
-        throw new https_1.HttpsError('internal', (e === null || e === void 0 ? void 0 : e.message) || 'Error al liberar reservas expiradas');
+        throw new functions.https.HttpsError('internal', (e === null || e === void 0 ? void 0 : e.message) || 'Error al liberar reservas expiradas');
     }
 });
 // 2c. cancelWebOrderReservationServer (Callable HTTPS)
@@ -1457,11 +1443,12 @@ exports.fulfillWebOrderServer = functions.https.onCall(async (data, context) => 
         return { success: true, saleId };
     }
     catch (error) {
-        functions.logger.error("Error en fulfillWebOrderServer:", error);
+        functions.logger.error("[fulfillWebOrderServer] Error:", error);
         if (error instanceof functions.https.HttpsError) {
             throw error;
         }
-        throw new functions.https.HttpsError('internal', error.message || 'Error interno al procesar el fulfillment de la orden.');
+        const msg = (error === null || error === void 0 ? void 0 : error.message) ? `Error al procesar la orden: ${error.message}` : 'Error interno al procesar la orden.';
+        throw new functions.https.HttpsError('internal', msg);
     }
 });
 //# sourceMappingURL=orders.js.map

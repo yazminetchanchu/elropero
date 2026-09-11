@@ -84,7 +84,14 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
   const [activeTab, setActiveTab] = React.useState<'catalog' | 'settings'>('catalog');
   const [searchTerm, setSearchTerm] = React.useState('');
   const [editingItem, setEditingItem] = React.useState<InventoryItem | null>(null);
-  const [localSettings, setLocalSettings] = React.useState<WebSettings>(webSettings || {});
+  const [localSettings, setLocalSettings] = React.useState<WebSettings>(() => {
+    if (!webSettings) return {};
+    const initial = { ...webSettings };
+    if (initial.bankName && /santander/i.test(initial.bankName)) {
+      initial.bankName = 'Mercado Pago';
+    }
+    return initial;
+  });
   const [isTogglingStatus, setIsTogglingStatus] = React.useState(false);
   const [isSavingSettings, setIsSavingSettings] = React.useState(false);
   const [newTalle, setNewTalle] = React.useState('');
@@ -96,7 +103,11 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
 
   React.useEffect(() => {
     if (webSettings) {
-      setLocalSettings(webSettings);
+      const sanitized = { ...webSettings };
+      if (sanitized.bankName && /santander/i.test(sanitized.bankName)) {
+        sanitized.bankName = 'Mercado Pago';
+      }
+      setLocalSettings(sanitized);
     }
   }, [webSettings]);
 
@@ -815,7 +826,7 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                   value={localSettings?.bankTitular || ''}
                   onChange={e => setLocalSettings({ ...localSettings, bankTitular: e.target.value })}
                   className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold uppercase"
-                  placeholder="Danisa Guzman"
+                  placeholder="Ej: Nombre Titular"
                 />
               </div>
               <div className="space-y-3">
@@ -825,7 +836,7 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                   value={localSettings?.bankCbu || ''}
                   onChange={e => setLocalSettings({ ...localSettings, bankCbu: e.target.value })}
                   className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold font-mono"
-                  placeholder="0000003100037658598052"
+                  placeholder="Ej: 0000003100012345678901"
                 />
               </div>
               <div className="space-y-3">
@@ -835,7 +846,7 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                   value={localSettings?.bankAlias || localSettings?.mercadoPagoAlias || ''}
                   onChange={e => setLocalSettings({ ...localSettings, bankAlias: e.target.value, mercadoPagoAlias: e.target.value })}
                   className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold font-mono"
-                  placeholder="Danisa.guz.03"
+                  placeholder="Ej: mi.alias.comercio"
                 />
               </div>
               <div className="space-y-3">
@@ -845,7 +856,7 @@ const WebManager: React.FC<WebManagerProps> = ({ inventory, webSettings, selecte
                   value={localSettings?.bankName || ''}
                   onChange={e => setLocalSettings({ ...localSettings, bankName: e.target.value })}
                   className="w-full bg-[#F5F1EB]/50 border-b-2 border-[#C9B8A8]/40 p-3 focus:outline-none focus:border-[#C9B8A8] text-xs font-bold uppercase"
-                  placeholder="BANCO PROVINCIA / MERCADO PAGO"
+                  placeholder="MERCADO PAGO"
                 />
               </div>
               <div className="space-y-3">

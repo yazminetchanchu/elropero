@@ -36,7 +36,8 @@ export const TransferSuccessPage: React.FC<TransferSuccessPageProps> = ({ webSet
   const titular = webSettings?.bankTitular?.trim() || 'Danisa Guzman';
   const cbu = webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100037658598052';
   const alias = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'Danisa.guz.03';
-  const banco = webSettings?.bankName?.trim() || '';
+  const rawBank = webSettings?.bankName?.trim();
+  const banco = (!rawBank || /santander/i.test(rawBank)) ? 'Mercado Pago' : rawBank;
 
   const totalAmount = orderData?.total ? Math.round(orderData.total) : null;
   const storeName = webSettings?.storeName?.trim() || 'EL ROPERO';
@@ -166,7 +167,7 @@ export const TransferSuccessPage: React.FC<TransferSuccessPageProps> = ({ webSet
             <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
               <Landmark size={16} className="text-black" strokeWidth={1.3} />
               <h2 className="text-[10px] tracking-[0.25em] uppercase font-medium text-black">
-                Datos de la Cuenta Bancaria
+                Datos para la Transferencia
               </h2>
             </div>
 
@@ -181,7 +182,7 @@ export const TransferSuccessPage: React.FC<TransferSuccessPageProps> = ({ webSet
               {/* Banco si existe */}
               {banco && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2.5 border-b border-neutral-100/70">
-                  <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400">Entidad / Banco</span>
+                  <span className="text-[8px] tracking-[0.2em] uppercase text-neutral-400">Entidad / Cuenta</span>
                   <span className="font-normal text-black tracking-wider uppercase text-[11px]">{banco}</span>
                 </div>
               )}

@@ -750,7 +750,8 @@ export const sendTransferReservationEmail = async (
     const title = `⏳ Reserva de Pedido #${cleanId} - Datos para Transferencia`;
 
     const titular = settings?.bankTitular?.trim() || 'Danisa Guzman';
-    const banco = settings?.bankName?.trim() || 'Banco Santander';
+    const rawBank = settings?.bankName?.trim();
+    const banco = (!rawBank || /santander/i.test(rawBank)) ? 'Mercado Pago' : rawBank;
     const alias = settings?.bankAlias?.trim() || settings?.mercadoPagoAlias?.trim() || 'Danisa.guz.03';
     const cbu = settings?.bankCbu?.trim() || '0000003100037658598052';
     const whatsappNum = (settings?.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '');
@@ -771,7 +772,7 @@ export const sendTransferReservationEmail = async (
     textBody += `⚠️ IMPORTANTE: Tenés un plazo de 24 horas para realizar la transferencia y adjuntar tu comprobante. Pasado ese tiempo, la reserva de las prendas se cancela automáticamente y vuelven al stock disponible.\n\n`;
     textBody += `--- DATOS PARA LA TRANSFERENCIA ---\n`;
     textBody += `Titular: ${titular}\n`;
-    textBody += `Banco: ${banco}\n`;
+    textBody += `Banco / Entidad: ${banco}\n`;
     textBody += `Alias: ${alias}\n`;
     textBody += `CBU / CVU: ${cbu}\n`;
     textBody += `Monto total a transferir: $${order.total.toLocaleString('es-AR')}\n\n`;
@@ -855,7 +856,7 @@ export const sendTransferReservationEmail = async (
         <!-- DATOS BANCARIOS -->
         <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 22px; margin-bottom: 28px;">
           <div style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #666666; font-weight: 700; margin-bottom: 14px; border-bottom: 1px solid #dee2e6; padding-bottom: 8px;">
-            🏦 Datos de la Cuenta Bancaria
+            🏦 Datos para la Transferencia
           </div>
           <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
             <tr>
@@ -863,7 +864,7 @@ export const sendTransferReservationEmail = async (
               <td style="padding: 6px 0; color: #111111; font-weight: 600; text-transform: uppercase;">${titular}</td>
             </tr>
             <tr>
-              <td style="padding: 6px 0; color: #666666; font-weight: 500;">Banco:</td>
+              <td style="padding: 6px 0; color: #666666; font-weight: 500;">Banco / Entidad:</td>
               <td style="padding: 6px 0; color: #111111; font-weight: 600; text-transform: uppercase;">${banco}</td>
             </tr>
             <tr>

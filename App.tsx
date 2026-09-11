@@ -762,7 +762,7 @@ const App: React.FC = () => {
         throw new Error(msg);
       }
       // Allow partial returns without new items or gift card if there is no monetary difference
-      if (!saleData.itemsNuevos?.length && (saleData.diferencia ?? 0) > 0 && !saleData.giftGeneradaId) {
+      if (!saleData.itemsNuevos?.length && (saleData.diferencia ?? 0) > 0 && !saleData.giftGeneradaId && !saleData.giftCardGeneradaId) {
         const msg = 'Un cambio debe incluir prendas nuevas o generar una Gift Card a favor del cliente';
         alert(msg);
         throw new Error(msg);
@@ -868,7 +868,7 @@ const App: React.FC = () => {
         const montoGift = Math.abs(saleData.diferencia ?? 0);
 
         giftGenerada = {
-          id: saleData.giftGeneradaId || `gift_${Date.now()}`,
+          id: saleData.giftCardGeneradaId || saleData.giftGeneradaId || `gift_${Date.now()}`,
           codigo: codigoGift,
           destinatario: saleData.giftDestinatario?.trim() || 'Cambio automático',
           montoInicial: montoGift,
@@ -885,7 +885,7 @@ const App: React.FC = () => {
     const newSale: Sale = {
       ...saleData,
       id: saleId,
-      ...(giftGenerada?.id ? { giftGeneradaId: giftGenerada.id } : {})
+      ...(giftGenerada?.id ? { giftGeneradaId: giftGenerada.id, giftCardGeneradaId: giftGenerada.id } : {})
     };
 
     try {
@@ -937,10 +937,85 @@ const App: React.FC = () => {
   // 🗑️ DELETE SALE (REVERSA CONTABLE COMPLETA)
   // =======================
   const handleDeleteSale = async (saleId: string) => {
+    // 1. Identificar la venta a anular
+    const sale = sales.find(s => s.id === saleId);
+
+    // 2. Reversión de Stock en inventario
+    // - Para cambios:
+    //     * Los productos devueltos por el cliente (sale.itemsDevueltos) deben descontarse del stock (-quantity).
+    //     * Los productos nuevos que el cliente se llevó (sale.itemsNuevos y sale.items) deben sumarse de nuevo al stock (+quantity).
+    // - Para ventas normales:
+    //     * sale.items deben sumarse de nuevo al stock (+quantity).
+    let nextInv = [...inventory];
+    if (sale) {
+      nextInv = restoreSaleToInventory(nextInv, sale);
+    }
+
+    // 3. Reversión de Gift Cards
+    // - Si la venta/cambio generó una Gift Card (por saldo a favor de devolución),
+    //   buscar en estado/Firestore y marcarla como inhabilitada/eliminada para que no pueda volver a usarse.
+    // - Si se utilizó una Gift Card, restituir el saldo consumido.
+    let nextGiftCards = [...giftCards];
+    if (sale) {
+      const generatedGiftIds = new Set<string>();
+      if (sale.giftGeneradaId) generatedGiftIds.add(sale.giftGeneradaId);
+      if (sale.giftCardGeneradaId) generatedGiftIds.add(sale.giftCardGeneradaId);
+
+      // Eliminar o inhabilitar la Gift Card generada por este cambio/devolución
+      if (generatedGiftIds.size > 0 || sale.tipo === 'cambio' || sale.tipo === 'devolucion') {
+        nextGiftCards = nextGiftCards.filter(gc => {
+          if (generatedGiftIds.has(gc.id)) return false;
+          if (gc.ventaOrigenId && (gc.ventaOrigenId === sale.id || (sale.ventaOriginalId && gc.ventaOrigenId === sale.ventaOriginalId && (generatedGiftIds.size > 0 || (sale.diferencia !== undefined && sale.diferencia < 0))))) {
+            return false;
+          }
+          return true;
+        });
+      }
+
+      // Si se usó una Gift Card en esta venta, restituir el saldo consumido
+      if (sale.giftCardUsada) {
+        nextGiftCards = nextGiftCards.map(gc => {
+          if (gc.codigo === sale.giftCardUsada!.codigo) {
+            return {
+              ...gc,
+              saldo: gc.saldo + sale.giftCardUsada!.montoUsado,
+              estado: 'ACTIVA' as const
+            };
+          }
+          return gc;
+        });
+      }
+
+      // Si fue una venta directa de Gift Card, removerla
+      if (sale.tipo === 'gift') {
+        const giftSkus = sale.items?.map(i => i.sku).filter(Boolean) || [];
+        if (giftSkus.length > 0) {
+          nextGiftCards = nextGiftCards.filter(gc => !giftSkus.includes(gc.codigo));
+        }
+      }
+    }
+
+    // 4. Quitar la venta de la lista
+    const nextSales = sales.filter(s => s.id !== saleId);
+
+    // 5. Actualización optimista de estado local
+    if (sale) {
+      setInventory(nextInv);
+      setSales(nextSales);
+      setGiftCards(nextGiftCards);
+    }
+
+    // 6. Sincronización y persistencia atómica en Firestore
     try {
       await database.deleteSale(saleId);
     } catch (error) {
       console.error('❌ Error al sincronizar la eliminación de venta:', error);
+      // Revertir estado local en caso de fallo
+      if (sale) {
+        setInventory(inventory);
+        setSales(sales);
+        setGiftCards(giftCards);
+      }
       alert('❌ Error al eliminar la venta.');
     }
   };

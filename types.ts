@@ -70,6 +70,7 @@ export interface Sale {
 
   ventaOriginalId?: string;
   giftGeneradaId?: string;
+  giftCardGeneradaId?: string;
   giftDestinatario?: string;  // destinatario de la gift card auto-generada en cambio
   giftEmail?: string;         // opcional: email para enviar la gift card
   giftMensaje?: string;       // opcional: mensaje de la gift card

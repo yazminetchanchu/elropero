@@ -13,7 +13,7 @@ describe('Transfer Checkout Flow & TransferSuccessPage', () => {
     bankTitular: 'VALENTINA SHOWROOM',
     bankCbu: '0000003100084729182736',
     bankAlias: 'elropero.transfer',
-    bankName: 'Banco Santander',
+    bankName: 'Mercado Pago',
     mercadoPagoAlias: 'elropero.mp',
   };
 
@@ -60,7 +60,7 @@ describe('Transfer Checkout Flow & TransferSuccessPage', () => {
     expect(screen.getByText('VALENTINA SHOWROOM')).toBeInTheDocument();
     expect(screen.getByText('0000003100084729182736')).toBeInTheDocument();
     expect(screen.getByText('elropero.transfer')).toBeInTheDocument();
-    expect(screen.getByText('Banco Santander')).toBeInTheDocument();
+    expect(screen.getByText('Mercado Pago')).toBeInTheDocument();
 
     // Verify WhatsApp button
     expect(screen.getByText(/Enviar Comprobante por WhatsApp/i)).toBeInTheDocument();

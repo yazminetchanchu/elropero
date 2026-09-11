@@ -1,4 +1,4 @@
-import * as functions from 'firebase-functions';
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from 'firebase-admin';
 
 /** Helper to extract size (talle) and color from description */
@@ -24,10 +24,10 @@ export function parseVariantFromDescripcion(descripcion: string): { talle?: stri
  *
  * Guarded: only users with admin privileges (or a designated service account) may invoke it.
  */
-export const migrateMissingSaleItemVariants = functions.https.onCall(async (data, context) => {
+export const migrateMissingSaleItemVariants = onCall(async (data: any, context: any) => {
   // Simple admin guard – adjust according to your auth model.
   if (!context.auth || !(context.auth.token?.admin || context.auth.uid === 'service-account')) {
-    throw new functions.https.HttpsError('permission-denied', 'Only administrators can run this migration');
+    throw new HttpsError('permission-denied', 'Only administrators can run this migration');
   }
 
   const db = admin.firestore();

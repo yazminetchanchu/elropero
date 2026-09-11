@@ -59,7 +59,8 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({
   const titular = webSettings?.bankTitular?.trim() || 'Danisa Guzman';
   const cbu = webSettings?.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100037658598052';
   const alias = webSettings?.bankAlias?.trim() || webSettings?.mercadoPagoAlias?.trim() || 'Danisa.guz.03';
-  const banco = webSettings?.bankName?.trim() || '';
+  const rawBank = webSettings?.bankName?.trim();
+  const banco = (!rawBank || /santander/i.test(rawBank)) ? 'Mercado Pago' : rawBank;
   const whatsappNumber = webSettings?.contactWhatsapp?.replace(/\D/g, '') || '5492346685836';
   const storeName = webSettings?.storeName?.trim() || 'EL ROPERO';
 
@@ -509,7 +510,7 @@ const BuyGiftCardModal: React.FC<BuyGiftCardModalProps> = ({
 
                         {banco && (
                           <div className="flex justify-between items-center py-1 border-b border-neutral-100/70">
-                            <span className="text-[8px] tracking-[0.15em] uppercase text-neutral-400">Banco</span>
+                            <span className="text-[8px] tracking-[0.15em] uppercase text-neutral-400">Entidad / Cuenta</span>
                             <span className="font-normal text-black uppercase tracking-wider">{banco}</span>
                           </div>
                         )}

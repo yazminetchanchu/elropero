@@ -1,8 +1,14 @@
 async function testAuth() {
-  const username = "GDanisaAPI";
-  const password = "Inicial27+";
-  const baseUrl = "https://api.correoargentino.com.ar/micorreo/v1";
-  const customerId = "0001425237";
+  const username = process.env.MICORREO_USERNAME;
+  const password = process.env.MICORREO_PASSWORD;
+  const baseUrl = process.env.MICORREO_BASE_URL || "https://api.correoargentino.com.ar/micorreo/v1";
+  const customerId = process.env.MICORREO_CUSTOMER_ID || process.env.MICORREO_CLIENTE_ID;
+
+  if (!username || !password || !customerId) {
+    console.error("❌ Error: Faltan variables de entorno para la prueba.");
+    console.error("Uso: MICORREO_USERNAME=... MICORREO_PASSWORD=... MICORREO_CUSTOMER_ID=... node test_micorreo.js");
+    process.exit(1);
+  }
 
   const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
 

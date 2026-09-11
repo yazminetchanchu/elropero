@@ -2,7 +2,8 @@ import React from 'react';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AuthProvider, useAuth, ADMIN_EMAILS } from '../contexts/AuthContext';
-import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { auth } from '../services/firebase';
 
 vi.mock('../services/firebase', () => ({
   auth: {},
@@ -141,5 +142,31 @@ describe('AuthContext - Prevención de Auto-Login de Admin en Tienda', () => {
     await expect(authContextRef.loginWithEmail('elropero.informacion@gmail.com', 'password123')).rejects.toThrow(
       'Este correo pertenece a la administración de la tienda'
     );
+  });
+
+  it('cierra la sesión residual de admin automáticamente al iniciar sesión como cliente', async () => {
+    (onAuthStateChanged as any).mockImplementation((authObj: any, callback: any) => {
+      callback(null);
+      return () => {};
+    });
+
+    (auth as any).currentUser = { email: 'elropero.informacion@gmail.com' };
+
+    let authContextRef: any;
+    const Grabber = () => {
+      authContextRef = useAuth();
+      return null;
+    };
+
+    render(
+      <AuthProvider>
+        <Grabber />
+      </AuthProvider>
+    );
+
+    await authContextRef.loginWithEmail('cliente.nuevo@gmail.com', 'password123');
+
+    expect(signOut).toHaveBeenCalledWith(auth);
+    expect(signInWithEmailAndPassword).toHaveBeenCalledWith(auth, 'cliente.nuevo@gmail.com', 'password123');
   });
 });

@@ -163,7 +163,10 @@ export function restoreInventory(inventory: InventoryItem[], items: (WebOrderIte
 
 export function deductSaleFromInventory(inventory: InventoryItem[], sale: Sale | Omit<Sale, 'id'>): InventoryItem[] {
   let updatedInv = [...inventory];
-  if (sale.tipo === 'cambio') {
+  const hasExchangeArrays = Boolean((sale.itemsNuevos && sale.itemsNuevos.length > 0) || (sale.itemsDevueltos && sale.itemsDevueltos.length > 0));
+  const isCambioOrDevolucion = sale.tipo === 'cambio' || sale.tipo === 'devolucion' || hasExchangeArrays;
+
+  if (isCambioOrDevolucion && hasExchangeArrays) {
     if (sale.itemsDevueltos && sale.itemsDevueltos.length > 0) {
       updatedInv = restoreInventory(updatedInv, sale.itemsDevueltos.map(si => ({
         productId: si.id,
@@ -184,6 +187,15 @@ export function deductSaleFromInventory(inventory: InventoryItem[], sale: Sale |
         color: si.color
       })));
     }
+  } else if (sale.tipo === 'devolucion' && sale.items && sale.items.length > 0) {
+    updatedInv = restoreInventory(updatedInv, sale.items.map(si => ({
+      productId: si.id,
+      descripcion: si.descripcion,
+      sku: si.sku,
+      cantidad: si.cantidad,
+      talle: si.talle,
+      color: si.color
+    })));
   } else if (sale.items && sale.items.length > 0) {
     updatedInv = deductInventory(updatedInv, sale.items.map(si => ({
       productId: si.id,
@@ -199,9 +211,31 @@ export function deductSaleFromInventory(inventory: InventoryItem[], sale: Sale |
 
 export function restoreSaleToInventory(inventory: InventoryItem[], sale: Sale): InventoryItem[] {
   let updatedInv = [...inventory];
-  if (sale.tipo === 'cambio') {
+  const hasExchangeArrays = Boolean((sale.itemsNuevos && sale.itemsNuevos.length > 0) || (sale.itemsDevueltos && sale.itemsDevueltos.length > 0));
+  const isCambioOrDevolucion = sale.tipo === 'cambio' || sale.tipo === 'devolucion' || hasExchangeArrays;
+
+  if (isCambioOrDevolucion && hasExchangeArrays) {
+    // Al revertir un cambio/devolución:
+    // 1. Los productos nuevos que el cliente se llevó (sale.itemsNuevos y sale.items) deben sumarse de nuevo al stock (+quantity)
+    const newItemsToRestore: SaleItem[] = [];
     if (sale.itemsNuevos && sale.itemsNuevos.length > 0) {
-      updatedInv = restoreInventory(updatedInv, sale.itemsNuevos.map(si => ({
+      newItemsToRestore.push(...sale.itemsNuevos);
+    }
+    if (sale.items && sale.items.length > 0) {
+      for (const item of sale.items) {
+        const alreadyInNuevos = newItemsToRestore.some(
+          ni => (ni.id === item.id || (ni.sku && item.sku && ni.sku === item.sku)) &&
+                ni.talle === item.talle &&
+                ni.color === item.color &&
+                ni.cantidad === item.cantidad
+        );
+        if (!alreadyInNuevos) {
+          newItemsToRestore.push(item);
+        }
+      }
+    }
+    if (newItemsToRestore.length > 0) {
+      updatedInv = restoreInventory(updatedInv, newItemsToRestore.map(si => ({
         productId: si.id,
         descripcion: si.descripcion,
         sku: si.sku,
@@ -210,6 +244,7 @@ export function restoreSaleToInventory(inventory: InventoryItem[], sale: Sale): 
         color: si.color
       })));
     }
+    // 2. Los productos devueltos por el cliente (sale.itemsDevueltos) deben descontarse del stock (-quantity)
     if (sale.itemsDevueltos && sale.itemsDevueltos.length > 0) {
       updatedInv = deductInventory(updatedInv, sale.itemsDevueltos.map(si => ({
         productId: si.id,
@@ -220,6 +255,15 @@ export function restoreSaleToInventory(inventory: InventoryItem[], sale: Sale): 
         color: si.color
       })));
     }
+  } else if (sale.tipo === 'devolucion' && sale.items && sale.items.length > 0) {
+    updatedInv = deductInventory(updatedInv, sale.items.map(si => ({
+      productId: si.id,
+      descripcion: si.descripcion,
+      sku: si.sku,
+      cantidad: si.cantidad,
+      talle: si.talle,
+      color: si.color
+    })));
   } else if (sale.items && sale.items.length > 0) {
     updatedInv = restoreInventory(updatedInv, sale.items.map(si => ({
       productId: si.id,

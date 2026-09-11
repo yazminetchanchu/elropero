@@ -82,6 +82,11 @@ const subscribe = (onData: (data: DatabaseState) => void, overrideID?: string) =
         const data = snap.data() as DatabaseState;
         if (!data.giftCards) data.giftCards = [];
         if (!data.closures) data.closures = [];
+        if (data.webSettings) {
+          if (data.webSettings.bankName && /santander/i.test(data.webSettings.bankName)) {
+            data.webSettings.bankName = 'Mercado Pago';
+          }
+        }
         updateLocalOnly(data);
         onData(data);
         return;
@@ -104,7 +109,11 @@ const subscribe = (onData: (data: DatabaseState) => void, overrideID?: string) =
           locationShowroomAddress: 'San Martín 382, Chivilcoy',
           locationShowroomMapUrl: 'https://www.google.com/maps/search/?api=1&query=San+Martin+382+Chivilcoy+Buenos+Aires',
           locationPickupAddress: 'Recoleta, CABA',
-          locationPickupMapUrl: 'https://www.google.com/maps/search/?api=1&query=Recoleta+CABA'
+          locationPickupMapUrl: 'https://www.google.com/maps/search/?api=1&query=Recoleta+CABA',
+          bankTitular: 'Danisa Guzman',
+          bankName: 'Mercado Pago',
+          bankAlias: 'Danisa.guz.03',
+          bankCbu: '0000003100037658598052'
         },
         lastSync: Date.now()
       };
@@ -321,13 +330,22 @@ const deleteSale = async (saleId: string): Promise<void> => {
       });
     }
     if (sale.tipo === 'gift') {
-      const giftSku = sale.items?.[0]?.sku;
-      if (giftSku) {
-        updatedGiftCards = updatedGiftCards.filter(gc => gc.codigo !== giftSku);
+      const giftSkus = sale.items?.map(i => i.sku).filter(Boolean) || [];
+      if (giftSkus.length > 0) {
+        updatedGiftCards = updatedGiftCards.filter(gc => !giftSkus.includes(gc.codigo));
       }
     }
-    if (sale.giftGeneradaId) {
-      updatedGiftCards = updatedGiftCards.filter(gc => gc.id !== sale.giftGeneradaId);
+
+    const generatedGiftIds = new Set<string>();
+    if (sale.giftGeneradaId) generatedGiftIds.add(sale.giftGeneradaId);
+    if (sale.giftCardGeneradaId) generatedGiftIds.add(sale.giftCardGeneradaId);
+
+    if (generatedGiftIds.size > 0 || sale.tipo === 'cambio' || sale.tipo === 'devolucion') {
+      updatedGiftCards = updatedGiftCards.filter(gc => {
+        if (generatedGiftIds.has(gc.id)) return false;
+        if (gc.ventaOrigenId && (gc.ventaOrigenId === sale.id || (sale.ventaOriginalId && gc.ventaOrigenId === sale.ventaOriginalId && (generatedGiftIds.size > 0 || (sale.diferencia !== undefined && sale.diferencia < 0))))) return false;
+        return true;
+      });
     }
 
     // 3. Eliminar de la subcolección y del buffer de ventas del showroom

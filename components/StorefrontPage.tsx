@@ -617,6 +617,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     if (inventoryProp) {
       setInventory(sanitizeCatalogInventory(inventoryProp));
       if (settingsProp) {
+        const loadedProp = { ...settingsProp };
+        if (loadedProp.bankName && /santander/i.test(loadedProp.bankName)) {
+          loadedProp.bankName = 'Mercado Pago';
+        }
         setWebSettings({
           announcementText: '20% de descuento pagando por transferencia ★',
           aboutUsText: 'El Ropero es el resultado de un compromiso profundo con la indumentaria y cada detalle. Lo que comenzó como un proyecto personal impulsado por esfuerzo y dedicación, se consolidó hoy como un espacio donde pensamos en cada mujer. Cada paso de nuestro camino está marcado por la gratitud hacia quienes nos eligen.',
@@ -624,7 +628,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           locationShowroomMapUrl: 'https://www.google.com/maps/search/?api=1&query=San+Martin+382+Chivilcoy+Buenos+Aires',
           locationPickupAddress: 'Recoleta, CABA',
           locationPickupMapUrl: 'https://www.google.com/maps/search/?api=1&query=Recoleta+CABA',
-          ...settingsProp
+          ...loadedProp
         });
       }
       setIsLoading(false);
@@ -637,6 +641,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         const data = snap.data();
         setInventory(sanitizeCatalogInventory(data.inventory || []));
         if (data.webSettings) {
+          const loadedSettings = { ...data.webSettings };
+          if (loadedSettings.bankName && /santander/i.test(loadedSettings.bankName)) {
+            loadedSettings.bankName = 'Mercado Pago';
+          }
           setWebSettings({
             announcementText: '20% de descuento pagando por transferencia ★',
             aboutUsText: 'El Ropero es el resultado de un compromiso profundo con la indumentaria y cada detalle. Lo que comenzó como un proyecto personal impulsado por esfuerzo y dedicación, se consolidó hoy como un espacio donde pensamos en cada mujer. Cada paso de nuestro camino está marcado por la gratitud hacia quienes nos eligen.',
@@ -644,7 +652,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             locationShowroomMapUrl: 'https://www.google.com/maps/search/?api=1&query=San+Martin+382+Chivilcoy+Buenos+Aires',
             locationPickupAddress: 'Recoleta, CABA',
             locationPickupMapUrl: 'https://www.google.com/maps/search/?api=1&query=Recoleta+CABA',
-            ...data.webSettings
+            ...loadedSettings
           });
         }
       }
@@ -1016,9 +1024,11 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         });
 
         const titularStr = `Titular: ${webSettings.bankTitular?.trim() || 'Danisa Guzman'}`;
+        const rawBank = webSettings.bankName?.trim();
+        const bancoStr = `Entidad: ${(!rawBank || /santander/i.test(rawBank)) ? 'Mercado Pago' : rawBank}`;
         const aliasStr = `Alias: ${webSettings.bankAlias?.trim() || webSettings.mercadoPagoAlias?.trim() || 'Danisa.guz.03'}`;
         const cbuStr = `CVU/CBU: ${webSettings.bankCbu?.trim() || (webSettings as any)?.cbuData?.trim() || '0000003100037658598052'}`;
-        const bankInfo = [titularStr, aliasStr, cbuStr].filter(Boolean).join(' | ');
+        const bankInfo = [titularStr, bancoStr, aliasStr, cbuStr].filter(Boolean).join(' | ');
 
         showAlert(
           `Cambio registrado en caja (${saleId}).\nPor favor realizá la transferencia por $${diferencia.toLocaleString('es-AR')}.\n${bankInfo}`,

@@ -16,15 +16,15 @@ onAddSale({
 
 **Solución:** El tipo `Sale` solo tiene `giftGeneradaId?: string`. La gift card generada debe manejarse en `App.tsx` donde se crea la venta.
 
-### 2. Contraseña Hardcodeada (App.tsx línea 12)
-**Problema:** La contraseña está expuesta en el código fuente.
+### 2. Contraseña Hardcodeada (App.tsx / Scripts)
+**Problema:** Existían contraseñas o credenciales expuestas en el código fuente.
 
 ```typescript
 // ❌ INSEGURO
-const SYSTEM_PASSWORD = "Danisa0302";
+const SYSTEM_PASSWORD = "ejemplo_password_hardcoded";
 ```
 
-**Solución:** Mover a variables de entorno o usar hash.
+**Solución:** Mover a variables de entorno (`process.env`) o usar autenticación gestionada (Firebase Auth / hashing).
 
 ### 3. Credenciales de Firebase Expuestas (services/firebase.ts)
 **Problema:** Las credenciales de Firebase están en el código fuente.

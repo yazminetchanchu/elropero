@@ -545,6 +545,7 @@ const Sales: React.FC<SalesProps> = ({
         diferencia: Math.round(diferenciaCambio),
         items: [], // Los cambios no usan items, usan itemsDevueltos e itemsNuevos
         giftGeneradaId, // Pasar el ID para que App.tsx cree la gift card
+        giftCardGeneradaId: giftGeneradaId,
         giftDestinatario: destinatarioGift,
         giftEmail: giftEmail.trim(),
         giftMensaje: giftMensaje.trim(),

@@ -206,7 +206,7 @@ describe('Storage Service - Operaciones Granulares y Transaccionales (Bug 5)', (
   });
 
   describe('deleteSale', () => {
-    it('restaura el stock de los productos vendidos y remueve la venta', async () => {
+    it('restaura el stock de los productos vendidos y remueve la venta estándar', async () => {
       mockDocState.sales = [
         {
           id: 'sale-to-delete',
@@ -221,6 +221,68 @@ describe('Storage Service - Operaciones Granulares y Transaccionales (Bug 5)', (
       const updatedPayload = mockTransaction.update.mock.calls[0][1];
       // Stock restaurado: prod-1 tenía 10, ahora 13
       expect(updatedPayload.inventory.find((i: any) => i.id === 'prod-1')?.cantidad).toBe(13);
+      expect(updatedPayload.sales).toHaveLength(0);
+      expect(mockTransaction.delete).toHaveBeenCalled();
+    });
+
+    it('revierte correctamente un cambio (descuenta devueltos, devuelve nuevos y elimina gift card generada)', async () => {
+      mockDocState.inventory = [
+        { id: 'prod-1', sku: 'SKU-1', descripcion: 'Remera Negra', cantidad: 10, costo: 1000, precioEfectivo: 2000, precioTarjeta: 2500 },
+        { id: 'prod-2', sku: 'SKU-2', descripcion: 'Pantalón Azul', cantidad: 5, costo: 2000, precioEfectivo: 4000, precioTarjeta: 4500 }
+      ];
+      mockDocState.giftCards = [
+        {
+          id: 'gc-generated-999',
+          codigo: 'GIFT-AUTO',
+          destinatario: 'Cliente Cambio',
+          montoInicial: 1000,
+          saldo: 1000,
+          estado: 'ACTIVA',
+          fechaCreacion: '2026-01-01'
+        },
+        {
+          id: 'gc-used-123',
+          codigo: 'GIFT-USED',
+          destinatario: 'Cliente Regular',
+          montoInicial: 2000,
+          saldo: 500,
+          estado: 'ACTIVA',
+          fechaCreacion: '2026-01-01'
+        }
+      ];
+      mockDocState.sales = [
+        {
+          id: 'sale-cambio-delete',
+          tipo: 'cambio',
+          total: 0,
+          diferencia: -1000,
+          giftCardGeneradaId: 'gc-generated-999',
+          giftCardUsada: {
+            codigo: 'GIFT-USED',
+            montoUsado: 1500
+          },
+          items: [],
+          itemsDevueltos: [{ id: 'prod-1', sku: 'SKU-1', descripcion: 'Remera Negra', cantidad: 2, costo: 1000, precioEfectivo: 2000, precioTarjeta: 2500, descuento: 0 }],
+          itemsNuevos: [{ id: 'prod-2', sku: 'SKU-2', descripcion: 'Pantalón Azul', cantidad: 1, costo: 2000, precioEfectivo: 4000, precioTarjeta: 4500, descuento: 0 }]
+        }
+      ];
+
+      await database.deleteSale('sale-cambio-delete');
+
+      const updatedPayload = mockTransaction.update.mock.calls[0][1];
+      // prod-1 (devuelto en cambio anterior +2) ahora al revertir se le descuenta 2: 10 - 2 = 8
+      expect(updatedPayload.inventory.find((i: any) => i.id === 'prod-1')?.cantidad).toBe(8);
+      // prod-2 (nuevo entregado en cambio -1) ahora al revertir se le devuelve 1: 5 + 1 = 6
+      expect(updatedPayload.inventory.find((i: any) => i.id === 'prod-2')?.cantidad).toBe(6);
+      
+      // La Gift Card generada por el cambio se eliminó
+      expect(updatedPayload.giftCards.find((gc: any) => gc.id === 'gc-generated-999')).toBeUndefined();
+      
+      // La Gift Card usada recuperó su saldo (+1500 => 500 + 1500 = 2000)
+      const usedGc = updatedPayload.giftCards.find((gc: any) => gc.codigo === 'GIFT-USED');
+      expect(usedGc?.saldo).toBe(2000);
+      expect(usedGc?.estado).toBe('ACTIVA');
+
       expect(updatedPayload.sales).toHaveLength(0);
       expect(mockTransaction.delete).toHaveBeenCalled();
     });

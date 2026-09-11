@@ -321,7 +321,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     const currentAuthEmail = auth.currentUser?.email?.trim().toLowerCase();
     if (currentAuthEmail && ADMIN_EMAILS.includes(currentAuthEmail)) {
-      throw new Error('Hay una sesión de administración activa en el panel. No se puede iniciar sesión de cliente en este navegador para proteger la sesión del administrador.');
+      await signOut(auth);
     }
     await signInWithEmailAndPassword(auth, email, pass);
   };
@@ -333,7 +333,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     const currentAuthEmail = auth.currentUser?.email?.trim().toLowerCase();
     if (currentAuthEmail && ADMIN_EMAILS.includes(currentAuthEmail)) {
-      throw new Error('Hay una sesión de administración activa en el panel. No se puede crear una cuenta de cliente para proteger la sesión del administrador.');
+      await signOut(auth);
     }
     const credential = await createUserWithEmailAndPassword(auth, email, pass);
     await ensureProfile(credential.user, { nombre: name, telefono: phone });
@@ -342,7 +342,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async () => {
     const currentAuthEmail = auth.currentUser?.email?.trim().toLowerCase();
     if (currentAuthEmail && ADMIN_EMAILS.includes(currentAuthEmail)) {
-      throw new Error('Hay una sesión de administración activa en el panel. Cerrá sesión en el panel de gestión antes de autenticarte con Google.');
+      await signOut(auth);
     }
     const credential = await signInWithPopup(auth, googleProvider);
     const clean = credential.user.email?.trim().toLowerCase();

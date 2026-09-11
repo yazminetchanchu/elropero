@@ -211,7 +211,7 @@ describe('emailService - Notificaciones y Envíos de Correos', () => {
       bankTitular: 'Danisa Guzman',
       bankCbu: '0000003100037658598052',
       bankAlias: 'Danisa.guz.03',
-      bankName: 'Banco Santander'
+      bankName: 'Mercado Pago'
     };
 
     it('envía email de reserva por transferencia con prendas completas, datos bancarios y aviso de 24 hs', async () => {
@@ -256,12 +256,12 @@ describe('emailService - Notificaciones y Envíos de Correos', () => {
 
       // 3. Datos de la cuenta bancaria
       expect(payload.message.text).toContain('Titular: Danisa Guzman');
-      expect(payload.message.text).toContain('Banco: Banco Santander');
+      expect(payload.message.text).toContain('Banco / Entidad: Mercado Pago');
       expect(payload.message.text).toContain('Alias: Danisa.guz.03');
       expect(payload.message.text).toContain('CBU / CVU: 0000003100037658598052');
 
       expect(payload.message.html).toContain('Danisa Guzman');
-      expect(payload.message.html).toContain('Banco Santander');
+      expect(payload.message.html).toContain('Mercado Pago');
       expect(payload.message.html).toContain('Danisa.guz.03');
       expect(payload.message.html).toContain('0000003100037658598052');
 
