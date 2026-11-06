@@ -20,18 +20,33 @@ service cloud.firestore {
       );
     }
 
+    // Una escritura no puede vaciar ni achicar de golpe una lista contable del showroom.
+    // Permite quitar como máximo 1 elemento por escritura (borrar una venta/egreso) y
+    // exige que el campo no desaparezca si ya existía (evita setDoc que pisa todo el doc).
+    function keepsList(field) {
+      return !(field in resource.data)
+        || (field in request.resource.data
+            && request.resource.data[field].size() >= resource.data[field].size() - 1);
+    }
+
     // Reglas para el documento principal del showroom e inventario (Solo Admin)
     match /showrooms/{showroomId} {
       // Restringir lectura del documento monolítico exclusivamente a administradores
       // Protege ventas históricas, egresos, costos mayoristas y tarjetas de regalo globales
       allow read: if isAdmin();
       
-      // Prohibir creación y borrado desde clientes no autorizados
-      allow create, delete: if isAdmin();
+      // Crear solo Admin. El documento del showroom NO se puede borrar desde clientes.
+      allow create: if isAdmin();
+      allow delete: if false;
       
-      // Solo administradores pueden actualizar el showroom directamente.
+      // Solo administradores pueden actualizar el showroom directamente, y sin achicar
+      // ventas (buffer), egresos ni cierres mensuales ni quitar webSettings.
       // Clientes y operaciones de checkout deben usar Cloud Functions seguras.
-      allow update: if isAdmin();
+      allow update: if isAdmin()
+        && keepsList('sales')
+        && keepsList('expenses')
+        && keepsList('closures')
+        && (!('webSettings' in resource.data) || 'webSettings' in request.resource.data);
 
       // Subcolección de pedidos web directos (/webOrders) - Solo Admin
       match /webOrders/{orderId} {
@@ -56,6 +71,11 @@ service cloud.firestore {
 
         // Modificación y borrado estrictamente restringidos a Administradores
         allow update, delete: if isAdmin();
+      }
+
+      // Cambios pendientes de confirmación (antes cubierto por el comodín final)
+      match /pending_cambios/{cambioId} {
+        allow read, write: if isAdmin();
       }
 
       // Subcolección de ventas del showroom (evita límite de 1 MB en doc showroom)
@@ -118,9 +138,11 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // Bloquear acceso por defecto a cualquier otra colección o ruta no explícita
+    // Resto de rutas no explícitas: solo lectura para Admin.
+    // IMPORTANTE: este comodín NO concede escritura. Las reglas de Firestore se suman (OR);
+    // un `write` acá anularía las restricciones de /showrooms/{showroomId} (anti-borrado).
     match /{document=**} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
     }
   }
 }

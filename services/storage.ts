@@ -78,6 +78,7 @@ const subscribe = (onData: (data: DatabaseState) => void, overrideID?: string) =
   return onSnapshot(
     ref,
     async (snap) => {
+      const fromCache = snap.metadata.fromCache;
       if (snap.exists()) {
         const data = snap.data() as DatabaseState;
         if (!data.giftCards) data.giftCards = [];
@@ -118,10 +119,23 @@ const subscribe = (onData: (data: DatabaseState) => void, overrideID?: string) =
         lastSync: Date.now()
       };
 
+      // Un snapshot servido desde caché NO prueba que el documento no exista
+      // (ej. sin conexión). Nunca inicializamos en ese caso: un setDoc encolado
+      // podría pisar el documento real al reconectar.
+      if (fromCache) return;
+
       try {
-        await setDoc(ref, empty);
-        updateLocalOnly(empty);
-        onData(empty);
+        // Crear solo si sigue sin existir en el servidor (transacción: nunca pisa datos).
+        const created = await runTransaction(db, async (transaction) => {
+          const fresh = await transaction.get(ref);
+          if (fresh.exists()) return false;
+          transaction.set(ref, empty);
+          return true;
+        });
+        if (created) {
+          updateLocalOnly(empty);
+          onData(empty);
+        }
       } catch (err) {
         console.warn("No se pudo inicializar documento vacío en Firestore:", err);
       }
@@ -602,27 +616,6 @@ const updatePartial = async (partialState: Partial<DatabaseState>): Promise<void
   });
 };
 
-/**
- * Persistencia directa para copias de seguridad completas (DatabaseView)
- */
-const persistSafe = async (
-  newState: Omit<DatabaseState, 'lastSync'>,
-  _localLastSync?: number
-): Promise<DatabaseState> => {
-  const id = getShowroomID();
-  const ref = doc(db, "showrooms", id);
-  const payload: DatabaseState = { ...sanitize(newState), lastSync: Date.now() };
-
-  if (!navigator.onLine) {
-    updateLocalOnly(payload);
-    return payload;
-  }
-
-  await setDoc(ref, payload);
-  updateLocalOnly(payload);
-  return payload;
-};
-
 // =======================
 // EXPORT BACKUP FILE
 // =======================
@@ -688,6 +681,54 @@ const migrateSalesToSubcollection = async (): Promise<{ migratedCount: number }>
   return { migratedCount };
 };
 
+/**
+ * Lee TODAS las ventas de la subcolección (historial completo).
+ * El documento del showroom solo guarda un buffer de las últimas 50; la fuente
+ * de verdad histórica es esta subcolección.
+ */
+const fetchAllSales = async (): Promise<Sale[]> => {
+  if (!navigator.onLine) throw new Error('Offline');
+  const id = getShowroomID();
+  const snap = await getDocs(collection(db, "showrooms", id, "sales"));
+  return snap.docs.map(d => d.data() as Sale);
+};
+
+/**
+ * Copia a la subcolección las ventas que solo existen en el buffer del documento
+ * (idempotente, no borra nada). Evita perder ventas viejas cuando el buffer rota.
+ */
+const backfillSales = async (sales: Sale[]): Promise<number> => {
+  if (!navigator.onLine) throw new Error('Offline');
+  const id = getShowroomID();
+  let count = 0;
+  for (const sale of sales) {
+    if (!sale?.id) continue;
+    await setDoc(doc(db, "showrooms", id, "sales", sale.id), sanitize(sale), { merge: true });
+    count++;
+  }
+  return count;
+};
+
+/**
+ * Inserta o reemplaza un cierre mensual por id, sin tocar otros cierres.
+ */
+const upsertClosure = async (closure: MonthlyClosure): Promise<void> => {
+  if (!navigator.onLine) throw new Error('Offline');
+  const id = getShowroomID();
+  const ref = doc(db, "showrooms", id);
+  const cleanClosure = sanitize(closure);
+  const now = Date.now();
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists()) throw new Error("Showroom no encontrado.");
+    const data = snap.data() as DatabaseState;
+    const current = data.closures || [];
+    const exists = current.some(c => c.id === cleanClosure.id);
+    const next = exists ? current.map(c => c.id === cleanClosure.id ? cleanClosure : c) : [...current, cleanClosure];
+    transaction.update(ref, { closures: next, lastSync: now });
+  });
+};
+
 // =======================
 // EXPORT API
 // =======================
@@ -698,7 +739,6 @@ export const database = {
   updateLocalOnly,
   fetchRemote,
   subscribe,
-  persistSafe,
   exportBackupFile,
   // Operaciones Granulares y Transaccionales (Bug 5)
   addInventoryItem,
@@ -709,6 +749,9 @@ export const database = {
   deleteSale,
   updateSalePago,
   fetchHistoricalSales,
+  fetchAllSales,
+  backfillSales,
+  upsertClosure,
   migrateSalesToSubcollection,
   addExpense,
   updateExpense,

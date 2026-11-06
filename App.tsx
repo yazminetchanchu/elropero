@@ -119,7 +119,19 @@ const App: React.FC = () => {
   }, [isEntered]);
 
   const [inventory, setInventory] = React.useState<InventoryItem[]>([]);
-  const [sales, setSales] = React.useState<Sale[]>([]);
+  // `bufferSales` = últimas 50 ventas del documento del showroom (tiempo real).
+  // `historicalSales` = historial completo de la subcolección `sales/`.
+  // `sales` (derivado) = unión de ambos; es lo que usan Dashboard, cierres, etc.
+  const [bufferSales, setSales] = React.useState<Sale[]>([]);
+  const [historicalSales, setHistoricalSales] = React.useState<Sale[]>([]);
+  const [historyStatus, setHistoryStatus] = React.useState<'idle' | 'ready' | 'error'>('idle');
+  const sales = React.useMemo(() => {
+    const bufferIds = new Set(bufferSales.map(s => s.id));
+    const older = historicalSales
+      .filter(s => !bufferIds.has(s.id))
+      .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+    return [...older, ...bufferSales];
+  }, [bufferSales, historicalSales]);
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [giftCards, setGiftCards] = React.useState<GiftCard[]>([]);
   const [closures, setClosures] = React.useState<MonthlyClosure[]>([]);
@@ -185,58 +197,46 @@ const App: React.FC = () => {
   }, []);
 
   // =======================
-  // GUARDAR DATA — read-before-write seguro
+  // HISTORIAL COMPLETO DE VENTAS (subcolección)
   // =======================
-  const handleDataChange = async (
-    newInv: InventoryItem[],
-    newSales: Sale[],
-    newExp: Expense[],
-    newGift: GiftCard[] = giftCards,
-    newClosures: MonthlyClosure[] = closures,
-    newWebSettings: WebSettings = webSettings
-  ) => {
-    if (!navigator.onLine) {
-      alert('❌ Error: No hay conexión a internet. No se pueden guardar los cambios.');
-      throw new Error('Offline');
-    }
-
-    setIsSyncing(true);
-    try {
-      const confirmed = await database.persistSafe(
-        { inventory: newInv, sales: newSales, expenses: newExp, giftCards: newGift, closures: newClosures, webSettings: newWebSettings },
-        lastUpdate
-      );
-
-      // 1. ACTUALIZACIÓN (React State post-confirmación)
-      setInventory(newInv);
-      setSales(newSales);
-      setExpenses(newExp);
-      setGiftCards(newGift);
-      setClosures(newClosures);
-      setWebSettings(newWebSettings);
-
-      setLastUpdate(confirmed.lastSync ?? Date.now());
-      database.updateLocalOnly(confirmed);
-      return confirmed;
-
-    } catch (error: any) {
-      console.error('❌ Error al guardar cambios en la base de datos:', error);
-      alert('❌ Error general: No se pudo guardar en la base de datos. La operación fue cancelada.');
-      throw error;
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+  // El documento del showroom solo conserva las últimas 50 ventas. Sin esto, los
+  // meses anteriores aparecen vacíos y el cierre mensual guardaría ceros.
+  const bufferSignature = `${bufferSales.length}:${bufferSales[bufferSales.length - 1]?.id ?? ''}`;
+  React.useEffect(() => {
+    if (!isEntered) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await database.fetchAllSales();
+        if (cancelled) return;
+        setHistoricalSales(all);
+        setHistoryStatus('ready');
+        // Ventas que solo viven en el buffer (anteriores a la subcolección): copiarlas
+        const known = new Set(all.map(s => s.id));
+        const missing = bufferSales.filter(s => s.id && !known.has(s.id));
+        if (missing.length > 0) {
+          await database.backfillSales(missing);
+        }
+      } catch (error) {
+        console.error('❌ No se pudo cargar el historial de ventas:', error);
+        if (!cancelled) setHistoryStatus(prev => (prev === 'ready' ? prev : 'error'));
+      }
+    })();
+    return () => { cancelled = true; };
+    // bufferSales se lee solo para el backfill; se re-ejecuta cuando cambia su firma
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEntered, bufferSignature]);
 
 
   // =======================
   // REPARACIÓN DE DATOS VIEJOS
   // =======================
+  // Solo repara el buffer del documento: nunca escribir el historial completo en el doc (límite 1 MB).
   React.useEffect(() => {
-    if (!isEntered || hasMigrated || sales.length === 0 || isSyncing) return;
+    if (!isEntered || hasMigrated || bufferSales.length === 0 || isSyncing) return;
 
     let hasChanges = false;
-    const repairedSales = sales.map(sale => {
+    const repairedSales = bufferSales.map(sale => {
       let saleChanged = false;
       let repairedPago = sale.pago;
 
@@ -325,7 +325,7 @@ const App: React.FC = () => {
     } else {
       setHasMigrated(true);
     }
-  }, [sales, isEntered, hasMigrated, isSyncing, inventory, expenses, giftCards]);
+  }, [bufferSales, isEntered, hasMigrated, isSyncing, inventory, expenses, giftCards]);
 
 
 
@@ -333,92 +333,75 @@ const App: React.FC = () => {
   // CIERRES MENSUALES AUTOMÁTICOS
   // =======================
   React.useEffect(() => {
-    if (!isEntered || isSyncing || sales.length === 0) return;
+    // Sin historial completo cargado NO se puede cerrar un mes: se guardarían datos parciales o ceros.
+    if (!isEntered || isSyncing || historyStatus !== 'ready' || sales.length === 0) return;
 
     const now = new Date();
-    // Determinamos el mes anterior
-    let prevMonth = now.getMonth(); // 0-indexed, so if now is April (3), prev is March (2)
+    // Mes anterior en base 1 (Enero=1). now.getMonth() es 0-indexed, o sea el mes anterior en base 1.
+    let prevMonth = now.getMonth();
     let prevYear = now.getFullYear();
-
-    if (prevMonth === 0) { // Si es Enero, el anterior es Diciembre del año pasado
+    if (prevMonth === 0) {
       prevMonth = 12;
       prevYear -= 1;
-    } else {
-      // Ajustar a 1-indexed para consistencia con Dashboard
-      // No necesitamos sumar 1 a 'prevMonth' porque now.getMonth() ya nos da el mes anterior en formato 1-indexed relativo?
-      // No: Enero=0, Feb=1, Mar=2, Abril=3.
-      // Si hoy es Abril (3), el mes pasado es Marzo (2).
-      // Queremos guardar Marzo como "3" (1-indexed).
-      // Así que: mesPasado1Indexed = now.getMonth() (que es 3 para Abril).
-      prevMonth = now.getMonth();
     }
 
     const closureId = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
-    const alreadyClosed = closures.some(c => c.id === closureId);
+    const existing = closures.find(c => c.id === closureId);
+    const isZeroClosure = (c: MonthlyClosure) =>
+      c.gananciaNeta === 0 && c.cajaEfectivo === 0 && c.cajaTarjeta === 0 && c.gastos === 0;
 
-    if (!alreadyClosed) {
-      console.log(`📋 Detectado mes finalizado: ${closureId}. Calculando cierre...`);
+    // Un cierre ya guardado solo se reabre si es un cierre en cero (posible dato falso del bug del buffer de 50)
+    if (existing && !isZeroClosure(existing)) return;
 
-      // 1. Filtrar datos de ese mes
-      const sMes = sales.filter(s => isMonth(s.fecha, prevMonth, prevYear));
-      const gMes = expenses.filter(e => isMonth(e.fecha, prevMonth, prevYear));
+    const sMes = sales.filter(s => isMonth(s.fecha, prevMonth, prevYear));
+    const gMes = expenses.filter(e => isMonth(e.fecha, prevMonth, prevYear));
 
-      if (sMes.length === 0 && gMes.length === 0) {
-        // Si no hubo actividad, creamos un cierre en cero para no volver a intentar
-        const zeroClosure: MonthlyClosure = {
-          id: closureId,
-          month: prevMonth,
-          year: prevYear,
-          gananciaNeta: 0,
-          cajaEfectivo: 0,
-          cajaTarjeta: 0,
-          gastos: 0,
-          fechaCierre: new Date().toISOString()
-        };
-        setClosures(prev => [...prev, zeroClosure]);
-        database.addClosure(zeroClosure).catch(console.error);
-        return;
-      }
-
-      // 2. Calcular totales (usando la misma lógica que el Dashboard)
-      const gastos = gMes.reduce((acc, e) => acc + e.monto, 0);
-      
-      const efVentas = sMes.reduce((acc, sale) => {
-        const { efectivo } = computeSaleBreakdown(sale, sales);
-        const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
-        return acc + signo * efectivo;
-      }, 0);
-      const cajaEfectivo = efVentas - gastos;
-
-      const cajaTarjeta = sMes.reduce((acc, sale) => {
-        const { tarjeta } = computeSaleBreakdown(sale, sales);
-        const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
-        return acc + signo * tarjeta;
-      }, 0);
-
-      const gBruta = sMes.reduce((acc, sale) => {
-        const { ganancia } = computeSaleBreakdown(sale, sales);
-        const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
-        return acc + signo * ganancia;
-      }, 0);
-      const gananciaNeta = gBruta - gastos;
-
-      const newClosure: MonthlyClosure = {
+    if (sMes.length === 0 && gMes.length === 0) {
+      if (existing) return;
+      // Sin actividad real (con historial completo verificado): cierre en cero para no reintentar
+      const zeroClosure: MonthlyClosure = {
         id: closureId,
         month: prevMonth,
         year: prevYear,
-        gananciaNeta,
-        cajaEfectivo,
-        cajaTarjeta,
-        gastos,
+        gananciaNeta: 0,
+        cajaEfectivo: 0,
+        cajaTarjeta: 0,
+        gastos: 0,
         fechaCierre: new Date().toISOString()
       };
-
-      console.log('✅ Cierre calculado con éxito:', newClosure);
-      setClosures(prev => [...prev, newClosure]);
-      database.addClosure(newClosure).catch(console.error);
+      setClosures(prev => [...prev, zeroClosure]);
+      database.addClosure(zeroClosure).catch(console.error);
+      return;
     }
-  }, [isEntered, isSyncing, sales, expenses, closures]);
+
+    // Calcular totales (misma lógica que el Dashboard)
+    const gastos = gMes.reduce((acc, e) => acc + e.monto, 0);
+    const signoDe = (sale: Sale) => (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
+
+    const efVentas = sMes.reduce((acc, sale) => acc + signoDe(sale) * computeSaleBreakdown(sale, sales).efectivo, 0);
+    const cajaEfectivo = efVentas - gastos;
+    const cajaTarjeta = sMes.reduce((acc, sale) => acc + signoDe(sale) * computeSaleBreakdown(sale, sales).tarjeta, 0);
+    const gBruta = sMes.reduce((acc, sale) => acc + signoDe(sale) * computeSaleBreakdown(sale, sales).ganancia, 0);
+    const gananciaNeta = gBruta - gastos;
+
+    const newClosure: MonthlyClosure = {
+      id: closureId,
+      month: prevMonth,
+      year: prevYear,
+      gananciaNeta,
+      cajaEfectivo,
+      cajaTarjeta,
+      gastos,
+      fechaCierre: new Date().toISOString()
+    };
+
+    // Evita bucles: si el recálculo también da cero, no hay nada que corregir
+    if (existing && isZeroClosure(newClosure)) return;
+
+    console.log(existing ? '🔁 Cierre en cero corregido:' : '✅ Cierre calculado con éxito:', newClosure);
+    setClosures(prev => existing ? prev.map(c => c.id === closureId ? newClosure : c) : [...prev, newClosure]);
+    database.upsertClosure(newClosure).catch(console.error);
+  }, [isEntered, isSyncing, historyStatus, sales, expenses, closures]);
 
   // =======================
   // FORZAR SINCRONIZACIÓN MANUAL
@@ -996,12 +979,12 @@ const App: React.FC = () => {
     }
 
     // 4. Quitar la venta de la lista
-    const nextSales = sales.filter(s => s.id !== saleId);
 
     // 5. Actualización optimista de estado local
     if (sale) {
       setInventory(nextInv);
-      setSales(nextSales);
+      setSales(prev => prev.filter(s => s.id !== saleId));
+      setHistoricalSales(prev => prev.filter(s => s.id !== saleId));
       setGiftCards(nextGiftCards);
     }
 
@@ -1013,7 +996,8 @@ const App: React.FC = () => {
       // Revertir estado local en caso de fallo
       if (sale) {
         setInventory(inventory);
-        setSales(sales);
+        setSales(bufferSales);
+        setHistoricalSales(historicalSales);
         setGiftCards(giftCards);
       }
       alert('❌ Error al eliminar la venta.');

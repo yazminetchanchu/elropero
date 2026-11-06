@@ -1,6 +1,6 @@
 import React from 'react';
 import { InventoryItem, Sale, Expense, GiftCard } from '../types';
-import { CloudUpload, CloudDownload, Key, CheckCircle2, Wifi, WifiOff, Loader2, Database, Download } from 'lucide-react';
+import { CloudDownload, Key, CheckCircle2, Wifi, WifiOff, Database, Download } from 'lucide-react';
 import { database } from '../services/storage';
 import { useModal } from '../contexts/ModalContext';
 
@@ -31,26 +31,6 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses,
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
-
-  const handleCloudPush = async () => {
-    if (!isOnline) { 
-      showAlert("Sin conexión a internet.", "Sin Conexión", "warning"); 
-      return; 
-    }
-    setIsSyncing(true);
-
-    try {
-      await database.persistSafe({ inventory, sales, expenses, giftCards }, database.getLocalBackup().lastSync || 0);
-      const now = new Date().toLocaleString();
-
-      setLastSync(now);
-      showAlert("Sincronización exitosa. Los datos están seguros en la nube.", "Sincronización Completa", "success");
-    } catch (e) {
-      showAlert("Error al sincronizar. Intente nuevamente.", "Error de Sincronización", "error");
-    }
-
-    setIsSyncing(false);
-  };
 
   const handleCloudPull = async () => {
     if (!isOnline) { 
@@ -130,21 +110,12 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ inventory, sales, expenses,
                   {!isKeyDifferent && <CheckCircle2 size={32} className="text-green-500" />}
                 </div>
                 <p className="text-[10px] opacity-40 uppercase tracking-[2px] leading-relaxed">
-                  Usa este ID para sincronizar diferentes dispositivos. Los cambios que "subas" estarán disponibles para cualquier equipo con esta misma llave.
+                  Usa este ID para sincronizar diferentes dispositivos. Todos los cambios se guardan en la nube automáticamente al hacerlos.
                 </p>
               </div>
             </div>
 
             <div className="lg:col-span-2 flex flex-wrap gap-8">
-              <button
-                onClick={handleCloudPush}
-                disabled={isSyncing || isKeyDifferent || !isOnline}
-                className="flex-1 min-w-[280px] flex items-center justify-center gap-4 bg-white text-black py-8 px-10 text-[12px] tracking-[5px] font-black uppercase hover:bg-stone-100 hover:-translate-y-0.5 hover:shadow-xl transition-all duration-200 ease-out disabled:opacity-20 shadow-2xl active:translate-y-0"
-              >
-                {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <CloudUpload size={24} />}
-                {isSyncing ? 'Procesando...' : 'Subir a la Nube'}
-              </button>
-
               <button
                 onClick={handleCloudPull}
                 disabled={isSyncing || !isOnline}

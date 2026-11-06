@@ -433,8 +433,10 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
       }
 
       // Update showroom
+      // Historial completo en subcolección; el doc solo conserva el buffer de las últimas 50
+      transaction.set(showroomRef.collection('sales').doc(sale.id), JSON.parse(JSON.stringify(sale)));
       transaction.update(showroomRef, {
-        sales: [...sales, sale],
+        sales: [...sales, sale].slice(-50),
         giftCards: nextGiftCards,
         inventory: nextInventory,
         lastSync: Date.now(),
