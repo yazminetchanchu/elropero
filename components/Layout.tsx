@@ -1,7 +1,8 @@
 import React from 'react';
 import { Section, WebSettings } from '../types';
-import { LayoutDashboard, ShoppingBag, PackagePlus, WalletMinimal, LogOut, Menu, X, Gift, RefreshCw, Globe, ShoppingCart, ChevronLeft } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, PackagePlus, WalletMinimal, LogOut, Menu, X, Gift, RefreshCw, Globe, ShoppingCart, ChevronLeft, Eye, EyeOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { usePrivacy } from '../contexts/PrivacyContext';
 
 interface LayoutProps {
   currentSection: Section;
@@ -27,6 +28,7 @@ const Layout: React.FC<LayoutProps> = ({
   setSelectedCategory
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const { hideFinancials, togglePrivacy } = usePrivacy();
   const [isCollapsed, setIsCollapsed] = React.useState<boolean>(() => {
     try {
       return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -40,7 +42,7 @@ const Layout: React.FC<LayoutProps> = ({
       const next = !prev;
       try {
         localStorage.setItem('sidebar_collapsed', String(next));
-      } catch {}
+      } catch { }
       return next;
     });
   };
@@ -77,16 +79,14 @@ const Layout: React.FC<LayoutProps> = ({
 
   const navButtonClass = (active: boolean, collapsed: boolean) =>
     collapsed
-      ? `group relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200 ease-out shrink-0 ${
-          active
-            ? 'bg-stone-900 text-white shadow-xs font-medium hover:bg-black hover:scale-105 hover:shadow-sm'
-            : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900 hover:scale-105 hover:shadow-2xs'
-        }`
-      : `group relative w-full text-left py-2.5 px-3.5 flex items-center gap-3 rounded-xl transition-all duration-200 ease-out text-[10px] tracking-[0.18em] font-medium overflow-hidden ${
-          active
-            ? 'bg-stone-900 text-white shadow-xs font-semibold hover:bg-black hover:-translate-y-0.5 hover:shadow-sm'
-            : 'bg-transparent text-stone-600 hover:bg-stone-100 hover:text-stone-900 hover:-translate-y-0.5 hover:shadow-2xs border border-transparent hover:border-stone-200/60'
-        }`;
+      ? `group relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200 ease-out shrink-0 ${active
+        ? 'bg-stone-900 text-white shadow-xs font-medium hover:bg-black hover:scale-105 hover:shadow-sm'
+        : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900 hover:scale-105 hover:shadow-2xs'
+      }`
+      : `group relative w-full text-left py-2.5 px-3.5 flex items-center gap-3 rounded-xl transition-all duration-200 ease-out text-[10px] tracking-[0.18em] font-medium overflow-hidden ${active
+        ? 'bg-stone-900 text-white shadow-xs font-semibold hover:bg-black hover:-translate-y-0.5 hover:shadow-sm'
+        : 'bg-transparent text-stone-600 hover:bg-stone-100 hover:text-stone-900 hover:-translate-y-0.5 hover:shadow-2xs border border-transparent hover:border-stone-200/60'
+      }`;
 
   const SidebarContent: React.FC<{ collapsed?: boolean }> = ({ collapsed = false }) => (
     <>
@@ -167,6 +167,19 @@ const Layout: React.FC<LayoutProps> = ({
       <div className={`mt-auto space-y-2 pt-4 border-t border-stone-200/50 ${collapsed ? 'flex flex-col items-center w-full px-0' : 'w-full'}`}>
         {!collapsed ? (
           <>
+            <button
+              type="button"
+              onClick={togglePrivacy}
+              data-testid="sidebar-privacy-toggle"
+              title={hideFinancials ? "Mostrar datos de ganancia, caja y costos" : "Ocultar datos de ganancia, caja y costos"}
+              className={`w-full py-2.5 px-3.5 flex items-center gap-3 text-[9px] tracking-[0.18em] font-medium border rounded-xl transition-all duration-200 uppercase shadow-2xs hover:shadow-xs ${hideFinancials
+                  ? 'bg-amber-500/10 border-amber-300 text-amber-900 hover:bg-amber-500/20'
+                  : 'border-stone-200/70 hover:bg-stone-100 hover:border-stone-300 text-stone-700 hover:text-stone-900'
+                }`}
+            >
+              {hideFinancials ? <EyeOff size={15} strokeWidth={1.5} className="shrink-0 text-amber-700" /> : <Eye size={15} strokeWidth={1.5} className="shrink-0 text-stone-500" />}
+              <span className="truncate">{hideFinancials ? 'Mostrar Cifras' : 'Ocultar Cifras'}</span>
+            </button>
             <Link
               to="/"
               className="w-full py-2.5 px-3.5 flex items-center gap-3 text-[9px] tracking-[0.18em] font-medium border border-stone-200/70 rounded-xl hover:bg-stone-100 hover:border-stone-300 hover:-translate-y-0.5 transition-all duration-200 uppercase text-stone-700 hover:text-stone-900 shadow-2xs hover:shadow-xs"
@@ -193,6 +206,21 @@ const Layout: React.FC<LayoutProps> = ({
           </>
         ) : (
           <>
+            <button
+              type="button"
+              onClick={togglePrivacy}
+              data-testid="sidebar-privacy-toggle-collapsed"
+              title={hideFinancials ? "Mostrar datos de ganancia, caja y costos" : "Ocultar datos de ganancia, caja y costos"}
+              className={`group relative flex items-center justify-center w-10 h-10 rounded-xl border transition-all duration-200 shadow-2xs hover:shadow-xs shrink-0 ${hideFinancials
+                  ? 'bg-amber-500/15 border-amber-300 text-amber-800 hover:scale-105'
+                  : 'border-stone-200/70 hover:bg-stone-100 hover:border-stone-300 hover:scale-105 text-stone-700'
+                }`}
+            >
+              {hideFinancials ? <EyeOff size={18} strokeWidth={1.5} className="shrink-0 text-amber-700" /> : <Eye size={18} strokeWidth={1.5} className="shrink-0 text-stone-500" />}
+              <span className="absolute left-[54px] top-1/2 -translate-y-1/2 z-50 px-3 py-1.5 bg-stone-900/95 text-stone-100 text-[9px] uppercase font-medium tracking-[0.2em] rounded-lg shadow-xl backdrop-blur-xs whitespace-nowrap opacity-0 group-hover:opacity-100 group-hover:translate-x-1 pointer-events-none transition-all duration-200">
+                {hideFinancials ? 'Mostrar Cifras' : 'Ocultar Cifras'}
+              </span>
+            </button>
             <Link
               to="/"
               className="group relative flex items-center justify-center w-10 h-10 rounded-xl border border-stone-200/70 hover:bg-stone-100 hover:border-stone-300 hover:scale-105 text-stone-700 transition-all duration-200 shadow-2xs hover:shadow-xs shrink-0"
@@ -231,7 +259,7 @@ const Layout: React.FC<LayoutProps> = ({
 
   return (
     <>
-    <style>{`
+      <style>{`
         .sidebar-nav::-webkit-scrollbar {
           width: 3px;
         }
@@ -257,40 +285,54 @@ const Layout: React.FC<LayoutProps> = ({
           scrollbar-width: none;
         }
       `}</style>
-    <div className="min-h-[100dvh] w-full max-w-full flex flex-col md:flex-row bg-[#FAF9F5] overflow-x-hidden">
-      {/* Contenedor fixed del sidebar */}
-      <div
-        className={`hidden md:flex fixed top-0 left-0 h-full z-30 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-[72px]' : 'w-64'}`}
-      >
-        <aside
-          className={`flex flex-col border-r border-stone-200/60 bg-white/95 backdrop-blur-md h-full shadow-[1px_0_15px_rgba(0,0,0,0.015)] select-none w-full ${isCollapsed ? 'px-3 py-5 items-center overflow-visible' : 'p-5 overflow-hidden'}`}
+      <div className="min-h-[100dvh] w-full max-w-full flex flex-col md:flex-row bg-[#FAF9F5] overflow-x-hidden">
+        {/* Contenedor fixed del sidebar */}
+        <div
+          className={`hidden md:flex fixed top-0 left-0 h-full z-30 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-[72px]' : 'w-64'}`}
         >
-          <SidebarContent collapsed={isCollapsed} />
-        </aside>
-      </div>
-
-      <div className="md:hidden flex items-center justify-between p-4 bg-white/95 backdrop-blur-sm border-b border-stone-200/60 sticky top-0 z-50 shadow-2xs">
-        <span className="font-serif text-[clamp(15px,4.2vw,18px)] italic text-stone-900 tracking-wider truncate whitespace-nowrap">
-          {webSettings?.storeName || 'EL ROPERO'}
-        </span>
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 border border-stone-200/60 rounded-xl text-stone-800 hover:bg-stone-100/60 transition-colors"
-        >
-          {isMobileMenuOpen ? <X size={18} strokeWidth={1.5} /> : <Menu size={18} strokeWidth={1.5} />}
-        </button>
-      </div>
-
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-40 bg-white/98 backdrop-blur-md pt-20 px-6 flex flex-col overflow-y-auto visible-scrollbar pb-6">
-          <SidebarContent collapsed={false} />
+          <aside
+            className={`flex flex-col border-r border-stone-200/60 bg-white/95 backdrop-blur-md h-full shadow-[1px_0_15px_rgba(0,0,0,0.015)] select-none w-full ${isCollapsed ? 'px-3 py-5 items-center overflow-visible' : 'p-5 overflow-hidden'}`}
+          >
+            <SidebarContent collapsed={isCollapsed} />
+          </aside>
         </div>
-      )}
 
-      <main className={`flex-1 transition-all duration-300 ease-in-out p-4 md:p-8 overflow-auto visible-scrollbar ${isCollapsed ? 'md:ml-[72px]' : 'md:ml-64'}`}>
-        <div className="max-w-7xl mx-auto h-full">{children}</div>
-      </main>
-    </div>
+        <div className="md:hidden flex items-center justify-between p-4 bg-white/95 backdrop-blur-sm border-b border-stone-200/60 sticky top-0 z-50 shadow-2xs">
+          <span className="font-serif text-[clamp(15px,4.2vw,18px)] italic text-stone-900 tracking-wider truncate whitespace-nowrap">
+            {webSettings?.storeName || 'EL ROPERO'}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={togglePrivacy}
+              data-testid="mobile-privacy-toggle"
+              title={hideFinancials ? "Mostrar cifras de ganancia, caja y costos" : "Ocultar cifras de ganancia, caja y costos"}
+              className={`p-2 border rounded-xl transition-colors ${hideFinancials
+                  ? 'bg-amber-500/10 border-amber-300 text-amber-800'
+                  : 'border-stone-200/60 text-stone-800 hover:bg-stone-100/60'
+                }`}
+            >
+              {hideFinancials ? <EyeOff size={18} strokeWidth={1.5} className="text-amber-700" /> : <Eye size={18} strokeWidth={1.5} />}
+            </button>
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2 border border-stone-200/60 rounded-xl text-stone-800 hover:bg-stone-100/60 transition-colors"
+            >
+              {isMobileMenuOpen ? <X size={18} strokeWidth={1.5} /> : <Menu size={18} strokeWidth={1.5} />}
+            </button>
+          </div>
+        </div>
+
+        {isMobileMenuOpen && (
+          <div className="md:hidden fixed inset-0 z-40 bg-white/98 backdrop-blur-md pt-20 px-6 flex flex-col overflow-y-auto visible-scrollbar pb-6">
+            <SidebarContent collapsed={false} />
+          </div>
+        )}
+
+        <main className={`flex-1 transition-all duration-300 ease-in-out p-4 md:p-8 overflow-auto visible-scrollbar ${isCollapsed ? 'md:ml-[72px]' : 'md:ml-64'}`}>
+          <div className="max-w-7xl mx-auto h-full">{children}</div>
+        </main>
+      </div>
     </>
   );
 };

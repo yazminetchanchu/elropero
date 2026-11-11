@@ -16,11 +16,12 @@ import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import TransferSuccessPage from './components/TransferSuccessPage';
 import WebOrdersManager from './components/WebOrdersManager';
 import InnovativeLoader from './components/InnovativeLoader';
-import { computeSaleBreakdown, isMonth, getItemSnapshot } from './services/finance';
+import { computeSaleBreakdown, isMonth, getItemSnapshot, recalculateSaleWithPaymentMethod } from './services/finance';
 import { deductSaleFromInventory, restoreSaleToInventory } from './services/webOrderFulfillment';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ModalProvider } from './contexts/ModalContext';
+import { PrivacyProvider } from './contexts/PrivacyContext';
 import NetworkStatus from './components/NetworkStatus';
 import { auth, functions } from './services/firebase';
 import { httpsCallable } from 'firebase/functions';
@@ -180,8 +181,8 @@ const App: React.FC = () => {
     }
     setLastUpdate(data.lastSync || Date.now());
     database.updateLocalOnly(data);
-  // Los setters de useState son estables, no necesitan ser dependencias
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Los setters de useState son estables, no necesitan ser dependencias
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // =======================
@@ -248,7 +249,7 @@ const App: React.FC = () => {
 
       const repairedItems = (sale.items || []).map(item => {
         let itemChanged = false;
-         
+
         const parsedPrecioTarjeta = typeof item.precioTarjeta === 'string' ? (Number(item.precioTarjeta) || 0) : item.precioTarjeta;
         if (parsedPrecioTarjeta !== item.precioTarjeta) itemChanged = true;
 
@@ -280,7 +281,7 @@ const App: React.FC = () => {
         repairedItems.forEach(item => {
           const cant = item.cantidad || 0;
           const desc = item.descuento || 0;
-          
+
           const pTar = item.precioTarjeta * (1 - desc / 100);
           const pEfe = item.precioEfectivo * (1 - Math.max(0, desc - 20) / 100);
 
@@ -298,7 +299,7 @@ const App: React.FC = () => {
         if (diffT < 2 && diffE > 2 && repairedPago?.tarjeta !== 100) {
           nuevoPago = { efectivo: 0, tarjeta: 100 };
           localChanged = true;
-        } 
+        }
         // Si el precio coincide perfecto con Efectivo y No con Tarjeta
         else if (diffE < 2 && diffT > 2 && repairedPago?.efectivo !== 100) {
           nuevoPago = { efectivo: 100, tarjeta: 0 };
@@ -382,7 +383,7 @@ const App: React.FC = () => {
 
       // 2. Calcular totales (usando la misma lógica que el Dashboard)
       const gastos = gMes.reduce((acc, e) => acc + e.monto, 0);
-      
+
       const efVentas = sMes.reduce((acc, sale) => {
         const { efectivo } = computeSaleBreakdown(sale, sales);
         const signo = (sale.tipo === 'devolucion' || sale.tipo === 'anulacion') ? -1 : 1;
@@ -452,7 +453,7 @@ const App: React.FC = () => {
   React.useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       const cleanEmail = user?.email?.trim().toLowerCase();
-      const is2FAVerified = sessionStorage.getItem('ropero_2fa_verified') === 'true' || 
+      const is2FAVerified = sessionStorage.getItem('ropero_2fa_verified') === 'true' ||
         (cleanEmail && localStorage.getItem(`ropero_trusted_device_${cleanEmail}`) === 'true');
 
       if (user && is2FAVerified && !isEntered && window.location.pathname.includes('/gestion-ropero-panel')) {
@@ -536,7 +537,7 @@ const App: React.FC = () => {
 
     if (isDeviceTrusted) {
       console.log('✅ Dispositivo conocido y verificado para:', cleanEmail, '- Omitiendo código 2FA.');
-      
+
       const cleanID = database.setShowroomID(showroomID);
       setShowroomID(cleanID);
 
@@ -702,7 +703,7 @@ const App: React.FC = () => {
       medidas: (item as any).medidas || '',
       categoria: (item as any).categoria || ''
     };
-  
+
     try {
       await database.addInventoryItem(newItem);
     } catch (error) {
@@ -737,7 +738,7 @@ const App: React.FC = () => {
   // =======================
   const handleAddSale = async (saleData: Omit<Sale, 'id'>) => {
     let nextGiftCards = [...giftCards];
-  
+
     if (saleData.giftCardUsada) {
       nextGiftCards = giftCards.map(gc => {
         if (gc.codigo === saleData.giftCardUsada!.codigo) {
@@ -751,7 +752,7 @@ const App: React.FC = () => {
         return gc;
       });
     }
-  
+
     // =======================
     // VALIDACIONES DE CAMBIO
     // =======================
@@ -849,36 +850,36 @@ const App: React.FC = () => {
     // =======================
     let giftGenerada: GiftCard | undefined;
     if (saleData.tipo === 'cambio' && (saleData.diferencia ?? 0) < 0) {
-        const codigoGift = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      const codigoGift = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-        const ventaOrig = sales.find(s => s.id === saleData.ventaOriginalId);
-        let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
-        if (ventaOrig?.pago) {
-          if (ventaOrig.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
-          else if (ventaOrig.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
-          else medioPagoOrigen = 'mixto';
-        } else if (ventaOrig?.metodoPago) {
-          const mp = String(ventaOrig.metodoPago).toLowerCase();
-          if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
-            medioPagoOrigen = 'tarjeta';
-          }
+      const ventaOrig = sales.find(s => s.id === saleData.ventaOriginalId);
+      let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
+      if (ventaOrig?.pago) {
+        if (ventaOrig.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
+        else if (ventaOrig.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
+        else medioPagoOrigen = 'mixto';
+      } else if (ventaOrig?.metodoPago) {
+        const mp = String(ventaOrig.metodoPago).toLowerCase();
+        if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
+          medioPagoOrigen = 'tarjeta';
         }
-
-        // El monto a favor de la Gift Card es el valor neto de la diferencia negativa
-        const montoGift = Math.abs(saleData.diferencia ?? 0);
-
-        giftGenerada = {
-          id: saleData.giftCardGeneradaId || saleData.giftGeneradaId || `gift_${Date.now()}`,
-          codigo: codigoGift,
-          destinatario: saleData.giftDestinatario?.trim() || 'Cambio automático',
-          montoInicial: montoGift,
-          saldo: montoGift,
-          estado: 'ACTIVA',
-          fechaCreacion: new Date().toISOString(),
-          medioPagoOrigen,
-          ventaOrigenId: saleData.ventaOriginalId,
-        };
       }
+
+      // El monto a favor de la Gift Card es el valor neto de la diferencia negativa
+      const montoGift = Math.abs(saleData.diferencia ?? 0);
+
+      giftGenerada = {
+        id: saleData.giftCardGeneradaId || saleData.giftGeneradaId || `gift_${Date.now()}`,
+        codigo: codigoGift,
+        destinatario: saleData.giftDestinatario?.trim() || 'Cambio automático',
+        montoInicial: montoGift,
+        saldo: montoGift,
+        estado: 'ACTIVA',
+        fechaCreacion: new Date().toISOString(),
+        medioPagoOrigen,
+        ventaOrigenId: saleData.ventaOriginalId,
+      };
+    }
 
     // Los emails se enviarán después de persistir correctamente
     const saleId = `sale_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -893,7 +894,7 @@ const App: React.FC = () => {
       await database.recordSale(newSale, {
         newGiftCard: giftGenerada
       });
-      
+
       // Enviar emails SOLO si se guardó exitosamente
       if (giftGenerada && saleData.giftEmail && saleData.giftEmail.trim() !== '') {
         sendGiftCardEmail(
@@ -927,8 +928,24 @@ const App: React.FC = () => {
   // ✏️ UPDATE SALE PAGO/MEDIO
   // =======================
   const handleUpdateSalePago = (saleId: string, pago: { efectivo: number; tarjeta: number }) => {
-    database.updateSalePago(saleId, pago).catch(err => {
+    const oldSale = sales.find(s => s.id === saleId);
+    if (!oldSale) return;
+
+    // Recalcular montos de la venta según el nuevo método de pago (total, diferencia, etc.)
+    const updatedSale = recalculateSaleWithPaymentMethod(oldSale, pago, inventory);
+    const nextSales = sales.map(s => s.id === saleId ? updatedSale : s);
+
+    // Actualización optimista inmediata en memoria React y en caché local
+    // para reflejar instantáneamente el cambio en Historial, Caja y Ganancias
+    setSales(nextSales);
+    database.updateLocalOnly({ sales: nextSales });
+
+    // Persistir en Firestore (documento individual y buffer de showroom)
+    database.updateSalePago(saleId, pago, updatedSale.total, updatedSale.diferencia).catch(err => {
       console.error('❌ Error al actualizar medio de pago:', err);
+      // Revertir estado si ocurre error en la sincronización remota
+      setSales(sales);
+      database.updateLocalOnly({ sales });
       alert('❌ Error al actualizar el medio de pago.');
     });
   };
@@ -1054,149 +1071,149 @@ const App: React.FC = () => {
     }
   };
 
- // =======================
-// GIFT CARDS
-// =======================
-const generateUniqueGiftCardCode = (existing: GiftCard[]): string => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const existingCodes = new Set(existing.map(gc => gc.codigo.toUpperCase()));
-  let attempts = 0;
-  while (attempts < 1000) {
-    let randomPart = '';
-    for (let i = 0; i < 5; i++) {
-      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+  // =======================
+  // GIFT CARDS
+  // =======================
+  const generateUniqueGiftCardCode = (existing: GiftCard[]): string => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const existingCodes = new Set(existing.map(gc => gc.codigo.toUpperCase()));
+    let attempts = 0;
+    while (attempts < 1000) {
+      let randomPart = '';
+      for (let i = 0; i < 5; i++) {
+        randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const fullCode = `GIFT-${randomPart}`;
+      if (!existingCodes.has(fullCode)) {
+        return fullCode;
+      }
+      attempts++;
     }
-    const fullCode = `GIFT-${randomPart}`;
-    if (!existingCodes.has(fullCode)) {
-      return fullCode;
-    }
-    attempts++;
-  }
-  return `GIFT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-};
-
-const handleAddGiftCard = async (data: { destinatario: string; montoInicial: number; codigo?: string; pago?: { efectivo: number; tarjeta: number }; email?: string; mensaje?: string; deParteDe?: string; emailComprador?: string }) => {
-  // 1. Crear el objeto de la Gift Card
-  const nuevoCodigo = data.codigo || generateUniqueGiftCardCode(giftCards);
-  const newGift: GiftCard = {
-    id: `gift_${Date.now()}`,
-    codigo: nuevoCodigo,
-    destinatario: data.destinatario,
-    montoInicial: data.montoInicial,
-    saldo: data.montoInicial,
-    estado: 'ACTIVA',
-    fechaCreacion: new Date().toISOString(),
+    return `GIFT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
   };
 
-  // Los emails se enviarán luego de persistir
+  const handleAddGiftCard = async (data: { destinatario: string; montoInicial: number; codigo?: string; pago?: { efectivo: number; tarjeta: number }; email?: string; mensaje?: string; deParteDe?: string; emailComprador?: string }) => {
+    // 1. Crear el objeto de la Gift Card
+    const nuevoCodigo = data.codigo || generateUniqueGiftCardCode(giftCards);
+    const newGift: GiftCard = {
+      id: `gift_${Date.now()}`,
+      codigo: nuevoCodigo,
+      destinatario: data.destinatario,
+      montoInicial: data.montoInicial,
+      saldo: data.montoInicial,
+      estado: 'ACTIVA',
+      fechaCreacion: new Date().toISOString(),
+    };
 
-  const pagoData = data.pago || { efectivo: 100, tarjeta: 0 };
-  const portionEfectivo = pagoData.efectivo / 100;
-  const portionTarjeta = pagoData.tarjeta / 100;
-  const rawTarjeta = (data.montoInicial * portionTarjeta) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100);
-  const rawEfectivo = data.montoInicial * portionEfectivo;
-  const finalTotal = Math.round(rawEfectivo + rawTarjeta);
+    // Los emails se enviarán luego de persistir
 
-  // 2. Crear la Venta para que aparezca en CAJA y GANANCIAS
-  const newSale: Sale = {
-    id: `sale_gift_${Date.now()}`,
-    tipo: 'gift',
-    fecha: new Date().toISOString(),
-    total: finalTotal,
-    // Se usa el mix de pago especificado o efectivo por defecto
-    pago: pagoData,
-    items: [{
-      id: nuevoCodigo,
-      sku: nuevoCodigo,
-      descripcion: `Gift Card: ${data.destinatario}`,
-      cantidad: 1,
-      costo: 0,
-      precioEfectivo: data.montoInicial,
-      precioTarjeta: Math.round(data.montoInicial / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)),
-      descuento: 0
-    }],
-  };
-
-  // 3. GUARDAR TODO JUNTO (Si no se hace así, una lista pisa a la otra)
-  try {
-    await database.addGiftCard(newGift, newSale);
-
-    // 4. Enviar email al destinatario
-    if (data.email && data.email.trim() !== '') {
-      sendGiftCardEmail(
-        data.email.trim(),
-        data.destinatario,
-        data.deParteDe || 'Administración',
-        data.montoInicial,
-        nuevoCodigo,
-        data.mensaje || ''
-      ).catch(err => console.error("Error sending gift card email:", err));
-    }
-
-    // 5. Enviar email al comprador si lo dejó asentado
-    if (data.emailComprador && data.emailComprador.trim() !== '') {
-      sendSaleConfirmationEmail(
-        newSale as any,
-        data.deParteDe || 'Cliente',
-        data.emailComprador.trim(),
-        'local'
-      ).catch(err => console.error("Error sending gift card purchase receipt:", err));
-    }
-  } catch (err) {
-    console.error("Compra de Gift Card fallida, no se enviaron correos.", err);
-    alert('❌ Error al registrar la Gift Card.');
-    throw err;
-  }
-};
-
-const handleUpdateGiftCard = (updated: GiftCard) => {
-  const matchingSale = sales.find(s => s.items?.some(item => item.sku === updated.codigo));
-  let updatedSale: Sale | undefined = undefined;
-  if (matchingSale) {
-    const pagoData = (matchingSale.pago && (matchingSale.pago.efectivo + matchingSale.pago.tarjeta === 100)) ? matchingSale.pago : { efectivo: 100, tarjeta: 0 };
+    const pagoData = data.pago || { efectivo: 100, tarjeta: 0 };
     const portionEfectivo = pagoData.efectivo / 100;
     const portionTarjeta = pagoData.tarjeta / 100;
-    const rawTarjeta = (updated.montoInicial * portionTarjeta) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100);
-    const rawEfectivo = updated.montoInicial * portionEfectivo;
+    const rawTarjeta = (data.montoInicial * portionTarjeta) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100);
+    const rawEfectivo = data.montoInicial * portionEfectivo;
     const finalTotal = Math.round(rawEfectivo + rawTarjeta);
 
-    updatedSale = {
-      ...matchingSale,
+    // 2. Crear la Venta para que aparezca en CAJA y GANANCIAS
+    const newSale: Sale = {
+      id: `sale_gift_${Date.now()}`,
+      tipo: 'gift',
+      fecha: new Date().toISOString(),
       total: finalTotal,
+      // Se usa el mix de pago especificado o efectivo por defecto
       pago: pagoData,
-      items: (matchingSale.items ?? []).map(item =>
-        item.sku === updated.codigo
-          ? { ...item, precioEfectivo: updated.montoInicial, precioTarjeta: Math.round(updated.montoInicial / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)), descripcion: `Gift Card: ${updated.destinatario}` }
-          : item
-      )
+      items: [{
+        id: nuevoCodigo,
+        sku: nuevoCodigo,
+        descripcion: `Gift Card: ${data.destinatario}`,
+        cantidad: 1,
+        costo: 0,
+        precioEfectivo: data.montoInicial,
+        precioTarjeta: Math.round(data.montoInicial / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)),
+        descuento: 0
+      }],
     };
-  }
 
-  database.updateGiftCard(updated, updatedSale).catch(err => {
-    console.error('❌ Error al actualizar Gift Card:', err);
-    alert('❌ Error al actualizar la Gift Card.');
-  });
-};
+    // 3. GUARDAR TODO JUNTO (Si no se hace así, una lista pisa a la otra)
+    try {
+      await database.addGiftCard(newGift, newSale);
 
-const handleCancelGiftCard = (id: string) => {
-  const gift = giftCards.find(g => g.id === id);
-  if (!gift) return;
+      // 4. Enviar email al destinatario
+      if (data.email && data.email.trim() !== '') {
+        sendGiftCardEmail(
+          data.email.trim(),
+          data.destinatario,
+          data.deParteDe || 'Administración',
+          data.montoInicial,
+          nuevoCodigo,
+          data.mensaje || ''
+        ).catch(err => console.error("Error sending gift card email:", err));
+      }
 
-  database.cancelGiftCard(id, gift.codigo).catch(err => {
-    console.error('❌ Error al cancelar Gift Card:', err);
-    alert('❌ Error al cancelar la Gift Card.');
-  });
-};
+      // 5. Enviar email al comprador si lo dejó asentado
+      if (data.emailComprador && data.emailComprador.trim() !== '') {
+        sendSaleConfirmationEmail(
+          newSale as any,
+          data.deParteDe || 'Cliente',
+          data.emailComprador.trim(),
+          'local'
+        ).catch(err => console.error("Error sending gift card purchase receipt:", err));
+      }
+    } catch (err) {
+      console.error("Compra de Gift Card fallida, no se enviaron correos.", err);
+      alert('❌ Error al registrar la Gift Card.');
+      throw err;
+    }
+  };
+
+  const handleUpdateGiftCard = (updated: GiftCard) => {
+    const matchingSale = sales.find(s => s.items?.some(item => item.sku === updated.codigo));
+    let updatedSale: Sale | undefined = undefined;
+    if (matchingSale) {
+      const pagoData = (matchingSale.pago && (matchingSale.pago.efectivo + matchingSale.pago.tarjeta === 100)) ? matchingSale.pago : { efectivo: 100, tarjeta: 0 };
+      const portionEfectivo = pagoData.efectivo / 100;
+      const portionTarjeta = pagoData.tarjeta / 100;
+      const rawTarjeta = (updated.montoInicial * portionTarjeta) / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100);
+      const rawEfectivo = updated.montoInicial * portionEfectivo;
+      const finalTotal = Math.round(rawEfectivo + rawTarjeta);
+
+      updatedSale = {
+        ...matchingSale,
+        total: finalTotal,
+        pago: pagoData,
+        items: (matchingSale.items ?? []).map(item =>
+          item.sku === updated.codigo
+            ? { ...item, precioEfectivo: updated.montoInicial, precioTarjeta: Math.round(updated.montoInicial / (1 - DESCUENTO_BASE_TRANSFERENCIA / 100)), descripcion: `Gift Card: ${updated.destinatario}` }
+            : item
+        )
+      };
+    }
+
+    database.updateGiftCard(updated, updatedSale).catch(err => {
+      console.error('❌ Error al actualizar Gift Card:', err);
+      alert('❌ Error al actualizar la Gift Card.');
+    });
+  };
+
+  const handleCancelGiftCard = (id: string) => {
+    const gift = giftCards.find(g => g.id === id);
+    if (!gift) return;
+
+    database.cancelGiftCard(id, gift.codigo).catch(err => {
+      console.error('❌ Error al cancelar Gift Card:', err);
+      alert('❌ Error al cancelar la Gift Card.');
+    });
+  };
 
   // =======================
   // APP
   // =======================
   if (isInitialLoading) {
     return (
-      <InnovativeLoader 
-        storeName={webSettings.storeName || 'EL ROPERO'} 
-        isDataLoaded={isDataLoaded} 
-        onComplete={() => setIsInitialLoading(false)} 
+      <InnovativeLoader
+        storeName={webSettings.storeName || 'EL ROPERO'}
+        isDataLoaded={isDataLoaded}
+        onComplete={() => setIsInitialLoading(false)}
       />
     );
   }
@@ -1204,268 +1221,268 @@ const handleCancelGiftCard = (id: string) => {
   return (
     <AuthProvider>
       <ModalProvider>
-        <Router>
-          <NetworkStatus />
+        <PrivacyProvider>
+          <Router>
+            <NetworkStatus />
 
-          {/* Banner Flotante de Advertencia por Inactividad */}
-          {showInactivityWarning && (
-            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-black text-white px-6 py-3.5 rounded-full shadow-2xl flex items-center gap-4 text-[11px] tracking-[1px] uppercase border border-white/20 animate-in fade-in duration-300">
-              <Clock size={16} className="text-amber-400 animate-pulse" />
-              <span>Tu sesión expirará en menos de 60 segundos por inactividad.</span>
-              <button
-                onClick={() => setShowInactivityWarning(false)}
-                className="bg-white text-black hover:bg-neutral-200 px-4 py-1.5 rounded-full text-[9px] font-bold tracking-[2px] transition-all"
-              >
-                Mantener Activa
-              </button>
-            </div>
-          )}
+            {/* Banner Flotante de Advertencia por Inactividad */}
+            {showInactivityWarning && (
+              <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-black text-white px-6 py-3.5 rounded-full shadow-2xl flex items-center gap-4 text-[11px] tracking-[1px] uppercase border border-white/20 animate-in fade-in duration-300">
+                <Clock size={16} className="text-amber-400 animate-pulse" />
+                <span>Tu sesión expirará en menos de 60 segundos por inactividad.</span>
+                <button
+                  onClick={() => setShowInactivityWarning(false)}
+                  className="bg-white text-black hover:bg-neutral-200 px-4 py-1.5 rounded-full text-[9px] font-bold tracking-[2px] transition-all"
+                >
+                  Mantener Activa
+                </button>
+              </div>
+            )}
 
-          <Routes>
-            <Route path="/" element={<StorefrontPage inventoryProp={inventory} settingsProp={webSettings} />} />
-            <Route path="/checkout/transferencia-exitosa" element={<TransferSuccessPage webSettings={webSettings} />} />
-            <Route path="/reset-password" element={<ResetPasswordPage webSettings={webSettings} />} />
+            <Routes>
+              <Route path="/" element={<StorefrontPage inventoryProp={inventory} settingsProp={webSettings} />} />
+              <Route path="/checkout/transferencia-exitosa" element={<TransferSuccessPage webSettings={webSettings} />} />
+              <Route path="/reset-password" element={<ResetPasswordPage webSettings={webSettings} />} />
 
-            {/* Redireccionar la ruta obsoleta /admin al inicio para evitar escaneo automatizado */}
-            <Route path="/admin" element={<Navigate to="/" replace />} />
+              {/* Redireccionar la ruta obsoleta /admin al inicio para evitar escaneo automatizado */}
+              <Route path="/admin" element={<Navigate to="/" replace />} />
 
-            {/* Ruta Oculta y Protegida del Panel de Administración */}
-            <Route path="/gestion-ropero-panel" element={
-              !isEntered ? (
-                <div className="min-h-screen w-full flex items-center justify-center bg-white p-6 selection:bg-black selection:text-white font-['Inter'] overflow-y-auto py-12">
-                  <div className="max-w-[400px] w-full my-auto space-y-12 sm:space-y-16 animate-in fade-in duration-700">
-                    <div className="text-center space-y-2 w-full px-2">
-                      <p className="text-[10px] tracking-[6px] uppercase opacity-40 font-light">Acceso Reservado</p>
-                      <h1 className="text-[clamp(15px,4.5vw,24px)] tracking-[clamp(4px,2.5vw,18px)] uppercase font-medium leading-none text-black whitespace-nowrap overflow-hidden text-ellipsis">
-                        {webSettings.storeName || 'EL ROPERO'}
-                      </h1>
-                    </div>
+              {/* Ruta Oculta y Protegida del Panel de Administración */}
+              <Route path="/gestion-ropero-panel" element={
+                !isEntered ? (
+                  <div className="min-h-screen w-full flex items-center justify-center bg-white p-6 selection:bg-black selection:text-white font-['Inter'] overflow-y-auto py-12">
+                    <div className="max-w-[400px] w-full my-auto space-y-12 sm:space-y-16 animate-in fade-in duration-700">
+                      <div className="text-center space-y-2 w-full px-2">
+                        <p className="text-[10px] tracking-[6px] uppercase opacity-40 font-light">Acceso Reservado</p>
+                        <h1 className="text-[clamp(15px,4.5vw,24px)] tracking-[clamp(4px,2.5vw,18px)] uppercase font-medium leading-none text-black whitespace-nowrap overflow-hidden text-ellipsis">
+                          {webSettings.storeName || 'EL ROPERO'}
+                        </h1>
+                      </div>
 
-                    {!step2FA ? (
-                      /* PASO 1: Email + Identificador de Showroom + Contraseña */
-                      <form onSubmit={handleLogin} className="space-y-8">
-                        <div className="space-y-6">
-                          <div className="relative group">
-                            <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
-                              Email de Administrador
-                            </label>
-                            <input
-                              type="email"
-                              value={adminEmail}
-                              onChange={(e) => { setAdminEmail(e.target.value); setAuthError(null); }}
-                              className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[1px] font-light text-black placeholder:text-black/10 transition-all"
-                              placeholder="admin@elropero.ar"
-                              required
-                            />
+                      {!step2FA ? (
+                        /* PASO 1: Email + Identificador de Showroom + Contraseña */
+                        <form onSubmit={handleLogin} className="space-y-8">
+                          <div className="space-y-6">
+                            <div className="relative group">
+                              <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                                Email de Administrador
+                              </label>
+                              <input
+                                type="email"
+                                value={adminEmail}
+                                onChange={(e) => { setAdminEmail(e.target.value); setAuthError(null); }}
+                                className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[1px] font-light text-black placeholder:text-black/10 transition-all"
+                                placeholder="admin@elropero.ar"
+                                required
+                              />
+                            </div>
+
+                            <div className="relative group">
+                              <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                                Identificador de Showroom
+                              </label>
+                              <input
+                                type="text"
+                                value={showroomID}
+                                onChange={(e) => setShowroomID(e.target.value.toUpperCase())}
+                                className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[3px] font-light uppercase text-black placeholder:text-black/10 transition-all"
+                                placeholder="SHOWROOM-ID"
+                                required
+                              />
+                            </div>
+
+                            <div className="relative group">
+                              <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
+                                Contraseña
+                              </label>
+                              <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => { setPassword(e.target.value); setAuthError(null); }}
+                                className={`w-full bg-transparent border-b py-3 text-[13px] focus:outline-none tracking-[6px] transition-all ${authError
+                                    ? 'border-red-400 text-red-600 focus:border-red-500'
+                                    : 'border-black/10 text-black focus:border-black'
+                                  }`}
+                                placeholder="••••••••"
+                                required
+                              />
+                            </div>
                           </div>
 
-                          <div className="relative group">
-                            <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
-                              Identificador de Showroom
-                            </label>
-                            <input
-                              type="text"
-                              value={showroomID}
-                              onChange={(e) => setShowroomID(e.target.value.toUpperCase())}
-                              className="w-full bg-transparent border-b border-black/10 py-3 text-[13px] focus:outline-none focus:border-black tracking-[3px] font-light uppercase text-black placeholder:text-black/10 transition-all"
-                              placeholder="SHOWROOM-ID"
-                              required
-                            />
+                          <div className="space-y-4 pt-2">
+                            <button
+                              type="submit"
+                              className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-4 disabled:opacity-30"
+                              disabled={isLoading || (lockUntil !== null && Date.now() < lockUntil)}
+                            >
+                              {isLoading ? <Loader2 className="animate-spin" size={14} strokeWidth={1.5} /> : "Iniciar Sesión"}
+                            </button>
+
+                            {authError && (
+                              <p className="text-[10px] text-red-600 text-center uppercase tracking-[2px] font-medium leading-relaxed">
+                                {authError}
+                              </p>
+                            )}
                           </div>
-
-                          <div className="relative group">
-                            <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-2 transition-colors group-focus-within:text-black">
-                              Contraseña
-                            </label>
-                            <input
-                              type="password"
-                              value={password}
-                              onChange={(e) => { setPassword(e.target.value); setAuthError(null); }}
-                              className={`w-full bg-transparent border-b py-3 text-[13px] focus:outline-none tracking-[6px] transition-all ${
-                                authError 
-                                  ? 'border-red-400 text-red-600 focus:border-red-500' 
-                                  : 'border-black/10 text-black focus:border-black'
-                              }`}
-                              placeholder="••••••••"
-                              required
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-4 pt-2">
-                          <button
-                            type="submit"
-                            className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-4 disabled:opacity-30"
-                            disabled={isLoading || (lockUntil !== null && Date.now() < lockUntil)}
-                          >
-                            {isLoading ? <Loader2 className="animate-spin" size={14} strokeWidth={1.5} /> : "Iniciar Sesión"}
-                          </button>
-
-                          {authError && (
-                            <p className="text-[10px] text-red-600 text-center uppercase tracking-[2px] font-medium leading-relaxed">
-                              {authError}
+                        </form>
+                      ) : (
+                        /* PASO 2: Verificación de 2 Factores (Código OTP enviado por Email para Dispositivo Nuevo) */
+                        <form onSubmit={handleVerifyOTP} className="space-y-8 animate-in fade-in duration-500">
+                          <div className="text-center space-y-3">
+                            <div className="w-12 h-12 rounded-full bg-black/5 flex items-center justify-center mx-auto mb-2 text-black">
+                              <ShieldCheck size={24} strokeWidth={1.5} />
+                            </div>
+                            <h2 className="text-[11px] tracking-[4px] uppercase font-semibold text-black">Dispositivo Nuevo Detectado</h2>
+                            <p className="text-[11px] text-black/60 font-light leading-relaxed">
+                              Por seguridad, enviamos un código de 6 dígitos a tu correo para autorizar este navegador:<br />
+                              <span className="font-medium text-black">{adminEmail}</span>
                             </p>
-                          )}
-                        </div>
-                      </form>
-                    ) : (
-                      /* PASO 2: Verificación de 2 Factores (Código OTP enviado por Email para Dispositivo Nuevo) */
-                      <form onSubmit={handleVerifyOTP} className="space-y-8 animate-in fade-in duration-500">
-                        <div className="text-center space-y-3">
-                          <div className="w-12 h-12 rounded-full bg-black/5 flex items-center justify-center mx-auto mb-2 text-black">
-                            <ShieldCheck size={24} strokeWidth={1.5} />
-                          </div>
-                          <h2 className="text-[11px] tracking-[4px] uppercase font-semibold text-black">Dispositivo Nuevo Detectado</h2>
-                          <p className="text-[11px] text-black/60 font-light leading-relaxed">
-                            Por seguridad, enviamos un código de 6 dígitos a tu correo para autorizar este navegador:<br/>
-                            <span className="font-medium text-black">{adminEmail}</span>
-                          </p>
-                        </div>
-
-                        <div className="space-y-4">
-                          <div className="relative group text-center">
-                            <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-3">
-                              Código de Verificación (6 dígitos)
-                            </label>
-                            <input
-                              type="text"
-                              maxLength={6}
-                              value={otpCode}
-                              onChange={(e) => {
-                                const val = e.target.value.replace(/\D/g, '');
-                                setOtpCode(val);
-                                setAuthError(null);
-                              }}
-                              className={`w-full bg-transparent border-b text-center text-[22px] font-mono tracking-[12px] py-3 focus:outline-none transition-all ${
-                                authError 
-                                  ? 'border-red-400 text-red-600 focus:border-red-500' 
-                                  : 'border-black/20 text-black focus:border-black'
-                              }`}
-                              placeholder="••••••"
-                              autoFocus
-                              required
-                            />
                           </div>
 
-                          <div className="flex items-center justify-between text-[10px] text-black/50 tracking-[1px] font-light pt-2">
-                            <span>Expiración: <strong className="text-black font-mono">{Math.floor(otpCountdown / 60)}:{String(otpCountdown % 60).padStart(2, '0')}</strong></span>
+                          <div className="space-y-4">
+                            <div className="relative group text-center">
+                              <label className="block text-[9px] font-medium uppercase tracking-[3px] text-black/40 mb-3">
+                                Código de Verificación (6 dígitos)
+                              </label>
+                              <input
+                                type="text"
+                                maxLength={6}
+                                value={otpCode}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/\D/g, '');
+                                  setOtpCode(val);
+                                  setAuthError(null);
+                                }}
+                                className={`w-full bg-transparent border-b text-center text-[22px] font-mono tracking-[12px] py-3 focus:outline-none transition-all ${authError
+                                    ? 'border-red-400 text-red-600 focus:border-red-500'
+                                    : 'border-black/20 text-black focus:border-black'
+                                  }`}
+                                placeholder="••••••"
+                                autoFocus
+                                required
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between text-[10px] text-black/50 tracking-[1px] font-light pt-2">
+                              <span>Expiración: <strong className="text-black font-mono">{Math.floor(otpCountdown / 60)}:{String(otpCountdown % 60).padStart(2, '0')}</strong></span>
+                              <button
+                                type="button"
+                                onClick={handleResendOTP}
+                                disabled={isSendingOTP || otpCountdown > 240}
+                                className="underline hover:text-black transition-colors disabled:opacity-40"
+                              >
+                                {isSendingOTP ? 'Enviando...' : 'Reenviar código'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4 pt-2">
+                            <button
+                              type="submit"
+                              className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-4 disabled:opacity-30"
+                              disabled={isLoading || otpCode.length !== 6}
+                            >
+                              {isLoading ? <Loader2 className="animate-spin" size={14} strokeWidth={1.5} /> : "Verificar e Ingresar"}
+                            </button>
+
                             <button
                               type="button"
-                              onClick={handleResendOTP}
-                              disabled={isSendingOTP || otpCountdown > 240}
-                              className="underline hover:text-black transition-colors disabled:opacity-40"
+                              onClick={() => { setStep2FA(false); setOtpCode(''); setAuthError(null); }}
+                              className="w-full text-black/40 hover:text-black text-[10px] tracking-[2px] uppercase font-light transition-colors py-1"
                             >
-                              {isSendingOTP ? 'Enviando...' : 'Reenviar código'}
+                              ← Volver al paso anterior
                             </button>
+
+                            {authError && (
+                              <p className="text-[10px] text-red-600 text-center uppercase tracking-[2px] font-medium leading-relaxed">
+                                {authError}
+                              </p>
+                            )}
                           </div>
+                        </form>
+                      )}
+
+                      <div className="pt-10 border-t border-black/5 flex flex-col items-center gap-6">
+                        <div className="flex items-center gap-10 opacity-20">
+                          <Monitor size={20} strokeWidth={1} />
+                          <div className="w-10 h-[1px] bg-black/20" />
+                          <Smartphone size={20} strokeWidth={1} />
                         </div>
-
-                        <div className="space-y-4 pt-2">
-                          <button
-                            type="submit"
-                            className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-all flex items-center justify-center gap-4 disabled:opacity-30"
-                            disabled={isLoading || otpCode.length !== 6}
-                          >
-                            {isLoading ? <Loader2 className="animate-spin" size={14} strokeWidth={1.5} /> : "Verificar e Ingresar"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => { setStep2FA(false); setOtpCode(''); setAuthError(null); }}
-                            className="w-full text-black/40 hover:text-black text-[10px] tracking-[2px] uppercase font-light transition-colors py-1"
-                          >
-                            ← Volver al paso anterior
-                          </button>
-
-                          {authError && (
-                            <p className="text-[10px] text-red-600 text-center uppercase tracking-[2px] font-medium leading-relaxed">
-                              {authError}
-                            </p>
-                          )}
-                        </div>
-                      </form>
-                    )}
-
-                    <div className="pt-10 border-t border-black/5 flex flex-col items-center gap-6">
-                      <div className="flex items-center gap-10 opacity-20">
-                        <Monitor size={20} strokeWidth={1} />
-                        <div className="w-10 h-[1px] bg-black/20" />
-                        <Smartphone size={20} strokeWidth={1} />
+                        <p className="text-[9px] uppercase tracking-[3px] font-light text-black/40 leading-relaxed text-center max-w-[280px]">
+                          Sincronización en tiempo real activa entre dispositivos mediante ID.
+                        </p>
                       </div>
-                      <p className="text-[9px] uppercase tracking-[3px] font-light text-black/40 leading-relaxed text-center max-w-[280px]">
-                        Sincronización en tiempo real activa entre dispositivos mediante ID.
-                      </p>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <Layout 
-                  currentSection={section} 
-                  setSection={setSection} 
-                  onLogout={async () => {
-                    sessionStorage.removeItem('ropero_2fa_verified');
-                    try {
-                      await signOut(auth);
-                    } catch (err) {
-                      console.error('Error al cerrar sesión de Firebase Auth:', err);
-                    }
-                    setIsEntered(false);
-                    setStep2FA(false);
-                  }} 
-                  isSyncing={isSyncing}
-                  onForceSync={forceSync}
-                  webSettings={webSettings}
-                  selectedCategory={selectedCategory}
-                  setSelectedCategory={setSelectedCategory}
-                >
-                  {section === 'admin' && (
-                    <Dashboard 
-                      inventory={inventory} 
-                      sales={sales} 
-                      expenses={expenses} 
-                      giftCards={giftCards}
-                      closures={closures}
-                      webSettings={webSettings}
-                      selectedCategory={selectedCategory}
-                      onSelectCategory={(cat) => setSelectedCategory(cat)}
-                      onUpdateItem={handleUpdateItem} 
-                      onDeleteItem={handleDeleteItem} 
-                      onNavigateToWebManager={handleNavigateToWebManager}
-                    />
-                  )}
-                  {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} onUpdateSalePago={handleUpdateSalePago} giftCards={giftCards} isSyncing={isSyncing} />}
-                  {section === 'stock' && <Stock onAddItem={handleAddItem} inventory={inventory} webSettings={webSettings} />}
-                  {section === 'gastos' && <Expenses expenses={expenses} onAddExpense={handleAddExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />}
-                  {section === 'giftcards' && (
-                    <GiftCards
-                      giftCards={giftCards}
-                      onAddGiftCard={handleAddGiftCard}
-                      onUpdateGiftCard={handleUpdateGiftCard}
-                      onCancelGiftCard={handleCancelGiftCard}
-                    />
-                  )}
-                  {section === 'sitio' && (
-                    <WebManager 
-                      inventory={inventory} 
-                      webSettings={webSettings}
-                      selectedCategory={selectedCategory}
-                      onSelectCategory={(cat) => setSelectedCategory(cat)}
-                      onUpdateInventory={(next) => database.updateInventory(next)}
-                      onUpdateSettings={(next) => database.updateWebSettings(next)}
-                      initialEditingItemId={webManagerEditItemId}
-                      onClearEditItem={() => setWebManagerEditItemId(null)}
-                    />
-                  )}
-                  {section === 'pedidos' && (
-                    <WebOrdersManager onOrderFulfilled={forceSync} />
-                  )}
-                </Layout>
-              )
-            } />
+                ) : (
+                  <Layout
+                    currentSection={section}
+                    setSection={setSection}
+                    onLogout={async () => {
+                      sessionStorage.removeItem('ropero_2fa_verified');
+                      try {
+                        await signOut(auth);
+                      } catch (err) {
+                        console.error('Error al cerrar sesión de Firebase Auth:', err);
+                      }
+                      setIsEntered(false);
+                      setStep2FA(false);
+                    }}
+                    isSyncing={isSyncing}
+                    onForceSync={forceSync}
+                    webSettings={webSettings}
+                    selectedCategory={selectedCategory}
+                    setSelectedCategory={setSelectedCategory}
+                  >
+                    {section === 'admin' && (
+                      <Dashboard
+                        inventory={inventory}
+                        sales={sales}
+                        expenses={expenses}
+                        giftCards={giftCards}
+                        closures={closures}
+                        webSettings={webSettings}
+                        selectedCategory={selectedCategory}
+                        onSelectCategory={(cat) => setSelectedCategory(cat)}
+                        onUpdateItem={handleUpdateItem}
+                        onDeleteItem={handleDeleteItem}
+                        onNavigateToWebManager={handleNavigateToWebManager}
+                      />
+                    )}
+                    {section === 'ventas' && <Sales inventory={inventory} onAddSale={handleAddSale} recentSales={sales} onDeleteSale={handleDeleteSale} onUpdateSalePago={handleUpdateSalePago} giftCards={giftCards} isSyncing={isSyncing} />}
+                    {section === 'stock' && <Stock onAddItem={handleAddItem} inventory={inventory} webSettings={webSettings} />}
+                    {section === 'gastos' && <Expenses expenses={expenses} onAddExpense={handleAddExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />}
+                    {section === 'giftcards' && (
+                      <GiftCards
+                        giftCards={giftCards}
+                        onAddGiftCard={handleAddGiftCard}
+                        onUpdateGiftCard={handleUpdateGiftCard}
+                        onCancelGiftCard={handleCancelGiftCard}
+                      />
+                    )}
+                    {section === 'sitio' && (
+                      <WebManager
+                        inventory={inventory}
+                        webSettings={webSettings}
+                        selectedCategory={selectedCategory}
+                        onSelectCategory={(cat) => setSelectedCategory(cat)}
+                        onUpdateInventory={(next) => database.updateInventory(next)}
+                        onUpdateSettings={(next) => database.updateWebSettings(next)}
+                        initialEditingItemId={webManagerEditItemId}
+                        onClearEditItem={() => setWebManagerEditItemId(null)}
+                      />
+                    )}
+                    {section === 'pedidos' && (
+                      <WebOrdersManager onOrderFulfilled={forceSync} />
+                    )}
+                  </Layout>
+                )
+              } />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Router>
+        </PrivacyProvider>
       </ModalProvider>
     </AuthProvider>
   );

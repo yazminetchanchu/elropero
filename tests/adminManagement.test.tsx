@@ -101,7 +101,7 @@ describe('Flujos Detallados de Gestión de Administración (Integración)', () =
     // Ganancia Bruta = 1000 + 2000 = 3000
     // Ganancia Neta = Ganancia Bruta - Gastos = 3000 - 500 = 2500
 
-    expect(screen.getAllByText(/2[.,]?900/)[0]).toBeInTheDocument(); // Ganancia Neta
+    expect(screen.getAllByText(/2[.,]?500/)[0]).toBeInTheDocument(); // Ganancia Neta
     expect(screen.getAllByText(/1[.,]?500/)[0]).toBeInTheDocument(); // Total Efectivo
     expect(screen.getAllByText(/4[.,]?400/)[0]).toBeInTheDocument(); // Total Tarjeta
   });
@@ -110,7 +110,7 @@ describe('Flujos Detallados de Gestión de Administración (Integración)', () =
     // Mes Anterior: Ganancia Neta = 1000, Efectivo = 2000, Tarjeta = 1000
     const closures: MonthlyClosure[] = [
       {
-        id: 'c1', month: prevMonth, year: prevYear, gananciaNeta: 1000, 
+        id: 'c1', month: prevMonth, year: prevYear, gananciaNeta: 1000,
         cajaEfectivo: 2000, cajaTarjeta: 1000, gastos: 0, fechaCierre: getFormatDate(28, prevMonth, prevYear)
       }
     ];
@@ -139,7 +139,7 @@ describe('Flujos Detallados de Gestión de Administración (Integración)', () =
     // Ganancia Neta: 1600 vs 1000 -> 60%
     // Efectivo: 1600 vs 2000 -> 20% (negativo, trendDown)
     // Tarjeta: 3000 vs 1000 -> 200%
-    
+
     // Verificamos los porcentajes en los componentes. 
     // Dado que el componente renderiza el número y el % juntos de una forma específica, 
     expect(screen.getAllByText(/60/)[0]).toBeInTheDocument();
@@ -168,7 +168,7 @@ describe('Flujos Detallados de Gestión de Administración (Integración)', () =
     };
 
     render(<Dashboard {...baseProps} sales={[ventaOriginal, cambio]} />);
-    
+
     // Al probar la integración, verificamos que no crashea y procesa ambas ventas complejas
     expect(screen.getByText('Ganancia Neta (Mes)')).toBeInTheDocument();
     const tableRows = screen.getAllByRole('row');
@@ -177,7 +177,7 @@ describe('Flujos Detallados de Gestión de Administración (Integración)', () =
 
   it('Verifica el cálculo de Cantidades en Stock (con y sin stock)', () => {
     render(<Dashboard {...baseProps} />);
-    
+
     // Item 1 tiene 10. Item 2 tiene 0. Total = 10.
     // "Stock Total (Total de unidades de todos los productos)" = 10
     expect(screen.getByText('Stock Total')).toBeInTheDocument();
@@ -192,7 +192,7 @@ describe('Flujos Detallados de Gestión de Administración (Integración)', () =
     // Habilitar ver sin stock
     const btnSinStock = screen.getByText(/Ver agotadas/i);
     fireEvent.click(btnSinStock);
-    
+
     // Ahora debería verse la Prenda 2 (que tiene 0 stock)
     expect(screen.getByText('Prenda 2')).toBeInTheDocument();
   });

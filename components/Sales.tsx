@@ -1,7 +1,8 @@
 import React from 'react';
 import { InventoryItem, Sale, GiftCard, SaleItem } from '../types';
-import { Trash2, CreditCard, Banknote, CheckCircle, Search, X } from 'lucide-react';
+import { Trash2, CreditCard, Banknote, CheckCircle, Search, X, Eye, EyeOff } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
+import { usePrivacy } from '../contexts/PrivacyContext';
 import { parseSafeDate } from '../services/webOrderToSale';
 
 
@@ -48,6 +49,7 @@ const Sales: React.FC<SalesProps> = ({
   isSyncing = false,
 }) => {
   const { showAlert, showConfirm } = useModal();
+  const { hideFinancials, togglePrivacy } = usePrivacy();
   const [searchTerm, setSearchTerm] = React.useState('');
   const [quantity, setQuantity] = React.useState(1);
   const [showResults, setShowResults] = React.useState(false);
@@ -86,7 +88,7 @@ const Sales: React.FC<SalesProps> = ({
 
   // Estado temporal para cantidades en el selector de devueltos
   const [cantDevueltasInput, setCantDevueltasInput] = React.useState<Record<string, number>>({});
-  
+
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -175,7 +177,7 @@ const Sales: React.FC<SalesProps> = ({
 
     // Acceso directo al inventario invertido (más recientes primero)
     return [...inventory]
-      .reverse() 
+      .reverse()
       .filter(p => {
         const disponible = getStockDisponible(p);
         if (disponible <= 0) return false;
@@ -341,7 +343,18 @@ const Sales: React.FC<SalesProps> = ({
   // =======================
   // CAMBIO: totales y diferencia
   // =======================
-  // 1️⃣ VALOR DEVUELTO (Calculado estrictamente según el medio de pago de la venta original)
+  // Reglas de negocio para cambios:
+  // Cuando hay prendas nuevas, la base de comparación y precios la define el medio de pago
+  // elegido para la nueva compra (pagoEfectivo vs pagoTarjeta):
+  // - Si se abona con Tarjeta: ambas prendas (devueltas y nuevas) se calculan a Precio de Lista (tarjeta).
+  // - Si se abona en Efectivo: ambas prendas se calculan a Precio Efectivo.
+  // - Si se abona mixto: se ponderan según los porcentajes elegidos.
+  // - Si es una devolución pura (sin prendas nuevas para generar Gift Card):
+  //   se calcula según el medio de pago de la venta original (o Precio Efectivo).
+
+  const hasNewItems = cart.length > 0;
+
+  // 1️⃣ VALOR DEVUELTO
   const totalDevuelto = React.useMemo(() => {
     if (!modoCambio || !ventaOriginal) return 0;
 
@@ -355,14 +368,14 @@ const Sales: React.FC<SalesProps> = ({
       }
     }
     pagoOriginalCalc = pagoOriginalCalc || { efectivo: 100, tarjeta: 0 };
-    const efePerc = pagoOriginalCalc.efectivo ?? 100;
-    const tarPerc = pagoOriginalCalc.tarjeta ?? 0;
+
+    const efePerc = hasNewItems ? pagoEfectivo : (pagoOriginalCalc.efectivo ?? 100);
+    const tarPerc = hasNewItems ? pagoTarjeta : (pagoOriginalCalc.tarjeta ?? 0);
 
     const rawTotal = itemsDevueltos.reduce((sum, item) => {
       const cant = item.cantidad ?? 0;
       const desc = item.descuento || 0;
 
-      // Usamos la lógica de pesaje según cómo se pagó en la venta original
       const pT = item.precioTarjeta * (1 - desc / 100);
       const descuentoExtraEfectivo = Math.max(0, desc - 20);
       const pE = item.precioEfectivo * (1 - descuentoExtraEfectivo / 100);
@@ -371,8 +384,9 @@ const Sales: React.FC<SalesProps> = ({
       return sum + valPesado * cant;
     }, 0);
     return Math.round(rawTotal);
-  }, [modoCambio, itemsDevueltos, ventaOriginal]);
+  }, [modoCambio, itemsDevueltos, ventaOriginal, hasNewItems, pagoEfectivo, pagoTarjeta]);
 
+  // 2️⃣ VALOR NUEVO: se actualiza en base a la forma de pago elegida
   const totalNuevo = React.useMemo(() => {
     if (!modoCambio) return 0;
     const rawTotal = cart.reduce((sum, item) => {
@@ -387,6 +401,7 @@ const Sales: React.FC<SalesProps> = ({
     return Math.round(rawTotal);
   }, [modoCambio, cart, pagoEfectivo, pagoTarjeta]);
 
+  // 3️⃣ DIFERENCIA DEL CAMBIO
   const diferenciaCambio = modoCambio ? Math.round(totalNuevo - totalDevuelto) : 0;
   const diferenciaAbs = Math.abs(diferenciaCambio);
 
@@ -395,7 +410,7 @@ const Sales: React.FC<SalesProps> = ({
   // Si es una venta normal, cubre hasta el total bruto.
   const montoGiftUsar = React.useMemo(() => {
     if (!giftCardSeleccionada) return 0;
-    
+
     if (modoCambio) {
       if (diferenciaCambio <= 0) return 0;
       return Math.min(giftCardSeleccionada.saldo, diferenciaCambio);
@@ -408,20 +423,15 @@ const Sales: React.FC<SalesProps> = ({
   // Total normal de la venta (después de aplicar gift card)
   const totalVentaNormal = Math.max(0, totalBruto - montoGiftUsar);
 
-  // Label del medio de pago usado para el valor devuelto
-  const pagoOriginal = ventaOriginal?.pago || (ventaOriginal?.metodoPago?.toLowerCase().includes('tarjeta') ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 });
-
-  const devolucionLabel = pagoOriginal
-    ? pagoOriginal.efectivo === 100
-      ? 'E'
-      : pagoOriginal.tarjeta === 100
-      ? 'T'
-      : `E ${pagoOriginal.efectivo}% / T ${pagoOriginal.tarjeta}%`
-    : '';
+  // Label del medio de pago usado para valor devuelto
+  const devolucionLabel = hasNewItems
+    ? (pagoTarjeta === 100 ? 'Tarjeta' : pagoEfectivo === 100 ? 'Efectivo' : `E ${pagoEfectivo}% / T ${pagoTarjeta}%`)
+    : (ventaOriginal?.pago?.tarjeta === 100 ? 'Tarjeta' : 'Efectivo');
 
   const etiquetaDiferencia =
     diferenciaCambio > 0 ? 'A PAGAR' : diferenciaCambio < 0 ? 'A FAVOR (GIFT)' : 'SIN DIFERENCIA';
 
+  // Total a cobrar en cambios (después de restar Gift Card si se usó una)
   const totalFinal = Math.round(modoCambio
     ? Math.max(0, diferenciaCambio - montoGiftUsar)
     : totalVentaNormal);
@@ -521,7 +531,7 @@ const Sales: React.FC<SalesProps> = ({
           sku: prod?.sku || '---',
           descripcion: i.descripcion,
           cantidad: i.cantidad,
-          costo: i.costo,
+          costo: Math.max(0, i.costo ?? prod?.costo ?? 0),
           precioEfectivo: i.precioEfectivo,
           precioTarjeta: i.precioTarjeta,
           descuento: i.descuento,
@@ -620,7 +630,7 @@ const Sales: React.FC<SalesProps> = ({
         sku: prod?.sku || '---',
         descripcion: i.descripcion,
         cantidad: i.cantidad,
-        costo: i.costo,
+        costo: Math.max(0, i.costo ?? prod?.costo ?? 0),
         precioEfectivo: i.precioEfectivo,
         precioTarjeta: i.precioTarjeta,
         descuento: i.descuento,
@@ -679,111 +689,125 @@ const Sales: React.FC<SalesProps> = ({
           <h2 className="font-serif text-2xl italic font-normal text-stone-900">Caja</h2>
           <p className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-light mt-0.5">Registro de ventas y cambios</p>
         </div>
-        {modoCambio && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => {
-              setModoCambio(false);
-              setVentaOriginal(null);
-              setItemsDevueltos([]);
-            }}
-            className="text-[9px] uppercase tracking-[0.15em] font-medium text-rose-700 bg-rose-50 border border-rose-200/70 px-3 py-1.5 rounded-xl hover:bg-rose-100/70 transition-all"
+            type="button"
+            onClick={togglePrivacy}
+            data-testid="sales-toggle-privacy-btn"
+            title={hideFinancials ? "Mostrar cifras de caja y ventas" : "Ocultar cifras de caja y ventas"}
+            className={`text-[9px] uppercase tracking-[0.15em] font-medium px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 shadow-2xs ${hideFinancials
+              ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+              : 'bg-white text-stone-700 border-stone-200/80 hover:bg-stone-50 hover:border-stone-300'
+              }`}
           >
-            ✕ Cancelar Cambio
+            {hideFinancials ? <EyeOff size={13} strokeWidth={1.5} className="text-amber-700" /> : <Eye size={13} strokeWidth={1.5} className="text-stone-500" />}
+            <span>{hideFinancials ? 'Cifras Ocultas' : 'Ocultar Cifras'}</span>
           </button>
-        )}
+          {modoCambio && (
+            <button
+              onClick={() => {
+                setModoCambio(false);
+                setVentaOriginal(null);
+                setItemsDevueltos([]);
+              }}
+              className="text-[9px] uppercase tracking-[0.15em] font-medium text-rose-700 bg-rose-50 border border-rose-200/70 px-3 py-1.5 rounded-xl hover:bg-rose-100/70 transition-all"
+            >
+              ✕ Cancelar Cambio
+            </button>
+          )}
+        </div>
       </header>
 
       {/* SELECCIÓN DE PRENDAS A DEVOLVER */}
-{modoCambio && ventaOriginal && (
-  <div className="border border-stone-200/60 bg-white rounded-2xl p-4 space-y-3 shadow-2xs">
-    <h4 className="text-[10px] uppercase font-semibold tracking-[0.18em] text-stone-500">
-      Prendas a devolver
-    </h4>
+      {modoCambio && ventaOriginal && (
+        <div className="border border-stone-200/60 bg-white rounded-2xl p-4 space-y-3 shadow-2xs">
+          <h4 className="text-[10px] uppercase font-semibold tracking-[0.18em] text-stone-500">
+            Prendas a devolver
+          </h4>
 
-    {(ventaOriginal.items ?? []).map((item, idx) => {
-      const cantDisponible = getCantidadDisponibleDevolucion(ventaOriginal, item);
-      const estaAgotada = cantDisponible <= 0;
-      const compKey = `${item.id}-${item.talle || ''}-${item.color || ''}`;
-      const seleccionada = itemsDevueltos.find(i => i.id === item.id && i.talle === item.talle && i.color === item.color);
-      const cantSeleccionada = cantDevueltasInput[compKey] ?? (seleccionada?.cantidad ?? 0);
-      const itemKey = `${item.id || 'item'}-${item.sku || ''}-${item.talle || ''}-${item.color || ''}-${idx}`;
-      const inputId = `dev-${item.id || 'item'}-${idx}`;
+          {(ventaOriginal.items ?? []).map((item, idx) => {
+            const cantDisponible = getCantidadDisponibleDevolucion(ventaOriginal, item);
+            const estaAgotada = cantDisponible <= 0;
+            const compKey = `${item.id}-${item.talle || ''}-${item.color || ''}`;
+            const seleccionada = itemsDevueltos.find(i => i.id === item.id && i.talle === item.talle && i.color === item.color);
+            const cantSeleccionada = cantDevueltasInput[compKey] ?? (seleccionada?.cantidad ?? 0);
+            const itemKey = `${item.id || 'item'}-${item.sku || ''}-${item.talle || ''}-${item.color || ''}-${idx}`;
+            const inputId = `dev-${item.id || 'item'}-${idx}`;
 
-      return (
-        <div
-          key={itemKey}
-          className={`flex items-center gap-3 p-3 border rounded-xl transition-colors ${
-            estaAgotada
-              ? 'opacity-40 bg-stone-50 border-stone-200 cursor-not-allowed'
-              : seleccionada
-              ? 'bg-stone-100/70 border-stone-300'
-              : 'border-stone-200/60 hover:bg-stone-50'
-          }`}
-        >
-          {/* Checkbox */}
-          <input
-            type="checkbox"
-            id={inputId}
-            checked={!!seleccionada}
-            disabled={estaAgotada}
-            onChange={() => {
-              if (estaAgotada) return;
-              setItemsDevueltos(prev => {
-                if (prev.some(i => i.id === item.id && i.talle === item.talle && i.color === item.color)) {
-                  setCantDevueltasInput(p => { const n = {...p}; delete n[compKey]; return n; });
-                  return prev.filter(i => !(i.id === item.id && i.talle === item.talle && i.color === item.color));
-                }
-                const cant = Math.min((cantDevueltasInput[compKey] as number) || 1, cantDisponible);
-                return [...prev, { ...item, cantidad: cant }];
-              });
-            }}
-            className="accent-stone-900 w-4 h-4 rounded shrink-0 cursor-pointer disabled:cursor-not-allowed"
-          />
-          {/* Info prenda */}
-          <label htmlFor={estaAgotada ? undefined : inputId} className={`flex-1 ${estaAgotada ? 'cursor-not-allowed' : 'cursor-pointer'} text-xs text-stone-800`}>
-            <span className="font-mono text-xs text-stone-400 mr-2">{item.sku}</span>
-            {item.descripcion}
-            {item.talle || item.color ? (
-              <span className="ml-2 text-[9px] text-stone-500 font-mono">
-                ({[item.talle, item.color].filter(Boolean).join(' - ')})
-              </span>
-            ) : null}
-            {estaAgotada && (
-              <span className="ml-2 text-[9px] uppercase tracking-wider text-rose-600 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">
-                (Ya devuelto)
-              </span>
-            )}
-          </label>
-          {/* Cantidad editable */}
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[10px] text-stone-400">x</span>
-            <input
-              type="number"
-              min={1}
-              max={cantDisponible}
-              value={cantSeleccionada === '' ? '' : cantSeleccionada}
-              disabled={!seleccionada || estaAgotada}
-              onChange={e => {
-                const rawVal = e.target.value;
-                if (rawVal === '') {
-                  setCantDevueltasInput(p => ({ ...p, [compKey]: '' as any }));
-                  return;
-                }
-                const val = Math.min(Math.max(1, parseInt(rawVal) || 1), cantDisponible);
-                setCantDevueltasInput(p => ({ ...p, [compKey]: val }));
-                setItemsDevueltos(prev =>
-                  prev.map(i => (i.id === item.id && i.talle === item.talle && i.color === item.color) ? { ...i, cantidad: val } : i)
-                );
-              }}
-              className="w-14 border border-stone-200/80 rounded-lg px-2 py-1 text-xs text-center text-stone-900 focus:outline-none focus:border-stone-400 disabled:opacity-30 font-mono"
-            />
-            <span className="text-[10px] text-stone-400 font-mono">/ {cantDisponible} disp.</span>
-          </div>
+            return (
+              <div
+                key={itemKey}
+                className={`flex items-center gap-3 p-3 border rounded-xl transition-colors ${estaAgotada
+                  ? 'opacity-40 bg-stone-50 border-stone-200 cursor-not-allowed'
+                  : seleccionada
+                    ? 'bg-stone-100/70 border-stone-300'
+                    : 'border-stone-200/60 hover:bg-stone-50'
+                  }`}
+              >
+                {/* Checkbox */}
+                <input
+                  type="checkbox"
+                  id={inputId}
+                  checked={!!seleccionada}
+                  disabled={estaAgotada}
+                  onChange={() => {
+                    if (estaAgotada) return;
+                    setItemsDevueltos(prev => {
+                      if (prev.some(i => i.id === item.id && i.talle === item.talle && i.color === item.color)) {
+                        setCantDevueltasInput(p => { const n = { ...p }; delete n[compKey]; return n; });
+                        return prev.filter(i => !(i.id === item.id && i.talle === item.talle && i.color === item.color));
+                      }
+                      const cant = Math.min((cantDevueltasInput[compKey] as number) || 1, cantDisponible);
+                      return [...prev, { ...item, cantidad: cant }];
+                    });
+                  }}
+                  className="accent-stone-900 w-4 h-4 rounded shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                />
+                {/* Info prenda */}
+                <label htmlFor={estaAgotada ? undefined : inputId} className={`flex-1 ${estaAgotada ? 'cursor-not-allowed' : 'cursor-pointer'} text-xs text-stone-800`}>
+                  <span className="font-mono text-xs text-stone-400 mr-2">{item.sku}</span>
+                  {item.descripcion}
+                  {item.talle || item.color ? (
+                    <span className="ml-2 text-[9px] text-stone-500 font-mono">
+                      ({[item.talle, item.color].filter(Boolean).join(' - ')})
+                    </span>
+                  ) : null}
+                  {estaAgotada && (
+                    <span className="ml-2 text-[9px] uppercase tracking-wider text-rose-600 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">
+                      (Ya devuelto)
+                    </span>
+                  )}
+                </label>
+                {/* Cantidad editable */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-[10px] text-stone-400">x</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={cantDisponible}
+                    value={cantSeleccionada === '' ? '' : cantSeleccionada}
+                    disabled={!seleccionada || estaAgotada}
+                    onChange={e => {
+                      const rawVal = e.target.value;
+                      if (rawVal === '') {
+                        setCantDevueltasInput(p => ({ ...p, [compKey]: '' as any }));
+                        return;
+                      }
+                      const val = Math.min(Math.max(1, parseInt(rawVal) || 1), cantDisponible);
+                      setCantDevueltasInput(p => ({ ...p, [compKey]: val }));
+                      setItemsDevueltos(prev =>
+                        prev.map(i => (i.id === item.id && i.talle === item.talle && i.color === item.color) ? { ...i, cantidad: val } : i)
+                      );
+                    }}
+                    className="w-14 border border-stone-200/80 rounded-lg px-2 py-1 text-xs text-center text-stone-900 focus:outline-none focus:border-stone-400 disabled:opacity-30 font-mono"
+                  />
+                  <span className="text-[10px] text-stone-400 font-mono">/ {cantDisponible} disp.</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      );
-    })}
-  </div>
-)}
+      )}
 
       {modoCambio && (
         <div className="border border-stone-200/60 bg-white rounded-2xl p-5 space-y-3 shadow-2xs">
@@ -970,11 +994,10 @@ const Sales: React.FC<SalesProps> = ({
                             <select
                               value={item.talle || ''}
                               onChange={e => updateCartItemTalle(idx, e.target.value || undefined)}
-                              className={`text-[10px] border rounded-lg px-2 py-0.5 focus:outline-none bg-white cursor-pointer ${
-                                !item.talle
-                                  ? 'border-amber-300 text-amber-800 bg-amber-50/50'
-                                  : 'border-stone-200/80 text-stone-800'
-                              }`}
+                              className={`text-[10px] border rounded-lg px-2 py-0.5 focus:outline-none bg-white cursor-pointer ${!item.talle
+                                ? 'border-amber-300 text-amber-800 bg-amber-50/50'
+                                : 'border-stone-200/80 text-stone-800'
+                                }`}
                             >
                               <option value="">— Talle —</option>
                               {item.productTalles.map(t => {
@@ -995,11 +1018,10 @@ const Sales: React.FC<SalesProps> = ({
                             <select
                               value={item.color || ''}
                               onChange={e => updateCartItemColor(idx, e.target.value || undefined)}
-                              className={`text-[10px] border rounded-lg px-2 py-0.5 focus:outline-none bg-white cursor-pointer ${
-                                !item.color
-                                  ? 'border-amber-300 text-amber-800 bg-amber-50/50'
-                                  : 'border-stone-200/80 text-stone-800'
-                              }`}
+                              className={`text-[10px] border rounded-lg px-2 py-0.5 focus:outline-none bg-white cursor-pointer ${!item.color
+                                ? 'border-amber-300 text-amber-800 bg-amber-50/50'
+                                : 'border-stone-200/80 text-stone-800'
+                                }`}
                             >
                               <option value="">— Color —</option>
                               {item.productColores.map(c => {
@@ -1113,10 +1135,10 @@ const Sales: React.FC<SalesProps> = ({
           <h3 className="font-serif text-lg italic text-stone-900">Forma de pago</h3>
           {((modoCambio && diferenciaCambio > 0 && montoGiftUsar >= diferenciaCambio) ||
             (!modoCambio && totalBruto > 0 && montoGiftUsar >= totalBruto)) && (
-            <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-lg">
-              ✓ Cubierto 100% con Gift Card
-            </span>
-          )}
+              <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-lg">
+                ✓ Cubierto 100% con Gift Card
+              </span>
+            )}
         </div>
 
         {/* EFECTIVO */}
@@ -1150,7 +1172,7 @@ const Sales: React.FC<SalesProps> = ({
           </div>
 
           <div className="font-serif text-xl italic text-stone-900">
-            $ {subtotalEfectivo.toLocaleString()}
+            $ {hideFinancials ? '••••••' : subtotalEfectivo.toLocaleString()}
           </div>
         </div>
 
@@ -1185,80 +1207,80 @@ const Sales: React.FC<SalesProps> = ({
           </div>
 
           <div className="font-serif text-xl italic text-stone-900">
-            $ {subtotalTarjeta.toLocaleString()}
+            $ {hideFinancials ? '••••••' : subtotalTarjeta.toLocaleString()}
           </div>
         </div>
       </div>
 
       {/* GIFT CARD */}
-{giftCards.length > 0 && (
-  <div className="border border-stone-200/60 bg-white rounded-2xl p-6 space-y-4 shadow-2xs">
-    <h3 className="font-serif text-lg italic text-stone-900">Gift Card</h3>
+      {giftCards.length > 0 && (
+        <div className="border border-stone-200/60 bg-white rounded-2xl p-6 space-y-4 shadow-2xs">
+          <h3 className="font-serif text-lg italic text-stone-900">Gift Card</h3>
 
-    <select
-      value={giftCardSeleccionada?.codigo || ''}
-      onChange={e => {
-        const gc = giftCards.find(g => g.codigo === e.target.value) || null;
-        setGiftCardSeleccionada(gc);
-      }}
-      className="w-full border border-stone-200/80 rounded-xl p-3 text-stone-800 text-xs focus:outline-none focus:border-stone-400 shadow-2xs bg-white cursor-pointer"
-    >
-      <option value="">Seleccionar Gift Card</option>
-      {giftCards
-        .filter(gc => gc.estado === 'ACTIVA' && gc.saldo > 0)
-        .map((gc, idx) => (
-          <option key={gc.id || gc.codigo || `gc-${idx}`} value={gc.codigo}>
-            {gc.codigo} — {gc.destinatario} (Saldo: ${gc.saldo.toLocaleString()})
-          </option>
-        ))}
-    </select>
+          <select
+            value={giftCardSeleccionada?.codigo || ''}
+            onChange={e => {
+              const gc = giftCards.find(g => g.codigo === e.target.value) || null;
+              setGiftCardSeleccionada(gc);
+            }}
+            className="w-full border border-stone-200/80 rounded-xl p-3 text-stone-800 text-xs focus:outline-none focus:border-stone-400 shadow-2xs bg-white cursor-pointer"
+          >
+            <option value="">Seleccionar Gift Card</option>
+            {giftCards
+              .filter(gc => gc.estado === 'ACTIVA' && gc.saldo > 0)
+              .map((gc, idx) => (
+                <option key={gc.id || gc.codigo || `gc-${idx}`} value={gc.codigo}>
+                  {gc.codigo} — {gc.destinatario} (Saldo: ${gc.saldo.toLocaleString()})
+                </option>
+              ))}
+          </select>
 
-    {giftCardSeleccionada && (
-      <div className="space-y-2 border border-stone-200/60 bg-stone-50/60 rounded-xl p-4">
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-stone-600 font-medium">Saldo disponible:</span>
-          <span className="font-serif text-base italic text-stone-900">$ {giftCardSeleccionada.saldo.toLocaleString()}</span>
-        </div>
-        
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-stone-600 font-medium">
-            {modoCambio ? 'Diferencia a pagar:' : 'Total de la venta:'}
-          </span>
-          <span className="font-serif text-base italic text-stone-900">
-            $ {(modoCambio ? Math.max(0, diferenciaCambio) : totals.total).toLocaleString()}
-          </span>
-        </div>
-        
-        <div className="border-t border-stone-200/50 pt-3 mt-3">
-          <div className="flex justify-between items-center">
-            <span className="text-stone-900 font-semibold uppercase text-[10px] tracking-wider">Se usará de la gift card:</span>
-            <span className="font-serif text-lg italic text-stone-900 font-semibold">$ {montoGiftUsar.toLocaleString()}</span>
-          </div>
-          
-          {giftCardSeleccionada.saldo > (modoCambio ? Math.max(0, diferenciaCambio) : totals.total) && (
-            <div className="flex justify-between items-center mt-2 text-[10px] text-stone-400">
-              <span>Saldo restante en la gift card:</span>
-              <span className="font-mono font-medium">$ {(giftCardSeleccionada.saldo - montoGiftUsar).toLocaleString()}</span>
+          {giftCardSeleccionada && (
+            <div className="space-y-2 border border-stone-200/60 bg-stone-50/60 rounded-xl p-4">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-600 font-medium">Saldo disponible:</span>
+                <span className="font-serif text-base italic text-stone-900">$ {giftCardSeleccionada.saldo.toLocaleString()}</span>
+              </div>
+
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-600 font-medium">
+                  {modoCambio ? 'Diferencia a pagar:' : 'Total de la venta:'}
+                </span>
+                <span className="font-serif text-base italic text-stone-900">
+                  $ {(modoCambio ? Math.max(0, diferenciaCambio) : totals.total).toLocaleString()}
+                </span>
+              </div>
+
+              <div className="border-t border-stone-200/50 pt-3 mt-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-900 font-semibold uppercase text-[10px] tracking-wider">Se usará de la gift card:</span>
+                  <span className="font-serif text-lg italic text-stone-900 font-semibold">$ {montoGiftUsar.toLocaleString()}</span>
+                </div>
+
+                {giftCardSeleccionada.saldo > (modoCambio ? Math.max(0, diferenciaCambio) : totals.total) && (
+                  <div className="flex justify-between items-center mt-2 text-[10px] text-stone-400">
+                    <span>Saldo restante en la gift card:</span>
+                    <span className="font-mono font-medium">$ {(giftCardSeleccionada.saldo - montoGiftUsar).toLocaleString()}</span>
+                  </div>
+                )}
+
+                {giftCardSeleccionada.saldo <= (modoCambio ? Math.max(0, diferenciaCambio) : totals.total) && montoGiftUsar > 0 && (
+                  <div className="mt-2 text-[10px] text-amber-700 font-medium">
+                    ⚠️ Se usará el 100% del saldo de la gift card
+                  </div>
+                )}
+              </div>
             </div>
           )}
-          
-          {giftCardSeleccionada.saldo <= (modoCambio ? Math.max(0, diferenciaCambio) : totals.total) && montoGiftUsar > 0 && (
-            <div className="mt-2 text-[10px] text-amber-700 font-medium">
-              ⚠️ Se usará el 100% del saldo de la gift card
-            </div>
-          )}
         </div>
-      </div>
-    )}
-  </div>
-)}
+      )}
 
       {/* TOTAL */}
       <div className="bg-stone-900 text-white rounded-2xl p-6 flex justify-between items-center shadow-xs">
         <div>
           <span className="text-[9px] uppercase tracking-[0.2em] font-light text-stone-300">Total a cobrar</span>
           <div className="text-3xl font-serif italic font-normal text-white">
-            $ {totalFinal.toLocaleString()}
+            $ {hideFinancials ? '••••••' : totalFinal.toLocaleString()}
           </div>
         </div>
       </div>
@@ -1324,7 +1346,7 @@ const Sales: React.FC<SalesProps> = ({
           onChange={e => setFiltroMes(Number(e.target.value))}
           className="border border-[#D4C4B0] p-3 text-sm text-black outline-none bg-white focus:bg-[#FAF8F5]"
         >
-          {['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'].map((m, i) => (
+          {['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((m, i) => (
             <option key={i} value={i + 1}>{m}</option>
           ))}
         </select>
@@ -1361,121 +1383,125 @@ const Sales: React.FC<SalesProps> = ({
           })
           .slice(0, 20)
           .map((s, idx) => {
+            const isTarjeta = s.pago
+              ? s.pago.tarjeta === 100
+              : Boolean(s.metodoPago?.toLowerCase().includes('tarjeta') || s.metodoPago?.toLowerCase().includes('uala'));
+
             const pagoLabel = s.pago
-  ? s.pago.efectivo === 100
-    ? 'E'
-    : s.pago.tarjeta === 100
-    ? 'T'
-    : `E ${s.pago.efectivo}% / T ${s.pago.tarjeta}%`
-  : '';
+              ? s.pago.efectivo === 100
+                ? 'E'
+                : s.pago.tarjeta === 100
+                  ? 'T'
+                  : `E ${s.pago.efectivo}% / T ${s.pago.tarjeta}%`
+              : (isTarjeta ? 'T' : 'E');
 
-  const saleKey = s.id || `sale-${s.fecha || ''}-${idx}`;
+            const saleKey = s.id || `sale-${s.fecha || ''}-${idx}`;
 
-  return (
-            <div
-              key={saleKey}
-              className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 items-center border border-[#C9B8A8]/50 rounded-lg
+            return (
+              <div
+                key={saleKey}
+                className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 items-center border border-[#C9B8A8]/50 rounded-lg
                          p-3.5 text-sm hover:bg-[#C9B8A8]/5 transition-colors bg-white/80 backdrop-blur-sm shadow-sm"
-            >
-              <div className="font-mono text-xs text-[#1A1A1A]/70 truncate text-left">
-              {s.tipo === 'cambio'
-                ? [
-                    ...(s.itemsDevueltos ?? []).map(i => `↩ ${i.sku}`),
-                    ...(s.itemsNuevos    ?? []).map(i => `↪ ${i.sku}`)
-                  ].join('  ')
-                : (s.items ?? []).map(i => `${i.sku} - ${i.descripcion}`).join(' + ')
-              }
-              </div>
+              >
+                <div className="font-mono text-xs text-[#1A1A1A]/70 truncate text-left">
+                  {s.tipo === 'cambio'
+                    ? [
+                      ...(s.itemsDevueltos ?? []).map(i => `↩ ${i.sku}`),
+                      ...(s.itemsNuevos ?? []).map(i => `↪ ${i.sku}`)
+                    ].join('  ')
+                    : (s.items ?? []).map(i => `${i.sku} - ${i.descripcion}`).join(' + ')
+                  }
+                </div>
 
-              <div className="text-xs text-[#1A1A1A] text-left sm:text-center">
-                {(parseSafeDate(s.fecha) ?? new Date(s.fecha)).toLocaleString('es-AR', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </div>
+                <div className="text-xs text-[#1A1A1A] text-left sm:text-center">
+                  {(parseSafeDate(s.fecha) ?? new Date(s.fecha)).toLocaleString('es-AR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </div>
 
-              <div className="flex justify-start sm:justify-end items-center gap-3 flex-wrap">
-                <span className="font-medium text-[#1A1A1A]">
-  $ {s.total.toLocaleString()}
-  {pagoLabel && (
-    <span className="ml-2 text-[10px] uppercase text-[#1A1A1A]/60">
-      ({pagoLabel})
-    </span>
-  )}
-</span>
+                <div className="flex justify-start sm:justify-end items-center gap-3 flex-wrap">
+                  <span className="font-medium text-[#1A1A1A]">
+                    $ {hideFinancials ? '••••••' : s.total.toLocaleString()}
+                    {pagoLabel && (
+                      <span className="ml-2 text-[10px] uppercase text-[#1A1A1A]/60">
+                        ({pagoLabel})
+                      </span>
+                    )}
+                  </span>
 
-                {onUpdateSalePago && (
-                  <select
-                    value={s.pago?.tarjeta === 100 ? 'T' : 'E'}
-                    onChange={(e) => {
-                      const mode = e.target.value;
-                      const pago = mode === 'T' ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 };
-                      onUpdateSalePago(s.id, pago);
-                    }}
-                    className="text-[10px] bg-transparent hover:bg-[#C9B8A8]/20 border border-[#C9B8A8]/30 rounded px-1 py-0.5 font-bold cursor-pointer text-[#1A1A1A]/70"
-                  >
-                    <option value="E">E</option>
-                    <option value="T">T</option>
-                  </select>
-                )}
+                  {onUpdateSalePago && (
+                    <select
+                      value={isTarjeta ? 'T' : 'E'}
+                      onChange={(e) => {
+                        const mode = e.target.value;
+                        const pago = mode === 'T' ? { efectivo: 0, tarjeta: 100 } : { efectivo: 100, tarjeta: 0 };
+                        onUpdateSalePago(s.id, pago);
+                      }}
+                      className="text-[10px] bg-transparent hover:bg-[#C9B8A8]/20 border border-[#C9B8A8]/30 rounded px-1 py-0.5 font-bold cursor-pointer text-[#1A1A1A]/70"
+                    >
+                      <option value="E">E</option>
+                      <option value="T">T</option>
+                    </select>
+                  )}
 
-                {s.tipo !== 'cambio' && (s.items ?? []).length > 0 && (
-                  <button
-                    onClick={() => {
-                      const parsedDate = parseSafeDate(s.fecha);
-                      const diasTranscurridos = parsedDate
-                        ? Math.floor((Date.now() - parsedDate.getTime()) / (1000 * 60 * 60 * 24))
-                        : 999;
-                      if (diasTranscurridos > 15) {
-                        showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
-                        return;
-                      }
-                      const tienePrendasDisponibles = (s.items ?? []).some(
-                        i => getCantidadDisponibleDevolucion(s, i) > 0
-                      );
-                      if (!tienePrendasDisponibles) {
-                        showAlert('Todas las prendas de esta venta ya fueron devueltas o cambiadas.', 'Sin Stock Para Devolver', 'warning');
-                        return;
-                      }
-                      setModoCambio(true);
-                      setVentaOriginal(s);
-                      setItemsDevueltos([]);
-                      setCantDevueltasInput({});
-                      setCart([]);
-                      let origPago = s.pago;
-                      if (!origPago && s.metodoPago) {
-                        const mp = String(s.metodoPago).toLowerCase();
-                        if (mp.includes('transferencia') || mp.includes('efectivo')) {
-                          origPago = { efectivo: 100, tarjeta: 0 };
-                        } else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
-                          origPago = { efectivo: 0, tarjeta: 100 };
+                  {s.tipo !== 'cambio' && (s.items ?? []).length > 0 && (
+                    <button
+                      onClick={() => {
+                        const parsedDate = parseSafeDate(s.fecha);
+                        const diasTranscurridos = parsedDate
+                          ? Math.floor((Date.now() - parsedDate.getTime()) / (1000 * 60 * 60 * 24))
+                          : 999;
+                        if (diasTranscurridos > 15) {
+                          showAlert('Ya han pasado 15 días desde la compra.', 'Plazo Vencido', 'warning');
+                          return;
                         }
-                      }
-                      origPago = origPago || { efectivo: 100, tarjeta: 0 };
-                      setPagoEfectivo(origPago.efectivo ?? 100);
-                      setPagoTarjeta(origPago.tarjeta ?? 0);
-                      setGiftCardSeleccionada(null);
-                      setGiftDestinatario('');
-                    }}
-                    className="text-xs uppercase underline hover:text-[#C9B8A8] transition-colors text-[#1A1A1A]"
-                  >
-                    Cambio
-                  </button>
-                )}
+                        const tienePrendasDisponibles = (s.items ?? []).some(
+                          i => getCantidadDisponibleDevolucion(s, i) > 0
+                        );
+                        if (!tienePrendasDisponibles) {
+                          showAlert('Todas las prendas de esta venta ya fueron devueltas o cambiadas.', 'Sin Stock Para Devolver', 'warning');
+                          return;
+                        }
+                        setModoCambio(true);
+                        setVentaOriginal(s);
+                        setItemsDevueltos([]);
+                        setCantDevueltasInput({});
+                        setCart([]);
+                        let origPago = s.pago;
+                        if (!origPago && s.metodoPago) {
+                          const mp = String(s.metodoPago).toLowerCase();
+                          if (mp.includes('transferencia') || mp.includes('efectivo')) {
+                            origPago = { efectivo: 100, tarjeta: 0 };
+                          } else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito')) {
+                            origPago = { efectivo: 0, tarjeta: 100 };
+                          }
+                        }
+                        origPago = origPago || { efectivo: 100, tarjeta: 0 };
+                        setPagoEfectivo(origPago.efectivo ?? 100);
+                        setPagoTarjeta(origPago.tarjeta ?? 0);
+                        setGiftCardSeleccionada(null);
+                        setGiftDestinatario('');
+                      }}
+                      className="text-xs uppercase underline hover:text-[#C9B8A8] transition-colors text-[#1A1A1A]"
+                    >
+                      Cambio
+                    </button>
+                  )}
 
-                <button
-                  onClick={() => onDeleteSale(s.id)}
-                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Eliminar venta y revertir stock"
-                >
-                  <Trash2 size={14} />
-                </button>
+                  <button
+                    onClick={() => onDeleteSale(s.id)}
+                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Eliminar venta y revertir stock"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
       {/* MODAL AVISO VENTA > 15 DÍAS */}
       {mostrarModalAntiguo && ventaSeleccionadaPendiente && (

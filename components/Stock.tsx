@@ -3,6 +3,7 @@ import { InventoryItem, WebSettings } from '../types';
 import { Tag, Sparkles, PackagePlus, CheckCircle2, Loader2 } from 'lucide-react';
 import { calculatePricesFromCost } from '../services/finance';
 import { useModal } from '../contexts/ModalContext';
+import { usePrivacy } from '../contexts/PrivacyContext';
 
 interface StockProps {
   onAddItem: (item: Omit<InventoryItem, 'id'>) => Promise<void> | void;
@@ -12,6 +13,7 @@ interface StockProps {
 
 const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
   const { showAlert } = useModal();
+  const { hideFinancials } = usePrivacy();
   const [formData, setFormData] = React.useState({
     descripcion: '',
     proveedor: '',
@@ -30,7 +32,7 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
   const handlePriceInput = (value: string, callback: (num: number) => void) => {
     // Para campos de venta (efectivo/tarjeta) seguimos usando limpieza de caracteres no numéricos
     // pero asegurando que el parseo sea limpio.
-    const numericValue = value.replace(/\D/g, ''); 
+    const numericValue = value.replace(/\D/g, '');
     const finalValue = numericValue === '' ? 0 : parseInt(numericValue, 10);
     callback(finalValue);
   };
@@ -63,8 +65,9 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
 
   // Manejar el cambio de costo para actualizar precios sugeridos editables
   const handleCostoChange = (val: number) => {
-    setFormData({ ...formData, costo: val });
-    const { ventaEfectivo, ventaTarjeta } = calculatePricesFromCost(val);
+    const validCosto = Math.max(0, val || 0);
+    setFormData({ ...formData, costo: validCosto });
+    const { ventaEfectivo, ventaTarjeta } = calculatePricesFromCost(validCosto);
     setVentaEfectivo(ventaEfectivo);
     setVentaTarjeta(ventaTarjeta);
   };
@@ -72,7 +75,7 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.descripcion || !formData.proveedor || !generatedSku || isSaving) return;
-    
+
     setIsSaving(true);
 
     const newItem: Omit<InventoryItem, 'id'> = {
@@ -96,7 +99,7 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
 
       // Mantener en lista local de la sesión
       setRecentlyAdded(prev => [newItem, ...prev].slice(0, 5));
-      
+
       // Feedback de éxito
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -125,44 +128,44 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
       </div>
 
       <div className="flex flex-col items-start">
-        <form 
-          onSubmit={handleSubmit} 
+        <form
+          onSubmit={handleSubmit}
           autoComplete="off"
           className="w-full bg-white border border-stone-200/60 rounded-2xl p-6 md:p-8 space-y-6 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)] text-left relative overflow-hidden transition-all duration-200 ease-out hover:border-stone-300 hover:shadow-[0_8px_30px_-5px_rgba(0,0,0,0.05)]"
         >
           <div className="space-y-6 relative z-10">
             <div className="space-y-2">
               <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Descripción de la Prenda</label>
-                <input 
-                  type="text" 
-                  required 
-                  name="desc-ropero-new"
-                  autoComplete="off"
-                  value={formData.descripcion} 
-                  onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} 
-                  className="w-full bg-transparent border-b border-stone-200/80 py-3 focus:outline-none focus:border-stone-500 text-sm font-medium uppercase tracking-wide text-stone-900 placeholder:text-stone-400 transition-colors" 
-                  placeholder="BIKINI, VESTIDO, ETC." 
-                />
+              <input
+                type="text"
+                required
+                name="desc-ropero-new"
+                autoComplete="off"
+                value={formData.descripcion}
+                onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                className="w-full bg-transparent border-b border-stone-200/80 py-3 focus:outline-none focus:border-stone-500 text-sm font-medium uppercase tracking-wide text-stone-900 placeholder:text-stone-400 transition-colors"
+                placeholder="BIKINI, VESTIDO, ETC."
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
               <div className="space-y-2">
                 <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Proveedor</label>
-                <input 
-                  type="text" 
-                  required 
+                <input
+                  type="text"
+                  required
                   name="prov-ropero-new"
                   autoComplete="off"
-                  value={formData.proveedor} 
-                  onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })} 
-                  className="w-full bg-transparent border-b border-stone-200/80 py-3 focus:outline-none focus:border-stone-500 text-sm font-medium uppercase tracking-wide text-stone-900 placeholder:text-stone-400 transition-colors" 
-                  placeholder="SKY, PALPITANTE, ETC." 
+                  value={formData.proveedor}
+                  onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })}
+                  className="w-full bg-transparent border-b border-stone-200/80 py-3 focus:outline-none focus:border-stone-500 text-sm font-medium uppercase tracking-wide text-stone-900 placeholder:text-stone-400 transition-colors"
+                  placeholder="SKY, PALPITANTE, ETC."
                 />
               </div>
 
               <div className="space-y-2">
                 <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Categoría</label>
-                <select 
+                <select
                   required value={formData.categoria}
                   onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
                   className="w-full bg-transparent border-b border-stone-200/80 py-3 focus:outline-none focus:border-stone-500 text-sm font-medium uppercase tracking-wide text-stone-900 transition-colors cursor-pointer"
@@ -188,28 +191,28 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Cantidad en Stock</label>
-                <input 
-                  type="number" 
-                  min="1" 
-                  required 
-                  value={formData.cantidad} 
-                  onChange={(e) => setFormData({ ...formData, cantidad: parseInt(e.target.value) || 0 })} 
-                  className="w-full bg-transparent border-b border-stone-200/80 py-3 focus:outline-none focus:border-stone-500 text-base font-mono font-medium text-stone-900 transition-colors" 
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={formData.cantidad}
+                  onChange={(e) => setFormData({ ...formData, cantidad: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-transparent border-b border-stone-200/80 py-3 focus:outline-none focus:border-stone-500 text-base font-mono font-medium text-stone-900 transition-colors"
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-[9px] tracking-[0.18em] uppercase font-semibold text-stone-400 leading-none">Costo Unitario</label>
                 <div className="relative flex items-center border-b border-stone-200/80 focus-within:border-stone-500 transition-colors">
                   <span className="text-base font-mono font-medium pr-1 text-stone-900">$</span>
-                  <input 
+                  <input
                     type="number"
                     step="any"
-                    required 
+                    required
                     name="cost-exact-input"
                     autoComplete="off"
-                    value={formData.costo || ''} 
-                    onChange={(e) => handleCostoChange(parseFloat(e.target.value) || 0)} 
-                    className="w-full bg-transparent py-3 focus:outline-none text-base font-mono font-medium text-stone-900" 
+                    value={formData.costo || ''}
+                    onChange={(e) => handleCostoChange(parseFloat(e.target.value) || 0)}
+                    className="w-full bg-transparent py-3 focus:outline-none text-base font-mono font-medium text-stone-900"
                     placeholder="0"
                   />
                 </div>
@@ -218,64 +221,63 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
           </div>
 
           <div className="bg-stone-50/80 text-stone-900 p-5 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4 border border-stone-200/60 shadow-2xs">
-              <div className="text-center md:text-left flex flex-col md:flex-row gap-6 w-full md:w-auto items-center">
-                  <div className="hidden lg:block border-r border-stone-200/80 pr-4 mr-2">
-                    <span className="text-[9px] tracking-[0.18em] font-medium uppercase text-stone-400 block">Precios Finales</span>
-                  </div>
-                  <div className="flex gap-6">
-                      <div className="space-y-1">
-                        <p className="text-[9px] uppercase font-medium tracking-[0.15em] text-stone-500">Efectivo</p>
-                        <div className="flex items-center border-b border-stone-200/80 focus-within:border-stone-500 transition-colors">
-                          <span className="font-serif text-base font-medium italic text-stone-900 pr-1">$</span>
-                          <input 
-                            type="text" 
-                            value={ventaEfectivo === 0 ? "0" : ventaEfectivo} 
-                            onChange={(e) => handlePriceInput(e.target.value, setVentaEfectivo)}
-                            className="bg-transparent font-serif text-base font-medium italic text-stone-900 focus:outline-none w-24 py-0.5"
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[9px] uppercase font-medium tracking-[0.15em] text-stone-500">Tarjeta</p>
-                        <div className="flex items-center border-b border-stone-200/80 focus-within:border-stone-500 transition-colors">
-                          <span className="font-serif text-base font-medium italic text-stone-900 pr-1">$</span>
-                          <input 
-                            type="text" 
-                            value={ventaTarjeta === 0 ? "0" : ventaTarjeta} 
-                            onChange={(e) => handlePriceInput(e.target.value, setVentaTarjeta)}
-                            className="bg-transparent font-serif text-base font-medium italic text-stone-900 focus:outline-none w-24 py-0.5"
-                          />
-                        </div>
-                      </div>
-                  </div>
+            <div className="text-center md:text-left flex flex-col md:flex-row gap-6 w-full md:w-auto items-center">
+              <div className="hidden lg:block border-r border-stone-200/80 pr-4 mr-2">
+                <span className="text-[9px] tracking-[0.18em] font-medium uppercase text-stone-400 block">Precios Finales</span>
               </div>
-              
-              <button 
-                type="submit" 
-                disabled={!generatedSku || isSaving}
-                className={`group flex items-center gap-2 px-5 py-2.5 text-[9px] tracking-[0.18em] font-medium uppercase transition-all duration-200 ease-out shrink-0 rounded-xl shadow-xs hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed ${
-                  showSuccess 
-                    ? 'bg-emerald-800 text-white' 
-                    : 'bg-stone-900 text-white hover:bg-black'
+              <div className="flex gap-6">
+                <div className="space-y-1">
+                  <p className="text-[9px] uppercase font-medium tracking-[0.15em] text-stone-500">Efectivo</p>
+                  <div className="flex items-center border-b border-stone-200/80 focus-within:border-stone-500 transition-colors">
+                    <span className="font-serif text-base font-medium italic text-stone-900 pr-1">$</span>
+                    <input
+                      type="text"
+                      value={ventaEfectivo === 0 ? "0" : ventaEfectivo}
+                      onChange={(e) => handlePriceInput(e.target.value, setVentaEfectivo)}
+                      className="bg-transparent font-serif text-base font-medium italic text-stone-900 focus:outline-none w-24 py-0.5"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[9px] uppercase font-medium tracking-[0.15em] text-stone-500">Tarjeta</p>
+                  <div className="flex items-center border-b border-stone-200/80 focus-within:border-stone-500 transition-colors">
+                    <span className="font-serif text-base font-medium italic text-stone-900 pr-1">$</span>
+                    <input
+                      type="text"
+                      value={ventaTarjeta === 0 ? "0" : ventaTarjeta}
+                      onChange={(e) => handlePriceInput(e.target.value, setVentaTarjeta)}
+                      className="bg-transparent font-serif text-base font-medium italic text-stone-900 focus:outline-none w-24 py-0.5"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={!generatedSku || isSaving}
+              className={`group flex items-center gap-2 px-5 py-2.5 text-[9px] tracking-[0.18em] font-medium uppercase transition-all duration-200 ease-out shrink-0 rounded-xl shadow-xs hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed ${showSuccess
+                  ? 'bg-emerald-800 text-white'
+                  : 'bg-stone-900 text-white hover:bg-black'
                 }`}
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 size={12} className="animate-spin" />
-                    <span>Guardando...</span>
-                  </>
-                ) : showSuccess ? (
-                  <>
-                    <span>¡Confirmado!</span>
-                    <CheckCircle2 size={12} strokeWidth={1.5} />
-                  </>
-                ) : (
-                  <>
-                    <span>Confirmar</span>
-                    <Sparkles size={12} strokeWidth={1.5} className="group-hover:rotate-12 transition-transform" />
-                  </>
-                )}
-              </button>
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  <span>Guardando...</span>
+                </>
+              ) : showSuccess ? (
+                <>
+                  <span>¡Confirmado!</span>
+                  <CheckCircle2 size={12} strokeWidth={1.5} />
+                </>
+              ) : (
+                <>
+                  <span>Confirmar</span>
+                  <Sparkles size={12} strokeWidth={1.5} className="group-hover:rotate-12 transition-transform" />
+                </>
+              )}
+            </button>
           </div>
         </form>
 
@@ -290,7 +292,7 @@ const Stock: React.FC<StockProps> = ({ onAddItem, inventory, webSettings }) => {
                     <p className="text-[9px] font-mono text-stone-400">REF: {item.sku}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[7px] uppercase text-stone-400 mb-0.5">Costo: ${item.costo.toLocaleString()}</p>
+                    <p className="text-[7px] uppercase text-stone-400 mb-0.5">Costo: {hideFinancials ? '$ ••••••' : `$${item.costo.toLocaleString()}`}</p>
                     <p className="font-serif italic text-base text-stone-900">${item.ventaEfectivo.toLocaleString()}</p>
                     <p className="text-[8px] uppercase tracking-[0.15em] text-stone-400">Venta — {item.cantidad} UNIDS</p>
                   </div>

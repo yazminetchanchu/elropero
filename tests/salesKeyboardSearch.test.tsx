@@ -18,6 +18,8 @@ vi.mock('lucide-react', () => ({
   Banknote: () => <span>Banknote</span>,
   Gift: () => <span>Gift</span>,
   RefreshCcw: () => <span>RefreshCcw</span>,
+  Eye: () => <span>Eye</span>,
+  EyeOff: () => <span>EyeOff</span>,
 }));
 
 const mockInventory: InventoryItem[] = [

@@ -686,7 +686,7 @@ function calcExchangeLineTotalServer(item, isTransferencia) {
  * contra el inventario y catálogo oficial.
  */
 function calculateExchangeBreakdownServer(options) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const { ventaOriginal, itemsDevueltos, itemsNuevos, inventory, webSettings, payload } = options;
     let medioPagoOrigen = 'efectivo';
     if (ventaOriginal === null || ventaOriginal === void 0 ? void 0 : ventaOriginal.pago) {
@@ -707,7 +707,15 @@ function calculateExchangeBreakdownServer(options) {
         }
     }
     const isTransferenciaDev = medioPagoOrigen === 'efectivo';
-    const isTransferenciaNuevo = ((_a = payload === null || payload === void 0 ? void 0 : payload.pago) === null || _a === void 0 ? void 0 : _a.efectivo) === 100 || isTransferenciaDev;
+    const isTransferenciaNuevo = ((_a = payload === null || payload === void 0 ? void 0 : payload.pago) === null || _a === void 0 ? void 0 : _a.tarjeta) === 100 ? false : (((_b = payload === null || payload === void 0 ? void 0 : payload.pago) === null || _b === void 0 ? void 0 : _b.efectivo) === 100 ? true : isTransferenciaDev);
+    const hasNewItems = (itemsNuevos || []).length > 0;
+    // Reglas de negocio para cambios:
+    // - Si la prenda original se pagó en Efectivo y la nueva en Efectivo: se compara Precio Efectivo vs Precio Efectivo.
+    // - Si la prenda original se pagó en Efectivo y la nueva en Tarjeta: la devuelta se toma a Precio de Lista vs Precio de Lista de la nueva.
+    // - Si la prenda original se pagó con Tarjeta y la nueva en Tarjeta: se compara Precio Lista vs Precio Lista.
+    // - Si la prenda original se pagó con Tarjeta y la nueva en Efectivo: se calcula sobre los precios en Efectivo de ambas para aplicar el descuento solo al excedente.
+    // - Si no hay prendas nuevas (devolución pura para Gift Card), se toma el valor pagado original.
+    const isTransferenciaDevUnits = hasNewItems ? isTransferenciaNuevo : isTransferenciaDev;
     const returnedUnits = [];
     const itemsOriginales = ventaOriginal.items || [];
     for (const dev of itemsDevueltos || []) {
@@ -721,7 +729,7 @@ function calculateExchangeBreakdownServer(options) {
                 return true;
             return extractProductModelKeyServer(orig) === modelKey;
         }) || dev;
-        const unitPaid = calcExchangeLineTotalServer(Object.assign(Object.assign({}, originalMatch), { cantidad: 1 }), isTransferenciaDev);
+        const unitPaid = calcExchangeLineTotalServer(Object.assign(Object.assign({}, originalMatch), { cantidad: 1 }), isTransferenciaDevUnits);
         for (let i = 0; i < qty; i++) {
             returnedUnits.push({
                 descripcion: dev.descripcion || originalMatch.descripcion || 'Prenda devuelta',
@@ -739,11 +747,11 @@ function calculateExchangeBreakdownServer(options) {
         let unitPrice;
         if (invItem) {
             const basePrice = isTransferenciaNuevo
-                ? Number((_c = (_b = invItem.ventaEfectivo) !== null && _b !== void 0 ? _b : invItem.precioEfectivo) !== null && _c !== void 0 ? _c : 0)
-                : Number((_f = (_e = (_d = invItem.ventaTarjeta) !== null && _d !== void 0 ? _d : invItem.precioTarjeta) !== null && _e !== void 0 ? _e : invItem.ventaEfectivo) !== null && _f !== void 0 ? _f : 0);
-            const maxDiscountCap = Number((_g = webSettings.maxDiscountPercentage) !== null && _g !== void 0 ? _g : 50);
+                ? Number((_d = (_c = invItem.ventaEfectivo) !== null && _c !== void 0 ? _c : invItem.precioEfectivo) !== null && _d !== void 0 ? _d : 0)
+                : Number((_g = (_f = (_e = invItem.ventaTarjeta) !== null && _e !== void 0 ? _e : invItem.precioTarjeta) !== null && _f !== void 0 ? _f : invItem.ventaEfectivo) !== null && _g !== void 0 ? _g : 0);
+            const maxDiscountCap = Number((_h = webSettings.maxDiscountPercentage) !== null && _h !== void 0 ? _h : 50);
             const itemDisc = Number(invItem.descuentoWeb || 0);
-            const secDisc = Number(((_h = webSettings.discountBySection) === null || _h === void 0 ? void 0 : _h[invItem.categoria]) || 0);
+            const secDisc = Number(((_j = webSettings.discountBySection) === null || _j === void 0 ? void 0 : _j[invItem.categoria]) || 0);
             const disc = Math.min(maxDiscountCap, Math.max(itemDisc, secDisc));
             if (isTransferenciaNuevo) {
                 const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
@@ -753,7 +761,7 @@ function calculateExchangeBreakdownServer(options) {
                 unitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
             }
             // Bug #5: Protección de Costo Mayorista
-            const costo = Number((_j = invItem.costo) !== null && _j !== void 0 ? _j : 0);
+            const costo = Number((_k = invItem.costo) !== null && _k !== void 0 ? _k : 0);
             if (costo > 0) {
                 unitPrice = Math.max(costo, unitPrice);
             }

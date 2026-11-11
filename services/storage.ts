@@ -364,9 +364,14 @@ const deleteSale = async (saleId: string): Promise<void> => {
 };
 
 /**
- * Actualiza el medio de pago de una venta específica en subcolección y buffer de showroom.
+ * Actualiza el medio de pago (y recalcula totales si aplica) de una venta específica en subcolección y buffer de showroom.
  */
-const updateSalePago = async (saleId: string, pago: { efectivo: number; tarjeta: number }): Promise<void> => {
+const updateSalePago = async (
+  saleId: string,
+  pago: { efectivo: number; tarjeta: number },
+  newTotal?: number,
+  newDiferencia?: number
+): Promise<void> => {
   if (!navigator.onLine) throw new Error('Offline');
   const id = getShowroomID();
   const ref = doc(db, "showrooms", id);
@@ -378,15 +383,19 @@ const updateSalePago = async (saleId: string, pago: { efectivo: number; tarjeta:
     if (!snap.exists()) throw new Error("Showroom no encontrado.");
     const data = snap.data() as DatabaseState;
 
+    const updateFields: any = { pago };
+    if (typeof newTotal === 'number') updateFields.total = newTotal;
+    if (typeof newDiferencia === 'number') updateFields.diferencia = newDiferencia;
+
     // Actualizar en subcolección si existe
     const saleDocSnap = await transaction.get(saleDocRef);
     if (saleDocSnap.exists()) {
-      transaction.update(saleDocRef, { pago });
+      transaction.update(saleDocRef, updateFields);
     }
 
     // Actualizar en buffer de showroom doc si está presente
     const currentSales = data.sales || [];
-    const newSales = currentSales.map(s => s.id === saleId ? { ...s, pago } : s);
+    const newSales = currentSales.map(s => s.id === saleId ? { ...s, ...updateFields } : s);
     transaction.update(ref, {
       sales: newSales,
       lastSync: now

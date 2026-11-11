@@ -157,6 +157,16 @@ export function calculateExchangeBreakdown(options: {
     resolveNewUnitPrice,
   } = options;
 
+  // Reglas de negocio para cambios:
+  // - Si la prenda original se pagó en Efectivo y la nueva en Efectivo: se compara Precio Efectivo vs Precio Efectivo.
+  // - Si la prenda original se pagó en Efectivo y la nueva en Tarjeta: la devuelta se toma a Precio de Lista vs Precio de Lista de la nueva.
+  // - Si la prenda original se pagó con Tarjeta y la nueva en Tarjeta: se compara Precio Lista vs Precio Lista.
+  // - Si la prenda original se pagó con Tarjeta y la nueva en Efectivo: se compara a Precio Efectivo de ambas para aplicar el descuento solo al excedente.
+  // En resumen: cuando hay prendas nuevas, la base de comparación de ambas prendas la define el medio de pago de la nueva compra (isTransferenciaNuevo).
+  // Si no hay prendas nuevas (devolución pura para Gift Card), se toma el valor pagado original (isTransferenciaDev).
+  const hasNewItems = (itemsNuevos || []).length > 0;
+  const isTransferenciaDevUnits = hasNewItems ? isTransferenciaNuevo : isTransferenciaDev;
+
   // 1. Expandir unidades devueltas
   interface ReturnedUnit {
     descripcion: string;
@@ -168,7 +178,7 @@ export function calculateExchangeBreakdown(options: {
   const returnedUnits: ReturnedUnit[] = [];
   for (const item of itemsDevueltos || []) {
     const qty = item.cantidad ?? 1;
-    const unitPaid = calcExchangeLineTotal({ ...item, cantidad: 1 }, isTransferenciaDev);
+    const unitPaid = calcExchangeLineTotal({ ...item, cantidad: 1 }, isTransferenciaDevUnits);
     const modelKey = extractProductModelKey(item);
     for (let i = 0; i < qty; i++) {
       returnedUnits.push({

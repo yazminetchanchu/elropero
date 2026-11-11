@@ -86,7 +86,9 @@ describe('Seguridad contra Fraude en Gift Cards y Cambios Web (Gift Card Fraud)'
   });
 
   it('aplica equivalencia 1:1 por modelo (Ley del Consumidor): cambio de talle tiene diferencia $0 aunque el precio de lista haya aumentado', () => {
-    // Venta original de vestido comprado hace 5 días a $25.000
+    // Venta original de vestido comprado con tarjeta. Con la nueva premisa comercial,
+    // el valor devuelto es siempre precioEfectivo ($30.000), no el precio tarjeta ($25.000 o actual $37.500).
+    // Como ambas prendas son el mismo modelo, el matching 1:1 resulta en $0 de diferencia.
     const ventaOriginal = {
       id: 'sale_orig_old_price',
       fecha: new Date().toISOString(),
@@ -98,7 +100,8 @@ describe('Seguridad contra Fraude en Gift Cards y Cambios Web (Gift Card Fraud)'
           id: 'prod-vestido',
           descripcion: 'Vestido de Fiesta Elegante (T:S C:NEGRO)',
           cantidad: 1,
-          precioTarjeta: 25000,
+          precioEfectivo: 30000, // base real del showroom
+          precioTarjeta: 25000,  // precio lista original (ya no determina el crédito)
           descuento: 0,
         },
       ],

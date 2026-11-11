@@ -17,7 +17,9 @@ vi.mock('lucide-react', () => ({
   CreditCard: () => <span>CreditCard</span>,
   Banknote: () => <span>Banknote</span>,
   Gift: () => <span>Gift</span>,
-  RefreshCcw: () => <span>RefreshCcw</span>
+  RefreshCcw: () => <span>RefreshCcw</span>,
+  Eye: () => <span>Eye</span>,
+  EyeOff: () => <span>EyeOff</span>
 }));
 
 describe('Componente Sales', () => {
@@ -47,11 +49,11 @@ describe('Componente Sales', () => {
 
   it('permite buscar productos y agregarlos al carrito', () => {
     render(<Sales inventory={mockInventory} onAddSale={vi.fn()} onDeleteSale={vi.fn()} recentSales={[]} giftCards={[]} />);
-    
+
     // Buscar
     const searchInput = screen.getByPlaceholderText(/Buscar producto.../i);
     fireEvent.change(searchInput, { target: { value: 'Remera' } });
-    
+
     // Ver si aparece
     expect(screen.getByText('Remera Negra')).toBeInTheDocument();
 
@@ -59,7 +61,7 @@ describe('Componente Sales', () => {
     // Busquemos el contenedor que tiene "Remera Negra" y hagamos click
     const productItem = screen.getByText('Remera Negra').closest('div');
     if (productItem) {
-        fireEvent.mouseDown(productItem);
+      fireEvent.mouseDown(productItem);
     }
 
     // Verificar si se agrego al carrito. El carrito muestra "TOTAL"
@@ -410,7 +412,7 @@ describe('Componente Sales', () => {
         cantidad: 10,
         costo: 1500,
         ventaEfectivo: 3000,
-        ventaTarjeta: 3000,
+        ventaTarjeta: 3500,
         talles: [],
         colores: [],
         imagenes: []
@@ -512,7 +514,7 @@ describe('Componente Sales', () => {
   describe('Bug 8: Protección de carrito ante fallas de red y prevención de doble clic', () => {
     it('evita la pérdida del carrito y muestra alerta clara si onAddSale falla al cobrar una venta', async () => {
       const onAddSaleMock = vi.fn().mockRejectedValue(new Error('Network disconnected'));
-      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
 
       render(
         <Sales
@@ -582,7 +584,7 @@ describe('Componente Sales', () => {
       }
 
       const confirmBtn = screen.getByRole('button', { name: /confirmar venta/i });
-      
+
       // Primer click
       fireEvent.click(confirmBtn);
 
@@ -608,7 +610,7 @@ describe('Componente Sales', () => {
 
     it('mantiene el carrito y los datos en modo cambio si onAddSale falla', async () => {
       const onAddSaleMock = vi.fn().mockRejectedValue(new Error('Firestore connection timeout'));
-      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
 
       const saleOriginal: Sale = {
         id: 'sale-orig-err',
@@ -661,6 +663,169 @@ describe('Componente Sales', () => {
 
       confirmSpy.mockRestore();
       alertSpy.mockRestore();
+    });
+  });
+
+  describe('Reglas de negocio para cambios (Efectivo vs Tarjeta)', () => {
+    const inventoryCambio: InventoryItem[] = [
+      {
+        id: 'prod-orig',
+        sku: 'SKU-ORIG',
+        descripcion: 'Remera Original',
+        proveedor: 'P1',
+        categoria: 'REMERAS',
+        cantidad: 10,
+        costo: 3000,
+        ventaEfectivo: 8000,
+        ventaTarjeta: 10000,
+        talles: [],
+        colores: [],
+        imagenes: []
+      },
+      {
+        id: 'prod-nuevo',
+        sku: 'SKU-NUEVO',
+        descripcion: 'Pantalón Nuevo',
+        proveedor: 'P1',
+        categoria: 'PANTALONES',
+        cantidad: 10,
+        costo: 5000,
+        ventaEfectivo: 12000,
+        ventaTarjeta: 15000,
+        talles: [],
+        colores: [],
+        imagenes: []
+      }
+    ];
+
+    it('Si original se pagó en Efectivo y la nueva se paga con Tarjeta: Devuelta se toma a Precio de Lista ($10.000) y se resta de Lista nueva ($15.000) -> Diferencia $5.000 en tarjeta', async () => {
+      const onAddSaleMock = vi.fn();
+      const saleOrig: Sale = {
+        id: 'sale-orig-efectivo',
+        fecha: new Date().toISOString(),
+        tipo: 'venta',
+        total: 8000,
+        pago: { efectivo: 100, tarjeta: 0 },
+        items: [
+          {
+            id: 'prod-orig',
+            sku: 'SKU-ORIG',
+            descripcion: 'Remera Original',
+            cantidad: 1,
+            costo: 3000,
+            precioEfectivo: 8000,
+            precioTarjeta: 10000,
+            descuento: 0,
+          }
+        ]
+      };
+
+      render(
+        <Sales
+          inventory={inventoryCambio}
+          onAddSale={onAddSaleMock}
+          onDeleteSale={vi.fn()}
+          recentSales={[saleOrig]}
+          giftCards={[]}
+        />
+      );
+
+      // Iniciar cambio
+      const cambioBtn = screen.getByRole('button', { name: /cambio/i });
+      fireEvent.click(cambioBtn);
+
+      // Seleccionar prenda a devolver
+      const devCheckbox = screen.getByRole('checkbox');
+      fireEvent.click(devCheckbox);
+
+      // Agregar prenda nueva al carrito
+      const searchInput = screen.getByPlaceholderText(/Buscar producto.../i);
+      fireEvent.change(searchInput, { target: { value: 'Pantalón' } });
+      const itemNuevo = screen.getByText('Pantalón Nuevo').closest('div');
+      if (itemNuevo) {
+        fireEvent.mouseDown(itemNuevo);
+      }
+
+      // Cambiar forma de pago a Tarjeta 100%
+      const tarjetaBtn = screen.getByRole('button', { name: /tarjeta/i });
+      fireEvent.click(tarjetaBtn);
+
+      // Confirmar cambio
+      const confirmBtn = screen.getByRole('button', { name: /confirmar cambio/i });
+      await fireEvent.click(confirmBtn);
+
+      expect(onAddSaleMock).toHaveBeenCalledTimes(1);
+      const payload = onAddSaleMock.mock.calls[0][0];
+      expect(payload.tipo).toBe('cambio');
+      // Devuelta se tomó a Precio de Lista ($10.000), nueva a Lista ($15.000) -> Diferencia $5.000
+      expect(payload.diferencia).toBe(5000);
+      expect(payload.total).toBe(5000);
+      expect(payload.pago).toEqual({ efectivo: 0, tarjeta: 100 });
+    });
+
+    it('Si original se pagó con Tarjeta y la nueva se paga en Efectivo: Calcula sobre precios Efectivo ($8.000 vs $12.000) -> Diferencia $4.000 en efectivo', async () => {
+      const onAddSaleMock = vi.fn();
+      const saleOrig: Sale = {
+        id: 'sale-orig-tarjeta',
+        fecha: new Date().toISOString(),
+        tipo: 'venta',
+        total: 10000,
+        pago: { efectivo: 0, tarjeta: 100 },
+        items: [
+          {
+            id: 'prod-orig',
+            sku: 'SKU-ORIG',
+            descripcion: 'Remera Original',
+            cantidad: 1,
+            costo: 3000,
+            precioEfectivo: 8000,
+            precioTarjeta: 10000,
+            descuento: 0,
+          }
+        ]
+      };
+
+      render(
+        <Sales
+          inventory={inventoryCambio}
+          onAddSale={onAddSaleMock}
+          onDeleteSale={vi.fn()}
+          recentSales={[saleOrig]}
+          giftCards={[]}
+        />
+      );
+
+      // Iniciar cambio
+      const cambioBtn = screen.getByRole('button', { name: /cambio/i });
+      fireEvent.click(cambioBtn);
+
+      // Seleccionar prenda a devolver
+      const devCheckbox = screen.getByRole('checkbox');
+      fireEvent.click(devCheckbox);
+
+      // Agregar prenda nueva al carrito
+      const searchInput = screen.getByPlaceholderText(/Buscar producto.../i);
+      fireEvent.change(searchInput, { target: { value: 'Pantalón' } });
+      const itemNuevo = screen.getByText('Pantalón Nuevo').closest('div');
+      if (itemNuevo) {
+        fireEvent.mouseDown(itemNuevo);
+      }
+
+      // Forma de pago en Efectivo (por defecto o clickeando Efectivo)
+      const efectivoBtn = screen.getByRole('button', { name: /efectivo/i });
+      fireEvent.click(efectivoBtn);
+
+      // Confirmar cambio
+      const confirmBtn = screen.getByRole('button', { name: /confirmar cambio/i });
+      await fireEvent.click(confirmBtn);
+
+      expect(onAddSaleMock).toHaveBeenCalledTimes(1);
+      const payload = onAddSaleMock.mock.calls[0][0];
+      expect(payload.tipo).toBe('cambio');
+      // Devuelta evaluada en Efectivo ($8.000), nueva en Efectivo ($12.000) -> Diferencia $4.000
+      expect(payload.diferencia).toBe(4000);
+      expect(payload.total).toBe(4000);
+      expect(payload.pago).toEqual({ efectivo: 100, tarjeta: 0 });
     });
   });
 });

@@ -29,137 +29,170 @@ const parseNumber = (value: unknown): number => {
  */
 export const getItemSnapshot = (item: any) => {
   const costoRaw = item.costo ?? item.costoUnidad;
-  const costo = parseNumber(costoRaw);
+  // El costo de adquisición/reposición siempre debe ser positivo o cero; nunca negativo
+  const costo = Math.max(0, parseNumber(costoRaw));
 
-  const precioTarjeta = parseNumber(
+  const precioTarjeta = Math.max(0, parseNumber(
     typeof item.precioTarjeta === 'number'
       ? item.precioTarjeta
       : typeof item.ventaTarjeta === 'number'
-      ? item.ventaTarjeta
-      : typeof item.precio === 'number'
-      ? item.precio
-      : item.precioTarjeta ?? item.ventaTarjeta ?? item.precio
-  );
+        ? item.ventaTarjeta
+        : typeof item.precio === 'number'
+          ? item.precio
+          : item.precioTarjeta ?? item.ventaTarjeta ?? item.precio
+  ));
 
-  const precioEfectivo = parseNumber(
+  const precioEfectivo = Math.max(0, parseNumber(
     typeof item.precioEfectivo === 'number'
       ? item.precioEfectivo
       : typeof item.ventaEfectivo === 'number'
-      ? item.ventaEfectivo
-      : item.precioEfectivo ?? item.ventaEfectivo
-  );
+        ? item.ventaEfectivo
+        : item.precioEfectivo ?? item.ventaEfectivo
+  ));
 
-  const descuento = parseNumber(item.descuento);
+  const descuento = Math.max(0, parseNumber(item.descuento));
   return { costo, precioEfectivo, precioTarjeta, descuento };
 };
 
+export interface SaleBreakdown {
+  efectivo: number;
+  tarjeta: number;
+  totalCobrado: number;
+  costoTotal: number;
+  ganancia: number;
+  precioVentaBruto: number;
+  costoMercaderia: number;
+  comisionMedioPago: number;
+  ingresoNeto: number;
+  gananciaNeta: number;
+  deltaCosto?: number;
+  diferenciaCobrada?: number;
+}
+
 /**
- * Compute breakdown of a sale (cash, card, total, cost, gain).
+ * Compute financial breakdown of a sale (cash, card, total, cost, net gain).
  * Handles normal sales, gift cards, and exchanges (cambio).
+ *
+ * Variables Base:
+ * - precioVentaBruto: Total efectivamente cobrado según medio de pago.
+ * - costoMercaderia: Costo de adquisición/reposición (siempre >= 0).
+ * - comisionMedioPago: Retención o recargo financiero descontado por pasarela/tarjeta.
+ * - ingresoNeto = precioVentaBruto - comisionMedioPago
+ * - gananciaNeta = ingresoNeto - costoMercaderia
+ *
+ * Cambios:
+ * - gananciaCambio = (diferenciaCobrada - comisionMedioPago) - deltaCosto
+ * - deltaCosto = costo(Prenda B) - costo(Prenda A)
  */
-export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
-  // Gift Card sales – treat like a normal cash sale.
+export const computeSaleBreakdown = (sale: Sale, sales?: Sale[]): SaleBreakdown => {
+  // 1. Gift Card sales – treat like a cash sale without merchandise cost.
   if (sale.tipo === 'gift') {
-    const total = sale.total ?? 0;
+    const precioVentaBruto = Math.round(sale.total ?? 0);
     const pctE = sale.pago?.efectivo ?? 100;
     const pctT = sale.pago?.tarjeta ?? 0;
+    const efectivo = Math.round(precioVentaBruto * (pctE / 100));
+    const tarjeta = Math.round(precioVentaBruto * (pctT / 100));
+    const costoMercaderia = 0;
+    const comisionMedioPago = Math.max(0, Number(sale.comisionMedioPago) || 0);
+    const ingresoNeto = Math.max(0, precioVentaBruto - comisionMedioPago);
+    const gananciaNeta = ingresoNeto - costoMercaderia;
+
     return {
-      efectivo: Math.round(total * (pctE / 100)),
-      tarjeta: Math.round(total * (pctT / 100)),
-      totalCobrado: Math.round(total),
+      efectivo,
+      tarjeta,
+      totalCobrado: precioVentaBruto,
       costoTotal: 0,
-      ganancia: Math.round(total),
+      ganancia: gananciaNeta,
+      precioVentaBruto,
+      costoMercaderia,
+      comisionMedioPago,
+      ingresoNeto,
+      gananciaNeta,
     };
   }
 
-  // Exchange (cambio) – calculate gain based on returned vs new items.
+  // 2. Exchange (cambio) – Prenda A (Devuelta) por Prenda B (Nueva)
   if (sale.tipo === 'cambio') {
-    const diferencia = sale.diferencia ?? sale.total ?? 0;
-    const cobradoBruto = Math.max(0, diferencia);
     const rawGift = (sale as any).giftCardUsada;
     const giftCardDiscount = typeof rawGift === 'number'
       ? rawGift
       : (rawGift?.montoUsado ?? 0);
-    const cobrado = Math.max(0, cobradoBruto - giftCardDiscount);
+
+    const diferenciaBruta = sale.diferencia ?? sale.total ?? 0;
+    // Si la diferencia es a favor del local (> 0), se cobra la diferencia menos gift card
+    const diferenciaCobrada = Math.max(0, (diferenciaBruta > 0 ? diferenciaBruta : 0) - giftCardDiscount);
+
     const pctE = sale.pago?.efectivo ?? 100;
     const pctT = sale.pago?.tarjeta ?? 0;
+    const efectivo = Math.round(diferenciaCobrada * (pctE / 100));
+    const tarjeta = Math.round(diferenciaCobrada * (pctT / 100));
+    const precioVentaBruto = Math.round(efectivo + tarjeta);
 
-    const findOriginalSale = sales.find((s) => s.id === sale.ventaOriginalId);
-    const origPctE = findOriginalSale?.pago?.efectivo ?? 100;
-    const origPctT = findOriginalSale?.pago?.tarjeta ?? 0;
-
-    // Gain from returned items (negative impact).
-    const gananciaDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, raw: any) => {
-      const { costo, precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(raw);
-      const cant = raw.cantidad ?? 0;
-      const desc = descuento || 0;
-      const pT = precioTarjeta * (1 - desc / 100);
-      const pE = precioEfectivo * (1 - Math.max(0, desc - 20) / 100);
-      const totLinea = (pE * (origPctE / 100) + pT * (origPctT / 100)) * cant;
-      return sum + (totLinea - costo * cant);
+    // Costo de adquisición/reposición de prendas involucradas (siempre >= 0)
+    const costoDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, item: any) => {
+      const { costo } = getItemSnapshot(item);
+      const cant = item.cantidad ?? 1;
+      return sum + Math.max(0, costo) * cant;
     }, 0);
 
-    // Gain from newly added items.
-    const gananciaNuevos = (sale.itemsNuevos ?? []).reduce((sum, raw: any) => {
-      const { costo, precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(raw);
-      const cant = raw.cantidad ?? 0;
-      const desc = descuento || 0;
-      const pT = precioTarjeta * (1 - desc / 100);
-      const pE = precioEfectivo * (1 - Math.max(0, desc - 20) / 100);
-      const totLinea = (pE * (pctE / 100) + pT * (pctT / 100)) * cant;
-      return sum + (totLinea - costo * cant);
+    const costoNuevos = (sale.itemsNuevos ?? []).reduce((sum, item: any) => {
+      const { costo } = getItemSnapshot(item);
+      const cant = item.cantidad ?? 1;
+      return sum + Math.max(0, costo) * cant;
     }, 0);
 
-    // When the store returns money (diferencia < 0) we need a special calculation.
-    if (diferencia < 0) {
-      const precioNuevos = (sale.itemsNuevos ?? []).reduce((sum, raw: any) => {
-        const { precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(raw);
-        const cant = raw.cantidad ?? 0;
-        const desc = descuento || 0;
-        const pT = precioTarjeta * (1 - desc / 100);
-        const pE = precioEfectivo * (1 - Math.max(0, desc - 20) / 100);
-        return sum + (pE * (pctE / 100) + pT * (pctT / 100)) * cant;
-      }, 0);
-      const costoDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
-      const gananciaFinal = precioNuevos - costoDevueltos;
-      return {
-        efectivo: Math.round(cobrado * (pctE / 100)),
-        tarjeta: Math.round(cobrado * (pctT / 100)),
-        totalCobrado: Math.round(cobrado),
-        costoTotal: Math.round(precioNuevos - costoDevueltos),
-        ganancia: Math.round(gananciaFinal),
-      };
+    // Variación neta de costo para el balance de la operación:
+    // deltaCosto = costo(Prenda B) - costo(Prenda A)
+    const deltaCosto = costoNuevos - costoDevueltos;
+    const costoMercaderia = Math.max(0, costoNuevos);
+
+    // Comisión o recargo financiero del medio de pago
+    let comisionMedioPago = 0;
+    if (sale.comisionMedioPago !== undefined) {
+      comisionMedioPago = Math.max(0, Number(sale.comisionMedioPago) || 0);
+    } else if (tarjeta > 0) {
+      // El recargo de tarjeta respecto a efectivo es aprox 25% (ratio 1.25)
+      const tarjetaEquivEfectivo = Math.round(tarjeta / 1.25);
+      comisionMedioPago = Math.max(0, tarjeta - tarjetaEquivEfectivo);
     }
 
-    const gananciaGiftManual = (sale.itemsDevueltos ?? []).reduce((sum, raw: any) => {
-      const { precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(raw);
-      const cant = raw.cantidad ?? 0;
-      const desc = descuento || 0;
-      const pT = precioTarjeta * (1 - desc / 100);
-      const pE = precioEfectivo * (1 - Math.max(0, desc - 20) / 100);
-      const valor = (pE * (origPctE / 100) + pT * (origPctT / 100)) * cant;
-      return sum + valor;
-    }, 0);
+    const ingresoNeto = Math.max(0, precioVentaBruto - comisionMedioPago);
 
-    // Gain calculation for positive diferencia (store receives money).
-    const gananciaFinal = -gananciaDevueltos + gananciaNuevos;
-    const costoNuevos = (sale.itemsNuevos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
-    const costoDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, i) => sum + (i.costo ?? 0) * (i.cantidad ?? 1), 0);
-    const costoNeto = costoNuevos - costoDevueltos;
+    // gananciaCambio = (diferenciaCobrada - comisionMedioPago) - deltaCosto
+    // Si un cliente solo abona una diferencia (ej. $1.500), esa diferencia es un ingreso por ajuste de precio
+    let gananciaCambio: number;
+    if (diferenciaBruta < 0) {
+      // Diferencia a favor del cliente: no se cobró dinero, la ganancia refleja el balance del costo recuperado
+      gananciaCambio = -deltaCosto; // = costoDevueltos - costoNuevos
+    } else {
+      gananciaCambio = (diferenciaCobrada - comisionMedioPago) - deltaCosto;
+    }
+
+    // Regla crítica: costoTotal nunca debe ser negativo.
+    // Para reportes/caja se computa la variación positiva o el costo de reposición >= 0.
+    const costoTotal = Math.max(0, deltaCosto);
 
     return {
-      efectivo: Math.round(cobrado * (pctE / 100)),
-      tarjeta: Math.round(cobrado * (pctT / 100)),
-      totalCobrado: Math.round(cobrado),
-      costoTotal: Math.round(costoNeto),
-      ganancia: Math.round(gananciaFinal),
+      efectivo,
+      tarjeta,
+      totalCobrado: precioVentaBruto,
+      costoTotal,
+      ganancia: Math.round(gananciaCambio),
+      precioVentaBruto,
+      costoMercaderia,
+      comisionMedioPago,
+      ingresoNeto,
+      gananciaNeta: Math.round(gananciaCambio),
+      deltaCosto: Math.round(deltaCosto),
+      diferenciaCobrada,
     };
   }
 
-  // Regular sale logic.
+  // 3. Regular sale logic (venta estándar)
   let efectivo = 0;
   let tarjeta = 0;
-  let costoTotal = 0;
+  let valorEfectivoTotal = 0;
+  let costoMercaderiaAcum = 0;
 
   const pctE = sale.pago?.efectivo ?? 100;
   const pctT = sale.pago?.tarjeta ?? 0;
@@ -173,14 +206,16 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
 
     efectivo += pE * cant * (pctE / 100);
     tarjeta += pT * cant * (pctT / 100);
-    costoTotal += costo * cant;
+    valorEfectivoTotal += pE * cant;
+    costoMercaderiaAcum += Math.max(0, costo) * cant;
   });
 
-  // Apply gift card usage if present.
+  // Aplicar uso de Gift Card si corresponde
   const rawGift = (sale as any).giftCardUsada;
   const gift = typeof rawGift === 'number'
     ? rawGift
     : (rawGift?.montoUsado ?? 0);
+
   if (gift > 0) {
     const totalAntes = efectivo + tarjeta;
     if (totalAntes > 0) {
@@ -189,15 +224,33 @@ export const computeSaleBreakdown = (sale: Sale, sales: Sale[]) => {
     }
   }
 
-  const totalCobrado = efectivo + tarjeta;
-  const ganancia = totalCobrado - costoTotal;
+  const precioVentaBruto = Math.round(efectivo + tarjeta);
+  const valorEfectivoNeto = Math.max(0, valorEfectivoTotal - gift);
+
+  // Comisión medio de pago: si no está explicitada en la venta,
+  // es la retención/recargo financiero de tarjeta sobre el precio neto en efectivo
+  const comisionMedioPago = sale.comisionMedioPago !== undefined
+    ? Math.max(0, Number(sale.comisionMedioPago) || 0)
+    : Math.max(0, precioVentaBruto - Math.round(valorEfectivoNeto));
+
+  // ingresoNeto = precioVentaBruto - comisionMedioPago
+  const ingresoNeto = Math.max(0, precioVentaBruto - comisionMedioPago);
+  const costoMercaderia = Math.max(0, Math.round(costoMercaderiaAcum));
+
+  // gananciaNeta = ingresoNeto - costoMercaderia
+  const gananciaNeta = Math.round(ingresoNeto - costoMercaderia);
 
   return {
     efectivo: Math.round(efectivo),
     tarjeta: Math.round(tarjeta),
-    totalCobrado: Math.round(totalCobrado),
-    costoTotal: Math.round(costoTotal),
-    ganancia: Math.round(ganancia),
+    totalCobrado: precioVentaBruto,
+    costoTotal: costoMercaderia,
+    ganancia: gananciaNeta,
+    precioVentaBruto,
+    costoMercaderia,
+    comisionMedioPago,
+    ingresoNeto,
+    gananciaNeta,
   };
 };
 
@@ -233,4 +286,164 @@ export const isMonth = (dateStr: string, month: number, year: number) => {
 
   if (isNaN(d.getTime())) return false;
   return d.getMonth() + 1 === month && d.getFullYear() === year;
+};
+
+/**
+ * Recalcula los totales de una venta al cambiar la forma de pago (Efectivo vs Tarjeta),
+ * actualizando su 'total', 'diferencia' (en cambios) y 'pago'.
+ */
+export const recalculateSaleWithPaymentMethod = (
+  sale: Sale,
+  newPago: { efectivo: number; tarjeta: number },
+  inventory?: InventoryItem[]
+): Sale => {
+  const pctE = newPago.efectivo ?? 100;
+  const pctT = newPago.tarjeta ?? 0;
+
+  // 1. Venta de Gift Card (monto fijo nominal)
+  if (sale.tipo === 'gift') {
+    return {
+      ...sale,
+      pago: newPago
+    };
+  }
+
+  // 2. Cambio de prendas
+  if (sale.tipo === 'cambio') {
+    const rawGift = (sale as any).giftCardUsada;
+    const giftMonto = typeof rawGift === 'number' ? rawGift : (rawGift?.montoUsado ?? 0);
+
+    const totalDevuelto = (sale.itemsDevueltos ?? []).reduce((sum, item) => {
+      const { precioEfectivo, descuento } = getItemSnapshot(item);
+      let pE = precioEfectivo;
+      if (!pE && inventory) {
+        const inv = inventory.find(i => i.id === item.id || i.sku === item.sku);
+        if (inv) pE = inv.ventaEfectivo;
+      }
+      const cant = item.cantidad ?? 1;
+      const desc = descuento || 0;
+      const descExtra = Math.max(0, desc - 20);
+      const pEFinal = (pE || 0) * (1 - descExtra / 100);
+      return sum + pEFinal * cant;
+    }, 0);
+
+    const totalNuevo = (sale.itemsNuevos ?? []).reduce((sum, item) => {
+      const { precioEfectivo, descuento } = getItemSnapshot(item);
+      let pE = precioEfectivo;
+      if (!pE && inventory) {
+        const inv = inventory.find(i => i.id === item.id || i.sku === item.sku);
+        if (inv) pE = inv.ventaEfectivo;
+      }
+      const cant = item.cantidad ?? 1;
+      const desc = descuento || 0;
+      const descExtra = Math.max(0, desc - 20);
+      const pEFinal = (pE || 0) * (1 - descExtra / 100);
+      return sum + pEFinal * cant;
+    }, 0);
+
+    const diferenciaBaseEfectivo = Math.round(totalNuevo - totalDevuelto);
+
+    if (diferenciaBaseEfectivo <= 0) {
+      return {
+        ...sale,
+        pago: newPago,
+        diferencia: diferenciaBaseEfectivo,
+        total: 0
+      };
+    }
+
+    let sumTarjeta = 0;
+    let sumEfectivo = 0;
+    for (const item of (sale.itemsNuevos ?? [])) {
+      const { precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(item);
+      let pE = precioEfectivo;
+      let pT = precioTarjeta;
+      if (inventory && (!pE || !pT)) {
+        const inv = inventory.find(i => i.id === item.id || i.sku === item.sku);
+        if (inv) {
+          if (!pE) pE = inv.ventaEfectivo;
+          if (!pT) pT = inv.ventaTarjeta;
+        }
+      }
+      if (!pT && pE) pT = Math.ceil((pE * 1.27) / 1000) * 1000;
+      if (!pE && pT) pE = Math.round(pT / 1.27);
+
+      const cant = item.cantidad ?? 1;
+      const desc = descuento || 0;
+      const descExtra = Math.max(0, desc - 20);
+      const pEFinal = (pE || 0) * (1 - descExtra / 100);
+      const pTFinal = (pT || 0) * (1 - desc / 100);
+      sumEfectivo += pEFinal * cant;
+      sumTarjeta += pTFinal * cant;
+    }
+    const ratioEfectivoATarjeta = sumEfectivo > 0 ? (sumTarjeta / sumEfectivo) : 1.25;
+
+    const cubiertoGift = Math.min(giftMonto, diferenciaBaseEfectivo);
+    const remanente = Math.max(0, diferenciaBaseEfectivo - cubiertoGift);
+
+    const remanenteEscalado = remanente > 0
+      ? Math.round(
+        remanente * (pctE / 100) +
+        remanente * (pctT / 100) * ratioEfectivoATarjeta
+      )
+      : 0;
+
+    const nuevaDiferencia = Math.round(cubiertoGift + remanenteEscalado);
+    const nuevoTotal = Math.round(Math.max(0, nuevaDiferencia - giftMonto));
+
+    return {
+      ...sale,
+      pago: newPago,
+      diferencia: nuevaDiferencia,
+      total: nuevoTotal
+    };
+  }
+
+  // 3. Venta normal (con ítems)
+  if ((sale.items ?? []).length > 0) {
+    let sumEfectivo = 0;
+    let sumTarjeta = 0;
+
+    for (const item of sale.items) {
+      const { precioEfectivo, precioTarjeta, descuento } = getItemSnapshot(item);
+      let pE = precioEfectivo;
+      let pT = precioTarjeta;
+
+      if (inventory && (!pE || !pT)) {
+        const invItem = inventory.find(i => i.id === item.id || i.sku === item.sku);
+        if (invItem) {
+          if (!pE) pE = invItem.ventaEfectivo;
+          if (!pT) pT = invItem.ventaTarjeta;
+        }
+      }
+
+      if (!pT && pE) pT = Math.ceil((pE * 1.27) / 1000) * 1000;
+      if (!pE && pT) pE = Math.round(pT / 1.27);
+
+      const cant = item.cantidad ?? 1;
+      const desc = descuento || 0;
+      const pTFinal = (pT || 0) * (1 - desc / 100);
+      const descExtra = Math.max(0, desc - 20);
+      const pEFinal = (pE || 0) * (1 - descExtra / 100);
+
+      sumTarjeta += pTFinal * cant * (pctT / 100);
+      sumEfectivo += pEFinal * cant * (pctE / 100);
+    }
+
+    const rawGift = (sale as any).giftCardUsada;
+    const giftMonto = typeof rawGift === 'number' ? rawGift : (rawGift?.montoUsado ?? 0);
+    const nuevoTotal = Math.round(Math.max(0, (sumEfectivo + sumTarjeta) - giftMonto));
+
+    return {
+      ...sale,
+      pago: newPago,
+      total: nuevoTotal
+    };
+  }
+
+  // 4. Fallback para ventas sin lista de ítems detallada
+  return {
+    ...sale,
+    pago: newPago
+  };
 };

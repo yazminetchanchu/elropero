@@ -9,6 +9,8 @@ vi.mock('lucide-react', () => ({
   Trash2: () => <span>Trash2</span>,
   X: () => <span>X</span>,
   Loader2: () => <span>Loader2</span>,
+  Eye: () => <span>Eye</span>,
+  EyeOff: () => <span>EyeOff</span>,
 }));
 
 describe('Componente Expenses: Egresos de Caja', () => {

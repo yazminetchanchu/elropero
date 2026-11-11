@@ -34,12 +34,14 @@ export interface SaleItem {
   sku: string;
   descripcion: string;
   cantidad: number;
-  costo: number;
+  costo: number; // Costo unitario de reposición (siempre >= 0)
   precioEfectivo: number;
   precioTarjeta: number;
   descuento: number;
   talle?: string;   // variante seleccionada al vender
   color?: string;   // variante seleccionada al vender
+  comisionMedioPago?: number;
+  ingresoNeto?: number;
 }
 
 export interface Sale {
@@ -48,6 +50,14 @@ export interface Sale {
   items: SaleItem[];
   total: number;
   tipo: SaleType;
+
+  // Variables financieras explícitas
+  precioVentaBruto?: number;
+  costoMercaderia?: number;
+  comisionMedioPago?: number;
+  ingresoNeto?: number;
+  gananciaNeta?: number;
+  deltaCosto?: number;
 
   giftCardUsada?: {
     codigo: string;

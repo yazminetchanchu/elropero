@@ -313,5 +313,133 @@ describe('exchangePricing service', () => {
       expect(res.montoGiftCard).toBe(5000);
       expect(res.montoAPagar).toBe(0);
     });
+
+    describe('Reglas de medios de pago cruzados (Efectivo vs Tarjeta)', () => {
+      const prendaDevuelta: SaleItem = {
+        id: 'prod_dev_1',
+        productId: 'prod_dev_1',
+        sku: 'DEV-1',
+        descripcion: 'Remera Lino Original',
+        costo: 4000,
+        precioEfectivo: 8000,
+        precioTarjeta: 10000,
+        cantidad: 1,
+        descuento: 0,
+      };
+
+      const prendaNuevaMayorValor = {
+        id: 'prod_new_2',
+        productId: 'prod_new_2',
+        descripcion: 'Vestido Seda Nuevo',
+        cantidad: 1,
+        precioEfectivo: 12000,
+        precioTarjeta: 15000,
+      };
+
+      const prendaNuevaMismoValor = {
+        id: 'prod_new_same',
+        productId: 'prod_new_same',
+        descripcion: 'Blusa Poplin Distinto Modelo',
+        cantidad: 1,
+        precioEfectivo: 8000,
+        precioTarjeta: 10000,
+      };
+
+      it('Caso 1: Original en Efectivo + Nueva en Efectivo -> Compara Precio Efectivo ($8.000 vs $12.000)', () => {
+        const res = calculateExchangeBreakdown({
+          itemsDevueltos: [prendaDevuelta],
+          itemsNuevos: [prendaNuevaMayorValor],
+          isTransferenciaDev: true,
+          isTransferenciaNuevo: true,
+        });
+
+        // Devuelta: $8.000 efectivo, Nueva: $12.000 efectivo -> Diferencia $4.000
+        expect(res.totalReturnedUnmatchedCredit).toBe(8000);
+        expect(res.totalNewUnmatchedCost).toBe(12000);
+        expect(res.diferenciaSinEnvio).toBe(4000);
+        expect(res.montoAPagar).toBe(4000);
+      });
+
+      it('Caso 2: Original en Efectivo + Nueva con Tarjeta -> Devuelta se toma a Precio de Lista ($10.000) y se resta de Lista de la nueva ($15.000)', () => {
+        const res = calculateExchangeBreakdown({
+          itemsDevueltos: [prendaDevuelta],
+          itemsNuevos: [prendaNuevaMayorValor],
+          isTransferenciaDev: true,
+          isTransferenciaNuevo: false, // Paga nueva con Tarjeta
+        });
+
+        // Devuelta: $10.000 (Precio Lista), Nueva: $15.000 (Precio Lista) -> Diferencia $5.000 restante en tarjeta
+        expect(res.totalReturnedUnmatchedCredit).toBe(10000);
+        expect(res.totalNewUnmatchedCost).toBe(15000);
+        expect(res.diferenciaSinEnvio).toBe(5000);
+        expect(res.montoAPagar).toBe(5000);
+      });
+
+      it('Caso 2b: Original en Efectivo + Nueva con Tarjeta (mismo precio de lista) -> Diferencia $0', () => {
+        const res = calculateExchangeBreakdown({
+          itemsDevueltos: [prendaDevuelta],
+          itemsNuevos: [prendaNuevaMismoValor],
+          isTransferenciaDev: true,
+          isTransferenciaNuevo: false,
+        });
+
+        // Devuelta: $10.000 (Lista), Nueva: $10.000 (Lista) -> $0
+        expect(res.totalReturnedUnmatchedCredit).toBe(10000);
+        expect(res.totalNewUnmatchedCost).toBe(10000);
+        expect(res.diferenciaSinEnvio).toBe(0);
+        expect(res.montoAPagar).toBe(0);
+      });
+
+      it('Caso 3: Original con Tarjeta + Nueva con Tarjeta -> Compara Precio de Lista ($10.000 vs $15.000)', () => {
+        const res = calculateExchangeBreakdown({
+          itemsDevueltos: [prendaDevuelta],
+          itemsNuevos: [prendaNuevaMayorValor],
+          isTransferenciaDev: false,
+          isTransferenciaNuevo: false,
+        });
+
+        // Devuelta: $10.000 (Lista), Nueva: $15.000 (Lista) -> Diferencia $5.000
+        expect(res.totalReturnedUnmatchedCredit).toBe(10000);
+        expect(res.totalNewUnmatchedCost).toBe(15000);
+        expect(res.diferenciaSinEnvio).toBe(5000);
+        expect(res.montoAPagar).toBe(5000);
+      });
+
+      it('Caso 4: Original con Tarjeta + Nueva en Efectivo -> Calcula sobre precios Efectivo ($8.000 vs $12.000) aplicando descuento únicamente al excedente', () => {
+        const res = calculateExchangeBreakdown({
+          itemsDevueltos: [prendaDevuelta],
+          itemsNuevos: [prendaNuevaMayorValor],
+          isTransferenciaDev: false,
+          isTransferenciaNuevo: true, // Paga nueva en Efectivo
+        });
+
+        // Devuelta: $8.000 (Efectivo), Nueva: $12.000 (Efectivo) -> Diferencia $4.000
+        // Excedente de lista = 15.000 - 10.000 = 5.000 -> con 20% descuento efectivo = $4.000
+        expect(res.totalReturnedUnmatchedCredit).toBe(8000);
+        expect(res.totalNewUnmatchedCost).toBe(12000);
+        expect(res.diferenciaSinEnvio).toBe(4000);
+        expect(res.montoAPagar).toBe(4000);
+      });
+
+      it('Caso Devolución Pura (sin prendas nuevas) -> Gift Card por el valor neto pagado original', () => {
+        // Original pagado en Efectivo
+        const resEf = calculateExchangeBreakdown({
+          itemsDevueltos: [prendaDevuelta],
+          itemsNuevos: [],
+          isTransferenciaDev: true,
+        });
+        expect(resEf.totalReturnedUnmatchedCredit).toBe(8000);
+        expect(resEf.montoGiftCard).toBe(8000);
+
+        // Original pagado con Tarjeta
+        const resTar = calculateExchangeBreakdown({
+          itemsDevueltos: [prendaDevuelta],
+          itemsNuevos: [],
+          isTransferenciaDev: false,
+        });
+        expect(resTar.totalReturnedUnmatchedCredit).toBe(10000);
+        expect(resTar.montoGiftCard).toBe(10000);
+      });
+    });
   });
 });

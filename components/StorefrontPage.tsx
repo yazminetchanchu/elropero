@@ -162,7 +162,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [showCart, setShowCart] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState<InventoryItem | null>(null);
   const [addedFeedback, setAddedFeedback] = React.useState<string | null>(null);
-  
+
   // Toast notice for item added to cart
   const [cartToastNotification, setCartToastNotification] = React.useState<{
     item: InventoryItem;
@@ -170,7 +170,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     color?: string;
   } | null>(null);
   const cartToastTimerRef = React.useRef<any>(null);
-  
+
   // Modal state for selection
   const [modalTalle, setModalTalle] = React.useState('');
   const [modalColor, setModalColor] = React.useState('');
@@ -394,7 +394,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       const cleanUrl = window.location.origin + window.location.pathname;
       safeReplaceState({}, document.title, cleanUrl);
     }
-    
+
     const pagoStatus = params.get('pago');
     const orderId = params.get('orderId');
     const tipoParam = params.get('tipo');
@@ -437,7 +437,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         try {
           const orderRef = doc(db, 'showrooms', PUBLIC_SHOWROOM_ID, 'orders', orderId);
           const snap = await getDoc(orderRef);
-          
+
           if (snap?.exists?.()) {
             const data = snap.data();
             if (['PAID', 'APPROVED', 'Confirmado', 'Confirmada'].includes(data.estado)) {
@@ -528,7 +528,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         console.error('Error al restaurar orden pendiente local:', e);
         try {
           localStorage.removeItem('ropero_last_pending_order');
-        } catch (_) {}
+        } catch (_) { }
         setPendingPaymentOrder(null);
       }
     }
@@ -589,9 +589,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         const prod = inventory.find(i => i.id === c.productId);
         return prod ? { product: prod, quantity: c.quantity, payMethod: c.payMethod, selectedTalle: c.selectedTalle, selectedColor: c.selectedColor } : null;
       }).filter(Boolean) as CartItem[];
-      
-      const diff = JSON.stringify(mapped.map(c => ({ id: c.product.id, q: c.quantity, m: c.payMethod, t: c.selectedTalle, cl: c.selectedColor }))) !== 
-                   JSON.stringify(cart.map(c => ({ id: c.product.id, q: c.quantity, m: c.payMethod, t: c.selectedTalle, cl: c.selectedColor })));
+
+      const diff = JSON.stringify(mapped.map(c => ({ id: c.product.id, q: c.quantity, m: c.payMethod, t: c.selectedTalle, cl: c.selectedColor }))) !==
+        JSON.stringify(cart.map(c => ({ id: c.product.id, q: c.quantity, m: c.payMethod, t: c.selectedTalle, cl: c.selectedColor })));
       if (diff) {
         setCart(mapped);
       }
@@ -668,7 +668,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       // Silencioso: es una operación de limpieza, no crítica para el usuario
       console.warn('[StorefrontPage] Error al liberar reservas expiradas:', err);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   React.useEffect(() => {
@@ -749,8 +749,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
     const originalItems = buildSaleItemsFromOrder(order, inventory);
     const metodoPagoOriginal = order?.metodoPago?.toLowerCase() || '';
-    const isTransferenciaOrig = (order as any)?.pago 
-      ? (order as any).pago.efectivo === 100 
+    const isTransferenciaOrig = (order as any)?.pago
+      ? (order as any).pago.efectivo === 100
       : (metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo'));
     setExchangePaymentMethod(isTransferenciaOrig ? 'transferencia' : 'tarjeta');
 
@@ -826,9 +826,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     const isTransferenciaDev = (exchangeSession.order as any)?.pago
       ? (exchangeSession.order as any).pago.efectivo === 100
       : (metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo'));
-    const totalDev = sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaDev);
-
     const isTransferenciaNuevo = exchangePaymentMethod === 'transferencia';
+    const isTransferenciaVal = (cart.length > 0) ? isTransferenciaNuevo : isTransferenciaDev;
+    const totalDev = sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaVal);
     const costoEnvioTotal = (cart.length > 0 && exchangeTipoEnvio === 'envio') ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
 
     const breakdown = calculateExchangeBreakdown({
@@ -1039,8 +1039,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         const logisticaNotifStr = exchangeTipoEnvio === 'recoleta'
           ? '\nLogística: Pick Up Recoleta (Coordinación por WhatsApp)'
           : exchangeTipoEnvio === 'envio'
-          ? `\nCosto Envío Total: $${costoEnvioTotal}`
-          : '\nLogística: Local Chivilcoy';
+            ? `\nCosto Envío Total: $${costoEnvioTotal}`
+            : '\nLogística: Local Chivilcoy';
 
         sendNotificationEmail(
           `Nuevo Cambio Web (Transferencia) - ${currentCustomerNombre}`,
@@ -1110,8 +1110,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       const logisticaNotifStr = exchangeTipoEnvio === 'recoleta'
         ? 'Pick Up Recoleta (Coordinación por WhatsApp)'
         : exchangeTipoEnvio === 'envio'
-        ? 'Envío por Correo'
-        : 'Local Chivilcoy';
+          ? 'Envío por Correo'
+          : 'Local Chivilcoy';
 
       sendNotificationEmail(
         `Nuevo Cambio Web - ${currentCustomerNombre}`,
@@ -1162,9 +1162,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       .filter(i => {
         if (!search.trim()) return true;
         const q = search.toLowerCase();
-        return (i.descripcion || '').toLowerCase().includes(q) || 
-               (i.proveedor || '').toLowerCase().includes(q) || 
-               (i.categoria || '').toLowerCase().includes(q);
+        return (i.descripcion || '').toLowerCase().includes(q) ||
+          (i.proveedor || '').toLowerCase().includes(q) ||
+          (i.categoria || '').toLowerCase().includes(q);
       })
       .filter(i => {
         if (!category) return true;
@@ -1274,7 +1274,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       // Auto-limpiar después de 12 segundos
       setTimeout(() => setCartStockWarnings([]), 12000);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inventory]);
 
   const addToCart = (product: InventoryItem, talle?: string, color?: string) => {
@@ -1315,7 +1315,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       if (c.product.id !== id || c.selectedTalle !== talle || c.selectedColor !== color) return c;
       const liveProd = inventory.find(i => i.id === id) || c.product;
       const next = c.quantity + delta;
-      
+
       const maxQty = getVariantStock(liveProd, talle, color);
 
       if (next < 1 || next > maxQty) return c;
@@ -1358,7 +1358,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   const [paymentMethod, setPaymentMethod] = React.useState<'transferencia' | 'tarjeta'>('transferencia');
   const [showCartGiftInput, setShowCartGiftInput] = React.useState(false);
   const [cartGiftCode, setCartGiftCode] = React.useState('');
-  
+
   const [appliedGiftCard, setAppliedGiftCard] = React.useState<GiftCard | null>(null);
   const [isValidatingCartGift, setIsValidatingCartGift] = React.useState(false);
   const [cartGiftError, setCartGiftError] = React.useState<string | null>(null);
@@ -1473,8 +1473,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
     const isTransferenciaDev = (exchangeSession.order as any)?.pago
       ? (exchangeSession.order as any).pago.efectivo === 100
       : (metodoPagoOriginal.includes('transferencia') || metodoPagoOriginal.includes('efectivo'));
-    return sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaDev);
-  }, [exchangeSession]);
+    const isTransferenciaNuevo = exchangePaymentMethod === 'transferencia';
+    const isTransferenciaVal = (cart.length > 0) ? isTransferenciaNuevo : isTransferenciaDev;
+    return sumExchangeLines(exchangeSession.itemsDevueltos, isTransferenciaVal);
+  }, [exchangeSession, cart.length, exchangePaymentMethod]);
 
   const diferenciaExchange = exchangeBreakdown ? exchangeBreakdown.diferenciaSinEnvio : (finalCartTotal - totalDevueltoExchange);
 
@@ -1507,20 +1509,20 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
   const openQuickView = (product: InventoryItem) => {
     setSelectedProduct(product);
-    
+
     // Find the first talle that has stock in any color
     const defaultTalle = product.talles?.find(t => {
       if (!product.colores || product.colores.length === 0) return true; // No colors, just pick this talle
       return product.colores.some(c => getVariantStock(product, t, c) > 0);
     }) || product.talles?.[0] || '';
-    
+
     setModalTalle(defaultTalle);
-    
+
     // Find the first color that has stock for the selected talle
     const defaultColor = product.colores?.find(c => {
       return getVariantStock(product, defaultTalle, c) > 0;
     }) || product.colores?.[0] || '';
-    
+
     setModalColor(defaultColor);
     setModalImgIdx(0);
 
@@ -1532,7 +1534,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
   return (
     <div className="min-h-screen bg-white flex flex-col text-black font-['Inter'] selection:bg-black selection:text-white overflow-x-clip w-full">
-      
+
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap');
         
@@ -1634,15 +1636,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
       `}</style>
 
       {/* ══════ HEADER ══════ */}
-      <header 
-        ref={headerRef} 
-        className={`sticky top-0 z-[60] bg-white/95 backdrop-blur-md border-b border-black/10 transition-all duration-300 ${
-          isScrolled ? 'shadow-sm border-black/15' : 'shadow-xs'
-        }`}
+      <header
+        ref={headerRef}
+        className={`sticky top-0 z-[60] bg-white/95 backdrop-blur-md border-b border-black/10 transition-all duration-300 ${isScrolled ? 'shadow-sm border-black/15' : 'shadow-xs'
+          }`}
       >
-        <div className={`flex items-center justify-between px-4 sm:px-8 transition-all duration-300 ${
-          isScrolled ? 'h-11 sm:h-12' : 'h-14 sm:h-16'
-        }`}>
+        <div className={`flex items-center justify-between px-4 sm:px-8 transition-all duration-300 ${isScrolled ? 'h-11 sm:h-12' : 'h-14 sm:h-16'
+          }`}>
           <div className="flex items-center gap-4 sm:gap-6 shrink-0">
             <button onClick={() => setShowNav(true)} className="flex items-center gap-2 hover:opacity-60 transition-opacity">
               <Menu size={18} strokeWidth={1.2} />
@@ -1654,17 +1654,16 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           </div>
 
           <Link to="/" className="flex-1 min-w-0 flex items-center justify-center text-center px-2" onClick={() => { setCategory(''); setSearch(''); }}>
-            <h1 className={`tracking-[0.28em] uppercase font-light leading-none whitespace-nowrap transition-all duration-300 select-none text-black ${
-              isScrolled ? 'text-[11px] sm:text-[14px] md:text-[15px]' : 'text-[13px] sm:text-[16px] md:text-[18px]'
-            }`}>
+            <h1 className={`tracking-[0.28em] uppercase font-light leading-none whitespace-nowrap transition-all duration-300 select-none text-black ${isScrolled ? 'text-[11px] sm:text-[14px] md:text-[15px]' : 'text-[13px] sm:text-[16px] md:text-[18px]'
+              }`}>
               {webSettings.storeName || 'EL ROPERO'}
             </h1>
           </Link>
 
           <div className="flex items-center justify-end gap-4 sm:gap-6 shrink-0">
             {/* User Icon */}
-            <button 
-              onClick={() => user ? setShowDashboard(true) : setShowAuthModal(true)} 
+            <button
+              onClick={() => user ? setShowDashboard(true) : setShowAuthModal(true)}
               className="hover:opacity-60 transition-opacity flex items-center gap-1.5"
             >
               <User size={18} strokeWidth={1.2} />
@@ -1676,7 +1675,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             </button>
 
             {/* Gift Card Icon */}
-            <button 
+            <button
               onClick={handleOpenBuyGiftCard}
               className="hover:opacity-60 transition-opacity flex items-center gap-1.5"
               title="Regalar Gift Card"
@@ -1693,15 +1692,14 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
         {/* Infinite Announcement Marquee */}
         {webSettings.announcementText && (
-          <div className={`marquee-container bg-black text-white border-none transition-all duration-300 ${
-            isScrolled ? 'py-1 text-[8px]' : 'py-1.5'
-          }`}>
+          <div className={`marquee-container bg-black text-white border-none transition-all duration-300 ${isScrolled ? 'py-1 text-[8px]' : 'py-1.5'
+            }`}>
             <div className="marquee-content text-[9px] tracking-[0.25em] font-light uppercase">
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
-              
+
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
               <span className="marquee-item">{webSettings.announcementText}</span>
@@ -1747,7 +1745,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             <button onClick={() => setShowNav(false)} className="self-end mb-12 opacity-40 hover:opacity-100 p-1 rounded-none transition-all"><X size={18} strokeWidth={1.2} /></button>
             <nav className="space-y-5 overflow-y-auto sidebar-scrollbar pb-10 pr-2">
               <p className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 font-light mb-6 border-b border-black/10 pb-3">Colección</p>
-              
+
               <button onClick={() => { setCategory(''); setShowNav(false); }}
                 className={`block w-full text-left text-[12px] sm:text-[14px] tracking-[0.22em] uppercase transition-all duration-200 ${!category ? 'font-normal text-black' : 'font-light text-neutral-500 hover:text-black'}`}>
                 Ver Todo
@@ -1781,7 +1779,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             <div className="w-14 h-14 border border-black/10 flex items-center justify-center mx-auto bg-neutral-50">
               <PauseCircle size={26} strokeWidth={1.2} className="text-black/70" />
             </div>
-            
+
             <div className="space-y-2">
               <p className="text-[9px] tracking-[0.3em] uppercase font-light text-neutral-400">
                 {webSettings.storeName || 'El Ropero Showroom'}
@@ -1797,7 +1795,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
 
             <div className="pt-4 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-center gap-3">
               {(webSettings.contactWhatsapp || '5492346685836') && (
-                <a 
+                <a
                   href={`https://wa.me/${(webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '')}?text=${encodeURIComponent('Hola! Quisiera consultar sobre la tienda...')}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -1809,7 +1807,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               )}
 
               {webSettings.instagramHandle && (
-                <a 
+                <a
                   href={`https://instagram.com/${webSettings.instagramHandle.replace('@', '')}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -1827,1344 +1825,1323 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           {!category && !search && (
             <section className="w-full">
               <div className="relative w-full h-[65vh] sm:h-[80vh] overflow-hidden bg-neutral-100">
-            <img src={webSettings.heroImageUrl || '/assets/hero.png'} alt={webSettings.heroTitle || 'Portada'} className="w-full h-full object-cover grayscale brightness-95 contrast-105"/>
-            <div className="absolute inset-0 flex flex-col items-center justify-end pb-16 sm:pb-24 px-6 text-center text-white bg-gradient-to-t from-black/40 via-transparent to-transparent">
-              <p className="text-[10px] tracking-[0.3em] uppercase font-light mb-3">{webSettings.heroSubtitle || 'Nuevo Ingreso'}</p>
-              <h2 className="text-xl sm:text-3xl tracking-[0.25em] uppercase font-light leading-none mb-6">{webSettings.heroTitle || ''}</h2>
-              <button onClick={() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' })} className="bg-white text-black px-8 py-3 text-[10px] tracking-[0.25em] uppercase font-light rounded-none hover:bg-black hover:text-white transition-all duration-300">Explorar</button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ══════ GIFT CARD BANNER (SUBTLE & COMPACT - DARK MODE) ══════ */}
-      {!category && !search && !webSettings.storeHidden && (
-        <section className="w-full bg-neutral-950 text-white py-4 px-6 sm:px-12">
-          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
-              <Gift size={16} strokeWidth={1.2} className="text-neutral-400 shrink-0" />
-              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                <span className="text-[10px] tracking-[0.22em] uppercase font-medium text-white">
-                  Gift Cards Digitales
-                </span>
-                <span className="hidden sm:inline text-neutral-700">•</span>
-                <span className="text-[10px] tracking-[0.08em] font-light text-neutral-400">
-                  Regalá una tarjeta virtual con dedicatoria y envío inmediato por email.
-                </span>
+                <img src={webSettings.heroImageUrl || '/assets/hero.png'} alt={webSettings.heroTitle || 'Portada'} className="w-full h-full object-cover grayscale brightness-95 contrast-105" />
+                <div className="absolute inset-0 flex flex-col items-center justify-end pb-16 sm:pb-24 px-6 text-center text-white bg-gradient-to-t from-black/40 via-transparent to-transparent">
+                  <p className="text-[10px] tracking-[0.3em] uppercase font-light mb-3">{webSettings.heroSubtitle || 'Nuevo Ingreso'}</p>
+                  <h2 className="text-xl sm:text-3xl tracking-[0.25em] uppercase font-light leading-none mb-6">{webSettings.heroTitle || ''}</h2>
+                  <button onClick={() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' })} className="bg-white text-black px-8 py-3 text-[10px] tracking-[0.25em] uppercase font-light rounded-none hover:bg-black hover:text-white transition-all duration-300">Explorar</button>
+                </div>
               </div>
-            </div>
-            <button 
-              onClick={handleOpenBuyGiftCard}
-              className="border border-white/80 text-white px-4 py-1.5 text-[9px] tracking-[0.2em] uppercase font-light hover:bg-white hover:text-black transition-all rounded-none shrink-0"
-            >
-              Regalar Gift Card
-            </button>
-          </div>
-        </section>
-      )}
+            </section>
+          )}
 
-      {/* ══════ COLLECTION ══════ */}
-      <div id="catalogo" className="pt-12 sm:pt-20 px-4 sm:px-10 lg:px-14 flex flex-col items-center w-full">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-32"><div className="w-6 h-6 border border-black/20 border-t-black animate-spin"></div></div>
-        ) : filteredItems.length === 0 ? (
-          <div className="text-center py-32">
-            <p className="text-[11px] tracking-[0.25em] uppercase text-neutral-400 font-light">
-              {category ? `Sin stock disponible por el momento en ${category}` : 'No se han encontrado prendas'}
-            </p>
-          </div>
-        ) : (
-          <main className="w-full max-w-[1800px]">
-            {/* ══════ CATALOG CONTROL BAR (MINIMALIST & AESTHETIC - ZHOUE STYLE) ══════ */}
-            <div 
-              style={{ top: `${headerHeight}px` }}
-              className="sticky z-[40] bg-white/95 backdrop-blur-md py-3 px-4 sm:px-8 border-b border-black/10 text-xs tracking-wider mb-8 transition-all flex flex-wrap items-center justify-between gap-3 w-full"
-            >
-              {/* Left Side: Filter Trigger & Active Filter Badges */}
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <button 
-                  onClick={() => setIsFilterDrawerOpen(true)}
-                  className="inline-flex items-center gap-2 px-3.5 py-1.5 border border-black/20 text-neutral-900 hover:border-black hover:bg-neutral-50 transition-all cursor-pointer font-light tracking-[0.2em] uppercase text-[11px] bg-white"
-                >
-                  <SlidersHorizontal size={14} strokeWidth={1.5} className="text-neutral-700" />
-                  <span>Filtrar</span>
-                  {activeFilterCount > 0 && (
-                    <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[9px] font-medium flex items-center justify-center ml-0.5">
-                      {activeFilterCount}
+          {/* ══════ GIFT CARD BANNER (SUBTLE & COMPACT - DARK MODE) ══════ */}
+          {!category && !search && !webSettings.storeHidden && (
+            <section className="w-full bg-neutral-950 text-white py-4 px-6 sm:px-12">
+              <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+                <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
+                  <Gift size={16} strokeWidth={1.2} className="text-neutral-400 shrink-0" />
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                    <span className="text-[10px] tracking-[0.22em] uppercase font-medium text-white">
+                      Gift Cards Digitales
                     </span>
-                  )}
-                </button>
-
-                {/* Active Filter Chips */}
-                {filterTalle && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
-                    Talle: <strong className="font-normal">{filterTalle}</strong>
-                    <button onClick={() => setFilterTalle('')} className="hover:text-black text-neutral-400 ml-0.5" title="Remover filtro de talle">
-                      <X size={12} />
-                    </button>
-                  </span>
-                )}
-
-                {filterColor && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
-                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={getColorDotStyle(filterColor)} />
-                    Color: <strong className="font-normal">{filterColor}</strong>
-                    <button onClick={() => setFilterColor('')} className="hover:text-black text-neutral-400 ml-0.5" title="Remover filtro de color">
-                      <X size={12} />
-                    </button>
-                  </span>
-                )}
-
-                {sortOption !== 'destacados' && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
-                    Orden: <strong className="font-normal">{sortOption === 'precio-asc' ? 'Menor $' : sortOption === 'precio-desc' ? 'Mayor $' : 'A-Z'}</strong>
-                    <button onClick={() => setSortOption('destacados')} className="hover:text-black text-neutral-400 ml-0.5" title="Restablecer orden">
-                      <X size={12} />
-                    </button>
-                  </span>
-                )}
-
-                {activeFilterCount > 0 && (
-                  <button 
-                    onClick={() => { setFilterTalle(''); setFilterColor(''); setSortOption('destacados'); }}
-                    className="text-neutral-400 hover:text-black underline underline-offset-4 tracking-widest uppercase font-light ml-1 transition-colors text-[10px] cursor-pointer"
-                  >
-                    Limpiar todo
-                  </button>
-                )}
-              </div>
-
-              {/* Right Side: Quick Sort Trigger */}
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-neutral-500 font-light ml-auto sm:ml-0">
-                <span className="hidden sm:inline">Ordenar:</span>
-                <select 
-                  value={sortOption} 
-                  onChange={(e) => setSortOption(e.target.value as any)}
-                  className="px-2 py-1 bg-transparent border-b border-black/20 text-neutral-900 uppercase tracking-widest font-light focus:outline-none focus:border-black transition-colors rounded-none cursor-pointer text-[11px]"
+                    <span className="hidden sm:inline text-neutral-700">•</span>
+                    <span className="text-[10px] tracking-[0.08em] font-light text-neutral-400">
+                      Regalá una tarjeta virtual con dedicatoria y envío inmediato por email.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleOpenBuyGiftCard}
+                  className="border border-white/80 text-white px-4 py-1.5 text-[9px] tracking-[0.2em] uppercase font-light hover:bg-white hover:text-black transition-all rounded-none shrink-0"
                 >
-                  <option value="destacados">Destacados</option>
-                  <option value="precio-asc">Precio: Menor a Mayor</option>
-                  <option value="precio-desc">Precio: Mayor a Menor</option>
-                  <option value="nombre">Nombre: A-Z</option>
-                </select>
+                  Regalar Gift Card
+                </button>
               </div>
-            </div>
+            </section>
+          )}
 
-            {/* ══════ ZHOU-STYLE OFF-CANVAS FILTER DRAWER ══════ */}
-            {isFilterDrawerOpen && (
-              <div className="fixed inset-0 z-[100] flex justify-end">
-                {/* Backdrop */}
-                <div 
-                  className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
-                  onClick={() => setIsFilterDrawerOpen(false)}
-                />
-
-                {/* Off-canvas Panel */}
-                <div className="relative w-full max-w-md bg-white h-full shadow-2xl z-10 flex flex-col justify-between overflow-hidden transition-transform duration-300">
-                  {/* Drawer Header */}
-                  <div className="px-6 py-5 border-b border-neutral-100 flex items-center justify-between bg-white">
-                    <div className="flex items-center gap-2">
-                      <SlidersHorizontal size={16} strokeWidth={1.5} className="text-neutral-900" />
-                      <h3 className="text-xs uppercase font-light tracking-[0.25em] text-neutral-900">
-                        Filtros y Orden
-                      </h3>
+          {/* ══════ COLLECTION ══════ */}
+          <div id="catalogo" className="pt-12 sm:pt-20 px-4 sm:px-10 lg:px-14 flex flex-col items-center w-full">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-32"><div className="w-6 h-6 border border-black/20 border-t-black animate-spin"></div></div>
+            ) : filteredItems.length === 0 ? (
+              <div className="text-center py-32">
+                <p className="text-[11px] tracking-[0.25em] uppercase text-neutral-400 font-light">
+                  {category ? `Sin stock disponible por el momento en ${category}` : 'No se han encontrado prendas'}
+                </p>
+              </div>
+            ) : (
+              <main className="w-full max-w-[1800px]">
+                {/* ══════ CATALOG CONTROL BAR (MINIMALIST & AESTHETIC - ZHOUE STYLE) ══════ */}
+                <div
+                  style={{ top: `${headerHeight}px` }}
+                  className="sticky z-[40] bg-white/95 backdrop-blur-md py-3 px-4 sm:px-8 border-b border-black/10 text-xs tracking-wider mb-8 transition-all flex flex-wrap items-center justify-between gap-3 w-full"
+                >
+                  {/* Left Side: Filter Trigger & Active Filter Badges */}
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <button
+                      onClick={() => setIsFilterDrawerOpen(true)}
+                      className="inline-flex items-center gap-2 px-3.5 py-1.5 border border-black/20 text-neutral-900 hover:border-black hover:bg-neutral-50 transition-all cursor-pointer font-light tracking-[0.2em] uppercase text-[11px] bg-white"
+                    >
+                      <SlidersHorizontal size={14} strokeWidth={1.5} className="text-neutral-700" />
+                      <span>Filtrar</span>
                       {activeFilterCount > 0 && (
-                        <span className="text-[10px] bg-neutral-900 text-white px-2 py-0.5 rounded-full font-light">
+                        <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[9px] font-medium flex items-center justify-center ml-0.5">
                           {activeFilterCount}
                         </span>
                       )}
-                    </div>
-                    <button 
-                      onClick={() => setIsFilterDrawerOpen(false)}
-                      className="p-2 text-neutral-500 hover:text-black transition-colors cursor-pointer"
-                      aria-label="Cerrar filtros"
-                    >
-                      <X size={18} strokeWidth={1.5} />
                     </button>
-                  </div>
 
-                  {/* Drawer Body - Scrollable */}
-                  <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                    {/* Talles Section */}
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900">
-                          Talles
-                        </span>
-                        {filterTalle && (
-                          <button 
-                            onClick={() => setFilterTalle('')} 
-                            className="text-[10px] text-neutral-400 hover:text-black underline tracking-wider uppercase cursor-pointer"
-                          >
-                            Borrar
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => setFilterTalle('')}
-                          className={`px-3 py-2 text-xs tracking-wider uppercase transition-all border cursor-pointer ${
-                            filterTalle === '' 
-                              ? 'bg-neutral-900 text-white border-neutral-900 font-medium' 
-                              : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
-                          }`}
-                        >
-                          Todos
+                    {/* Active Filter Chips */}
+                    {filterTalle && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
+                        Talle: <strong className="font-normal">{filterTalle}</strong>
+                        <button onClick={() => setFilterTalle('')} className="hover:text-black text-neutral-400 ml-0.5" title="Remover filtro de talle">
+                          <X size={12} />
                         </button>
-                        {availableTalles.map(t => {
-                          const isSelected = filterTalle === t;
-                          return (
-                            <button
-                              key={t}
-                              onClick={() => setFilterTalle(isSelected ? '' : t)}
-                              className={`min-w-[42px] px-3.5 py-2 text-xs tracking-wider uppercase transition-all border cursor-pointer ${
-                                isSelected 
-                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs' 
-                                  : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
-                              }`}
-                            >
-                              {t}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Colores Section */}
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900">
-                          Colores
-                        </span>
-                        {filterColor && (
-                          <button 
-                            onClick={() => setFilterColor('')} 
-                            className="text-[10px] text-neutral-400 hover:text-black underline tracking-wider uppercase cursor-pointer"
-                          >
-                            Borrar
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => setFilterColor('')}
-                          className={`px-3 py-2 text-xs tracking-wider uppercase text-left transition-all border flex items-center gap-2 cursor-pointer ${
-                            filterColor === '' 
-                              ? 'bg-neutral-900 text-white border-neutral-900 font-medium' 
-                              : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
-                          }`}
-                        >
-                          <span className="w-3 h-3 rounded-full bg-neutral-300 inline-block" />
-                          <span>Todos los colores</span>
-                        </button>
-                        {availableColores.map(c => {
-                          const isSelected = filterColor.toLowerCase() === c.toLowerCase();
-                          return (
-                            <button
-                              key={c}
-                              onClick={() => setFilterColor(isSelected ? '' : c)}
-                              className={`px-3 py-2 text-xs tracking-wider uppercase text-left transition-all border flex items-center justify-between gap-2 cursor-pointer ${
-                                isSelected 
-                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs' 
-                                  : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span 
-                                  className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-2xs" 
-                                  style={getColorDotStyle(c)} 
-                                />
-                                <span className="truncate">{c}</span>
-                              </div>
-                              {isSelected && <Check size={14} className="shrink-0 text-white" />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Ordenar Por Section */}
-                    <div>
-                      <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900 block mb-4">
-                        Ordenar Por
                       </span>
-                      <div className="space-y-2">
-                        {[
-                          { id: 'destacados', label: 'Destacados' },
-                          { id: 'precio-asc', label: 'Precio: Menor a Mayor' },
-                          { id: 'precio-desc', label: 'Precio: Mayor a Menor' },
-                          { id: 'nombre', label: 'Nombre: A - Z' },
-                        ].map(opt => {
-                          const isSelected = sortOption === opt.id;
-                          return (
-                            <button
-                              key={opt.id}
-                              onClick={() => setSortOption(opt.id as any)}
-                              className={`w-full px-4 py-2.5 text-xs tracking-wider uppercase text-left transition-all border flex items-center justify-between cursor-pointer ${
-                                isSelected 
-                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium' 
-                                  : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
-                              }`}
-                            >
-                              <span>{opt.label}</span>
-                              {isSelected && <Check size={14} />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                    )}
 
-                  {/* Drawer Footer */}
-                  <div className="p-6 border-t border-neutral-100 bg-white space-y-3">
-                    <button
-                      onClick={() => setIsFilterDrawerOpen(false)}
-                      className="w-full bg-neutral-900 hover:bg-black text-white py-3.5 text-xs uppercase tracking-[0.25em] font-light transition-all cursor-pointer shadow-md"
-                    >
-                      Ver {filteredItems.length} {filteredItems.length === 1 ? 'Producto' : 'Productos'}
-                    </button>
+                    {filterColor && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
+                        <span className="w-2.5 h-2.5 rounded-full inline-block" style={getColorDotStyle(filterColor)} />
+                        Color: <strong className="font-normal">{filterColor}</strong>
+                        <button onClick={() => setFilterColor('')} className="hover:text-black text-neutral-400 ml-0.5" title="Remover filtro de color">
+                          <X size={12} />
+                        </button>
+                      </span>
+                    )}
+
+                    {sortOption !== 'destacados' && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 border border-neutral-200 text-neutral-800 text-[10px] uppercase font-light tracking-wider rounded-none">
+                        Orden: <strong className="font-normal">{sortOption === 'precio-asc' ? 'Menor $' : sortOption === 'precio-desc' ? 'Mayor $' : 'A-Z'}</strong>
+                        <button onClick={() => setSortOption('destacados')} className="hover:text-black text-neutral-400 ml-0.5" title="Restablecer orden">
+                          <X size={12} />
+                        </button>
+                      </span>
+                    )}
+
                     {activeFilterCount > 0 && (
                       <button
-                        onClick={() => {
-                          setFilterTalle('');
-                          setFilterColor('');
-                          setSortOption('destacados');
-                        }}
-                        className="w-full text-center text-neutral-500 hover:text-black text-[11px] uppercase tracking-widest font-light py-1 cursor-pointer transition-colors"
+                        onClick={() => { setFilterTalle(''); setFilterColor(''); setSortOption('destacados'); }}
+                        className="text-neutral-400 hover:text-black underline underline-offset-4 tracking-widest uppercase font-light ml-1 transition-colors text-[10px] cursor-pointer"
                       >
-                        Limpiar Todos los Filtros
+                        Limpiar todo
                       </button>
                     )}
                   </div>
+
+                  {/* Right Side: Quick Sort Trigger */}
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-neutral-500 font-light ml-auto sm:ml-0">
+                    <span className="hidden sm:inline">Ordenar:</span>
+                    <select
+                      value={sortOption}
+                      onChange={(e) => setSortOption(e.target.value as any)}
+                      className="px-2 py-1 bg-transparent border-b border-black/20 text-neutral-900 uppercase tracking-widest font-light focus:outline-none focus:border-black transition-colors rounded-none cursor-pointer text-[11px]"
+                    >
+                      <option value="destacados">Destacados</option>
+                      <option value="precio-asc">Precio: Menor a Mayor</option>
+                      <option value="precio-desc">Precio: Mayor a Menor</option>
+                      <option value="nombre">Nombre: A-Z</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
-            )}
 
-            {/* Floating Mobile Filter Pill */}
-            {activeFilterCount > 0 && !isFilterDrawerOpen && (
-              <div className="fixed bottom-6 right-6 z-[45] sm:hidden">
-                <button
-                  onClick={() => setIsFilterDrawerOpen(true)}
-                  className="bg-neutral-900 text-white px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 text-xs tracking-widest uppercase font-light border border-white/20 active:scale-95 transition-transform cursor-pointer"
-                >
-                  <SlidersHorizontal size={14} />
-                  <span>Filtros</span>
-                  <span className="w-4 h-4 rounded-full bg-white text-black text-[9px] font-bold flex items-center justify-center">
-                    {activeFilterCount}
-                  </span>
-                </button>
-              </div>
-            )}
+                {/* ══════ ZHOU-STYLE OFF-CANVAS FILTER DRAWER ══════ */}
+                {isFilterDrawerOpen && (
+                  <div className="fixed inset-0 z-[100] flex justify-end">
+                    {/* Backdrop */}
+                    <div
+                      className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+                      onClick={() => setIsFilterDrawerOpen(false)}
+                    />
 
-            {/* Si no hay filtro, mostrar por secciones */}
-            {!category && !search ? (
-              sections.map(sec => {
-                const secItems = filteredItems.filter(i => i.categoria === sec);
-                if (secItems.length === 0) return null;
-                const secDisc = webSettings.discountBySection?.[sec] || 0;
-                return (
-                  <section key={sec} className="mb-24 sm:mb-32">
-                    <div className="px-4 mb-10 flex flex-col items-center text-center">
-                      <div className="flex items-center justify-center gap-6 w-full max-w-xs mx-auto">
-                        <div className="h-[1px] bg-black/10 flex-1"></div>
-                        <h2 className="text-xs sm:text-sm tracking-[0.25em] uppercase font-light text-neutral-900">{sec}</h2>
-                        <div className="h-[1px] bg-black/10 flex-1"></div>
-                      </div>
-                      {secDisc > 0 && <span className="mt-3 inline-block bg-black text-white px-3 py-1 text-[9px] tracking-[0.2em] uppercase font-light rounded-none">-{secDisc}% OFF</span>}
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-10 sm:gap-y-16 gap-x-3 sm:gap-x-6">
-                      {secItems.map((item, idx) => <ProductCard key={item.id} item={item} idx={idx} onOpen={openQuickView} addedFeedback={addedFeedback} onAddToCart={addToCart} discount={getDiscount(item)} isFavorited={isFavorited(item.id)} onToggleFavorite={handleToggleFavorite}/>)}
-                    </div>
-                  </section>
-                );
-              }).concat([(() => {
-                const otherItems = filteredItems.filter(i => !sections.includes(i.categoria));
-                if (otherItems.length === 0) return null;
-                return (
-                  <section key="otras-categorias" className="mb-32">
-                    <div className="px-6 mb-16 flex flex-col items-center text-center">
-                      <div className="flex items-center justify-center gap-6 w-full max-w-md mx-auto">
-                        <div className="h-[1px] bg-black/10 flex-1"></div>
-                        <h2 className="text-[18px] sm:text-[24px] tracking-[8px] uppercase font-light text-black/90">Más Categorías</h2>
-                        <div className="h-[1px] bg-black/10 flex-1"></div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-16 sm:gap-y-24 gap-x-6 sm:gap-x-8">
-                      {otherItems.map((item, idx) => <ProductCard key={item.id} item={item} idx={idx} onOpen={openQuickView} addedFeedback={addedFeedback} onAddToCart={addToCart} discount={getDiscount(item)} isFavorited={isFavorited(item.id)} onToggleFavorite={handleToggleFavorite}/>)}
-                    </div>
-                  </section>
-                );
-              })()])
-            ) : (
-              <div className="w-full">
-                {category && (
-                  <div className="px-6 mb-16 flex flex-col items-center text-center fade-in">
-                    <div className="flex items-center justify-center gap-6 w-full max-w-md mx-auto">
-                      <div className="h-[1px] bg-black/10 flex-1"></div>
-                      <h2 className={`text-[20px] sm:text-[28px] tracking-[10px] uppercase font-light ${category === 'SALE' ? 'text-red-600 font-medium' : 'text-black/90'}`}>{category}</h2>
-                      <div className="h-[1px] bg-black/10 flex-1"></div>
-                    </div>
-                  </div>
-                )}
-                {search && (
-                  <div className="px-6 mb-16 flex flex-col items-center text-center fade-in">
-                    <div className="flex items-center justify-center gap-6 w-full max-w-md mx-auto">
-                      <div className="h-[1px] bg-black/10 flex-1"></div>
-                      <h2 className="text-[18px] sm:text-[24px] tracking-[8px] uppercase font-light text-black/90">"{search}"</h2>
-                      <div className="h-[1px] bg-black/10 flex-1"></div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-16 sm:gap-y-24 gap-x-6 sm:gap-x-8">
-                  {filteredItems.map((item, idx) => <ProductCard key={item.id} item={item} idx={idx} onOpen={openQuickView} addedFeedback={addedFeedback} onAddToCart={addToCart} discount={getDiscount(item)} isFavorited={isFavorited(item.id)} onToggleFavorite={handleToggleFavorite}/>)}
-                </div>
-              </div>
-            )}
-          </main>
-        )}
-      </div>
-
-      {/* ══════ PRODUCT MODAL ══════ */}
-      {selectedProduct && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" onClick={closeQuickView} />
-          <div className="relative bg-white w-full max-w-4xl h-full sm:h-[85vh] flex flex-col sm:flex-row overflow-hidden transition-all rounded-none shadow-2xl border border-black/10">
-            <button onClick={closeQuickView} className="absolute top-4 right-4 z-10 opacity-60 hover:opacity-100 p-2 bg-white/90 rounded-none border border-black/10"><X size={16} strokeWidth={1.2} /></button>
-
-            {/* Left: Gallery */}
-            <div className="w-full sm:w-[55%] h-[40vh] sm:h-full bg-neutral-50 relative group">
-              {selectedProduct.imagenes && selectedProduct.imagenes.length > 0 ? (
-                <>
-                  <img src={selectedProduct.imagenes[modalImgIdx]} alt="" className={`w-full h-full object-cover transition-all duration-300 ${selectedProduct.cantidad <= 0 ? 'grayscale-[30%]' : ''}`}/>
-                  {selectedProduct.cantidad <= 0 && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <span className="bg-neutral-800/80 text-white text-[10px] tracking-[0.3em] uppercase font-medium px-4 py-2">
-                        Agotado
-                      </span>
-                    </div>
-                  )}
-                  {selectedProduct.imagenes.length > 1 && (
-                    <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setModalImgIdx(prev => (prev - 1 + selectedProduct.imagenes.length) % selectedProduct.imagenes.length)} className="bg-white/90 p-1.5 rounded-none border border-black/10"><ChevronLeft size={16}/></button>
-                      <button onClick={() => setModalImgIdx(prev => (prev + 1) % selectedProduct.imagenes.length)} className="bg-white/90 p-1.5 rounded-none border border-black/10"><ChevronRight size={16}/></button>
-                    </div>
-                  )}
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
-                    {Array.isArray(selectedProduct.imagenes) && selectedProduct.imagenes.map((img, i) => <div key={`img-${i}`} className={`w-1.5 h-1.5 transition-all ${i === modalImgIdx ? 'bg-black w-3' : 'bg-black/20'}`}/>)}
-                  </div>
-                </>
-              ) : (
-                <div className="w-full h-full flex items-center justify-center p-8 text-center">
-                  <p className="text-xl sm:text-2xl font-light tracking-[0.2em] uppercase text-neutral-300 leading-none">{selectedProduct.descripcion}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Right: Info */}
-            <div className="w-full sm:w-[45%] flex-1 p-6 sm:p-8 flex flex-col overflow-y-auto no-scrollbar bg-white">
-              <p className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 font-light mb-1.5">{selectedProduct.categoria}</p>
-              <h2 className="text-xs sm:text-sm tracking-[0.2em] uppercase font-normal mb-4 leading-relaxed text-black">{selectedProduct.descripcion}</h2>
-
-              {(() => {
-                const disc = getDiscount(selectedProduct);
-                const efDisc = getDiscountedPrice(selectedProduct.ventaEfectivo, disc, true, selectedProduct.costo);
-                const tarDisc = getDiscountedPrice(selectedProduct.ventaTarjeta, disc, false, selectedProduct.costo);
-                const cuotas3 = Math.round(tarDisc / 3);
-                const cuotas6 = Math.round(tarDisc / 6);
-                return (
-                  <div className="space-y-2 mb-6">
-                    {disc > 0 && (
-                      <div className="inline-flex items-center gap-1.5 bg-black text-white px-2 py-0.5 text-[8px] tracking-[0.2em] uppercase font-light rounded-none">
-                        <span>-{disc}% OFF SALE</span>
-                      </div>
-                    )}
-                    
-                    {/* PRECIO EFECTIVO */}
-                    <div className="border border-neutral-200 p-3 bg-white">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light">Transferencia (-{DESCUENTO_BASE_TRANSFERENCIA}%)</p>
-                        </div>
-                        <div className="text-right">
-                          {efDisc < selectedProduct.ventaEfectivo && <span className="text-[10px] font-light line-through text-neutral-400 block">${selectedProduct.ventaEfectivo.toLocaleString()}</span>}
-                          <span className="text-sm font-normal tracking-wide text-black">${efDisc.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* PRECIO TARJETA */}
-                    <div className="border border-neutral-200 p-3 bg-white">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light">Tarjeta (3x ${cuotas3.toLocaleString()} ó 6x ${cuotas6.toLocaleString()})</p>
-                        </div>
-                        <div className="text-right">
-                          {tarDisc < selectedProduct.ventaTarjeta && <span className="text-[10px] font-light line-through text-neutral-400 block">${selectedProduct.ventaTarjeta.toLocaleString()}</span>}
-                          <span className="text-sm font-normal tracking-wide text-black">${tarDisc.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Talles */}
-              {selectedProduct.talles && selectedProduct.talles.length > 0 && (
-                <div className="mb-5">
-                  <div className="flex items-center justify-between mb-2 border-b border-neutral-100 pb-1.5">
-                    <p className="text-[10px] tracking-[0.2em] uppercase text-black font-light">
-                      Talle <span className="text-neutral-400 ml-1">— {modalTalle || 'Seleccionar'}</span>
-                    </p>
-                    {selectedProduct.medidas && (
-                      <button
-                        type="button"
-                        onClick={() => setShowSizeGuideModal(true)}
-                        className="text-[9px] tracking-[0.2em] uppercase text-neutral-500 hover:text-black underline underline-offset-4 flex items-center gap-1 font-light"
-                      >
-                        <Ruler size={11} strokeWidth={1.2} />
-                        Guía de talles
-                      </button>
-                    )}
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-2 justify-start">
-                    {Array.isArray(selectedProduct.talles) && Array.from(new Set(selectedProduct.talles as string[])).map((t, idx) => {
-                      const isSelected = modalTalle === t;
-                      // Deshabilitar talle si no tiene stock en ningún color (o sin color si no hay colores)
-                      const hasStockForTalle = selectedProduct.colores && selectedProduct.colores.length > 0
-                        ? selectedProduct.colores.some(c => getVariantStock(selectedProduct, t, c) > 0)
-                        : getVariantStock(selectedProduct, t, undefined) > 0;
-                      const isTalleDisabled = !hasStockForTalle;
-                      
-                      return (
-                        <button 
-                          key={`${t}-${idx}`} 
-                          disabled={isTalleDisabled}
-                          onClick={() => {
-                            if (isTalleDisabled) return;
-                            setModalTalle(t);
-                            if (selectedProduct.colores && selectedProduct.colores.length > 0) {
-                              const isCurrentColorAvailable = modalColor && getVariantStock(selectedProduct, t, modalColor) > 0;
-                              if (!isCurrentColorAvailable) {
-                                const nextColor = selectedProduct.colores.find(c => getVariantStock(selectedProduct, t, c) > 0);
-                                setModalColor(nextColor || '');
-                              }
-                            }
-                          }} 
-                          className={`w-9 h-9 text-[10px] tracking-[0.1em] uppercase font-light transition-all flex items-center justify-center rounded-none relative ${
-                            isTalleDisabled
-                              ? 'bg-neutral-50 border border-neutral-200 text-neutral-300 cursor-not-allowed'
-                              : isSelected 
-                                ? 'bg-black text-white border border-black' 
-                                : 'bg-white border border-neutral-300 text-black hover:border-black'
-                          }`}
-                          title={isTalleDisabled ? 'Sin stock' : undefined}
-                        >
-                          {isTalleDisabled ? (
-                            <span className="relative">
-                              {t}
-                              <span className="absolute inset-x-0 top-1/2 h-px bg-neutral-300 -rotate-12" />
+                    {/* Off-canvas Panel */}
+                    <div className="relative w-full max-w-md bg-white h-full shadow-2xl z-10 flex flex-col justify-between overflow-hidden transition-transform duration-300">
+                      {/* Drawer Header */}
+                      <div className="px-6 py-5 border-b border-neutral-100 flex items-center justify-between bg-white">
+                        <div className="flex items-center gap-2">
+                          <SlidersHorizontal size={16} strokeWidth={1.5} className="text-neutral-900" />
+                          <h3 className="text-xs uppercase font-light tracking-[0.25em] text-neutral-900">
+                            Filtros y Orden
+                          </h3>
+                          {activeFilterCount > 0 && (
+                            <span className="text-[10px] bg-neutral-900 text-white px-2 py-0.5 rounded-full font-light">
+                              {activeFilterCount}
                             </span>
-                          ) : t}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Colores */}
-              {selectedProduct.colores && selectedProduct.colores.length > 0 && (
-                <div className="mb-5">
-                  <div className="flex items-center justify-between mb-2 border-b border-neutral-100 pb-1.5">
-                    <p className="text-[10px] tracking-[0.2em] uppercase text-black font-light">
-                      Color <span className="text-neutral-400 ml-1">— {modalColor || 'Seleccionar'}</span>
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 justify-start">
-                    {Array.isArray(selectedProduct.colores) && Array.from(new Set(selectedProduct.colores as string[])).map((c, idx) => {
-                      const colorStock = modalTalle ? getVariantStock(selectedProduct, modalTalle, c) : getVariantStock(selectedProduct, undefined, c);
-                      const hasStockTracking = selectedProduct.stockPorVariante !== undefined || selectedProduct.coloresStock !== undefined;
-                      const isOutOfStock = hasStockTracking && colorStock <= 0;
-                      const isSel = modalColor === c;
-                      const dotStyle = getColorDotStyle(c);
-                      
-                      return (
-                        <button 
-                          key={`${c}-${idx}`} 
-                          disabled={isOutOfStock}
-                          title={isOutOfStock ? `Sin stock ${modalTalle ? `en talle ${modalTalle}` : ''}` : undefined}
-                          onClick={() => {
-                            if (isOutOfStock) return;
-                            setModalColor(c);
-                            if (selectedProduct.talles && selectedProduct.talles.length > 0) {
-                              const isCurrentTalleAvailable = modalTalle && getVariantStock(selectedProduct, modalTalle, c) > 0;
-                              if (!isCurrentTalleAvailable) {
-                                const nextTalle = selectedProduct.talles.find(t => getVariantStock(selectedProduct, t, c) > 0);
-                                if (nextTalle) setModalTalle(nextTalle);
-                              }
-                            }
-                          }} 
-                          className={`px-3 py-1.5 text-[9px] tracking-[0.18em] uppercase transition-all font-light rounded-none border flex items-center gap-1.5 ${
-                            isSel 
-                              ? 'bg-black text-white border-black shadow-xs' 
-                              : isOutOfStock
-                                ? 'bg-neutral-50 border-neutral-200 text-neutral-300 opacity-40 cursor-not-allowed line-through'
-                                : 'bg-white border-neutral-300 text-black hover:border-black'
-                          }`}
-                        >
-                          <span 
-                            className="w-2.5 h-2.5 rounded-full inline-block shrink-0" 
-                            style={dotStyle} 
-                          />
-                          <span>{c}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-auto space-y-2 pt-4">
-                {(() => {
-                  const needsTalle = selectedProduct.talles && selectedProduct.talles.length > 0;
-                  const needsColor = selectedProduct.colores && selectedProduct.colores.length > 0;
-                  const hasSelection = (!needsTalle || modalTalle) && (!needsColor || modalColor);
-                  // Verificar stock real de la combinación seleccionada
-                  const liveVariantStock = hasSelection
-                    ? getVariantStock(selectedProduct, modalTalle || undefined, modalColor || undefined)
-                    : -1;
-                  const isVariantOutOfStock = hasSelection && liveVariantStock <= 0;
-                  const canAdd = hasSelection && !isVariantOutOfStock;
-                  return (
-                    <>
-                      <button 
-                        disabled={!hasSelection || isVariantOutOfStock}
-                        onClick={() => { addToCart(selectedProduct, modalTalle, modalColor); setSelectedProduct(null); }} 
-                        className={`w-full py-3 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none ${
-                          isVariantOutOfStock
-                            ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed border border-neutral-200'
-                            : canAdd
-                              ? 'bg-black text-white hover:bg-neutral-800'
-                              : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-                        }`}
-                      >
-                        {isVariantOutOfStock
-                          ? '✕ Agotado'
-                          : canAdd
-                            ? 'Añadir al carrito'
-                            : 'Seleccioná opciones'}
-                      </button>
-                      {hasSelection && liveVariantStock > 0 && liveVariantStock <= 2 && (
-                        <p className="text-center text-[9px] tracking-[0.15em] uppercase text-[#7C5A3E] font-medium">
-                          ¡Quedan pocas unidades!
-                        </p>
-                      )}
-                    </>
-                  );
-                })()}
-                <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light text-center">Ref: {selectedProduct.sku}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════ CART & CAMBIOS DRAWER ══════ */}
-      {showCart && (
-        <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-xs z-[110]" onClick={() => setShowCart(false)} />
-          <div className="fixed top-0 right-0 h-[100dvh] max-h-[100dvh] w-full sm:w-[420px] max-w-full bg-white z-[120] shadow-xl flex flex-col drawer-slide-in border-l border-black/10 overflow-hidden">
-            <div className="flex items-center justify-between px-6 h-16 border-b border-black/10 flex-shrink-0 bg-white">
-              <span className="text-[11px] tracking-[0.25em] uppercase font-light text-black">
-                {exchangeSession ? `Cambio — nuevas (${cartCount})` : `Carrito (${cartCount})`}
-              </span>
-              <button onClick={() => setShowCart(false)} className="opacity-40 hover:opacity-100"><X size={18} strokeWidth={1.2} /></button>
-            </div>
-            {/* Banner de advertencia de stock en tiempo real */}
-            {cartStockWarnings.length > 0 && (
-              <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex-shrink-0">
-                <div className="flex items-start gap-2">
-                  <AlertCircle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" strokeWidth={2} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[9px] tracking-[0.2em] uppercase font-bold text-amber-700 mb-1">Cambio en stock</p>
-                    {cartStockWarnings.map((w, i) => (
-                      <p key={i} className="text-[10px] text-amber-700 leading-relaxed">{w}</p>
-                    ))}
-                  </div>
-                  <button onClick={() => setCartStockWarnings([])} className="text-amber-400 hover:text-amber-700 flex-shrink-0">
-                    <X size={12} />
-                  </button>
-                </div>
-              </div>
-            )}
-            <div className="flex-1 overflow-y-auto visible-scrollbar px-6 divide-y divide-neutral-100">
-              {cart.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center gap-4 text-black/30 px-4 text-center">
-                  <ShoppingBag size={44} strokeWidth={1} />
-                  <p className="text-[12px] tracking-[3px] uppercase font-medium">
-                    {exchangeSession
-                      ? 'Agregá prendas nuevas desde el catálogo o confirmá solo con devolución abajo'
-                      : 'Tu carrito está vacío'}
-                  </p>
-                </div>
-              ) : (
-                cart.map((c, i) => {
-                  const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
-                  const disc = getDiscount(c.product);
-                  const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia', c.product.costo);
-                  const hasDiscount = price < basePrice;
-                  const liveStock = getVariantStock(c.product, c.selectedTalle, c.selectedColor);
-                  const isOutOfStock = liveStock <= 0;
-                  const isExceedingStock = c.quantity > liveStock;
-
-                  return (
-                    <div key={i} className={`py-8 flex gap-6 ${isOutOfStock ? 'opacity-70 bg-red-50/40 p-3 rounded' : isExceedingStock ? 'bg-amber-50/40 p-3 rounded' : ''}`}>
-                      <div className="w-20 h-28 bg-neutral-50 flex-shrink-0 flex items-center justify-center relative">
-                        {c.product.imagenes?.[0] ? <img src={c.product.imagenes[0]} alt="" className="w-full h-full object-cover"/> : <span className="text-[6px] opacity-20 uppercase">{c.product.descripcion}</span>}
-                        {isOutOfStock && (
-                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-[8px] tracking-wider uppercase font-semibold text-center p-1">
-                            Agotado
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 flex flex-col">
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="text-[14px] tracking-[1px] uppercase font-bold text-black">{c.product.descripcion}</h4>
-                          <button onClick={() => removeFromCart(c.product.id, c.selectedTalle, c.selectedColor)} className="opacity-30 hover:opacity-100"><Trash2 size={16} /></button>
-                        </div>
-                        <p className="text-[11px] tracking-[2px] uppercase text-black/50 font-medium mb-1">{c.selectedTalle && `Talle ${c.selectedTalle}`} {c.selectedColor && `— ${c.selectedColor}`}</p>
-                        
-                        {isOutOfStock ? (
-                          <p className="text-[9px] tracking-[1px] uppercase text-red-600 font-bold mb-2">⚠️ Agotado recientemente en showroom</p>
-                        ) : isExceedingStock ? (
-                          <p className="text-[9px] tracking-[1px] uppercase text-amber-600 font-bold mb-2">⚠️ Solo quedan {liveStock} unidad(es) disponible(s)</p>
-                        ) : null}
-
-                        {hasDiscount && <span className="text-[10px] tracking-[2px] uppercase text-red-600 font-bold mb-3">-{disc}% OFF</span>}
-                        <div className="mt-auto flex justify-between items-center">
-                          <div className="flex items-center border border-black/15">
-                            <button onClick={() => updateQty(c.product.id, -1, c.selectedTalle, c.selectedColor)} className="w-9 h-9 flex items-center justify-center hover:bg-black/5"><Minus size={14} /></button>
-                            <span className={`w-10 text-center text-[14px] font-semibold ${isOutOfStock || isExceedingStock ? 'text-red-600 font-bold' : 'text-black'}`}>{c.quantity}</span>
-                            <button 
-                              onClick={() => updateQty(c.product.id, 1, c.selectedTalle, c.selectedColor)} 
-                              disabled={isOutOfStock || c.quantity >= liveStock} 
-                              className="w-9 h-9 flex items-center justify-center hover:bg-black/5 disabled:opacity-20"
-                            >
-                              <Plus size={14} />
-                            </button>
-                          </div>
-                          <div className="text-right">
-                            {hasDiscount && <span className="text-[12px] font-light line-through text-black/30 block">${(basePrice * c.quantity).toLocaleString()}</span>}
-                            <span className={`text-[18px] font-bold ${hasDiscount ? 'text-red-600' : 'text-black'}`}>${(price * c.quantity).toLocaleString()}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-            {cart.length > 0 && !exchangeSession && (
-              <div className="p-6 border-t border-black/10 space-y-4 bg-white flex-shrink-0">
-                {/* Selector de Medio de Pago */}
-                <div className="space-y-1.5">
-                  <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-400">Medio de Pago</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('transferencia')}
-                      className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                        paymentMethod === 'transferencia'
-                          ? 'border-black bg-black text-white'
-                          : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                      }`}
-                    >
-                      <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${paymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
-                      <span className={`text-[8px] font-light uppercase tracking-wider ${paymentMethod === 'transferencia' ? 'text-white/80' : 'text-neutral-500'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('tarjeta')}
-                      className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                        paymentMethod === 'tarjeta'
-                          ? 'border-black bg-black text-white'
-                          : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                      }`}
-                    >
-                      <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${paymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Tarjeta</span>
-                      <span className={`text-[8px] font-light uppercase tracking-wider ${paymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Precio lista</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Gift Card Coupon Accordion inside Cart */}
-                <div className="border border-neutral-200 rounded-none overflow-hidden bg-white">
-                  <button
-                    type="button"
-                    onClick={() => setShowCartGiftInput(!showCartGiftInput)}
-                    className="w-full px-3 py-2.5 flex items-center justify-between text-[9px] tracking-[0.2em] uppercase font-light text-neutral-600 hover:bg-neutral-50 transition-all"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Gift size={11} strokeWidth={1.2} /> ¿Tenés una Gift Card?
-                    </span>
-                    <ChevronDown size={12} strokeWidth={1.2} className={`text-neutral-400 transition-transform duration-200 ${showCartGiftInput ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {showCartGiftInput && (
-                    <div className="p-3 border-t border-neutral-200 space-y-2 bg-neutral-50 animate-in fade-in duration-200">
-                      {appliedGiftCard ? (
-                        <div className="flex items-center justify-between bg-white border border-black/10 p-2.5 rounded-none">
-                          <div className="space-y-0.5 text-left">
-                            <p className="text-[8px] font-light text-black tracking-[0.2em] uppercase">
-                              Gift Card Aplicada
-                            </p>
-                            <p className="text-[9px] font-mono text-black">
-                              {appliedGiftCard.codigo}
-                            </p>
-                            <p className="text-[8px] text-neutral-500 font-light">
-                              Descuento: ${cartGiftDiscountAmount.toLocaleString('es-AR')}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleRemoveCartGift}
-                            className="text-[8px] tracking-[0.2em] uppercase font-light text-black underline transition-all"
-                          >
-                            Quitar
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={cartGiftCode}
-                              onChange={(e) => setCartGiftCode(e.target.value.toUpperCase())}
-                              placeholder="CÓDIGO GIFT CARD"
-                              disabled={isValidatingCartGift}
-                              className="flex-1 bg-white border border-neutral-300 px-2.5 py-1.5 text-[9px] tracking-[0.15em] font-mono outline-none focus:border-black uppercase placeholder:text-neutral-300 rounded-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleApplyCartGift}
-                              disabled={isValidatingCartGift || !cartGiftCode.trim()}
-                              className="bg-black hover:bg-neutral-800 disabled:opacity-30 text-white px-3 text-[8px] tracking-[0.2em] uppercase font-light transition-all flex items-center justify-center rounded-none"
-                            >
-                              {isValidatingCartGift ? (
-                                <Loader2 size={10} className="animate-spin" />
-                              ) : (
-                                'Aplicar'
-                              )}
-                            </button>
-                          </div>
-                          {cartGiftError && (
-                            <p className="text-[8px] uppercase tracking-[0.1em] text-neutral-900 font-light animate-pulse text-left">
-                              ⚠️ {cartGiftError}
-                            </p>
                           )}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                        <button
+                          onClick={() => setIsFilterDrawerOpen(false)}
+                          className="p-2 text-neutral-500 hover:text-black transition-colors cursor-pointer"
+                          aria-label="Cerrar filtros"
+                        >
+                          <X size={18} strokeWidth={1.5} />
+                        </button>
+                      </div>
 
-                {/* Desglose de Totales del Carrito */}
-                <div className="space-y-1 border-t border-neutral-100 pt-3 text-[9px] tracking-[0.18em] uppercase font-light">
-                  <div className="flex justify-between text-neutral-500">
-                    <span>Subtotal prendas</span>
-                    <span>${cartTotal.toLocaleString('es-AR')}</span>
-                  </div>
-                  {appliedGiftCard && (
-                    <div className="flex justify-between text-black font-normal">
-                      <span>Descuento Gift Card</span>
-                      <span>-${cartGiftDiscountAmount.toLocaleString('es-AR')}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex justify-between items-baseline border-t border-black/10 pt-2.5">
-                  <span className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 font-light">Total Final</span>
-                  <span className="text-xl font-normal text-black tracking-wide">${finalCartTotal.toLocaleString()}</span>
-                </div>
-
-                {(() => {
-                  const cartStockIssues = cart.filter(c => getVariantStock(c.product, c.selectedTalle, c.selectedColor) < c.quantity);
-                  const hasStockIssues = cartStockIssues.length > 0;
-                  return (
-                    <>
-                      {hasStockIssues && (
-                        <div className="bg-red-50 border border-red-200 rounded-none px-3 py-2.5 flex items-start gap-2">
-                          <AlertCircle size={13} className="text-red-500 flex-shrink-0 mt-0.5" strokeWidth={2} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[9px] tracking-[0.15em] uppercase font-bold text-red-700 mb-1">Items sin stock</p>
-                            {cartStockIssues.map((c, i) => {
-                              const liveStock = getVariantStock(c.product, c.selectedTalle, c.selectedColor);
+                      {/* Drawer Body - Scrollable */}
+                      <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                        {/* Talles Section */}
+                        <div>
+                          <div className="flex items-center justify-between mb-4">
+                            <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900">
+                              Talles
+                            </span>
+                            {filterTalle && (
+                              <button
+                                onClick={() => setFilterTalle('')}
+                                className="text-[10px] text-neutral-400 hover:text-black underline tracking-wider uppercase cursor-pointer"
+                              >
+                                Borrar
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => setFilterTalle('')}
+                              className={`px-3 py-2 text-xs tracking-wider uppercase transition-all border cursor-pointer ${filterTalle === ''
+                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
+                                  : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
+                                }`}
+                            >
+                              Todos
+                            </button>
+                            {availableTalles.map(t => {
+                              const isSelected = filterTalle === t;
                               return (
-                                <p key={i} className="text-[9px] text-red-600 leading-relaxed">
-                                  {c.product.descripcion}
-                                  {c.selectedTalle && ` — T:${c.selectedTalle}`}
-                                  {c.selectedColor && ` ${c.selectedColor}`}
-                                  {liveStock <= 0 ? ' — Agotado' : ` — Solo ${liveStock} disponible(s)`}
-                                </p>
+                                <button
+                                  key={t}
+                                  onClick={() => setFilterTalle(isSelected ? '' : t)}
+                                  className={`min-w-[42px] px-3.5 py-2 text-xs tracking-wider uppercase transition-all border cursor-pointer ${isSelected
+                                      ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs'
+                                      : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                                    }`}
+                                >
+                                  {t}
+                                </button>
                               );
                             })}
-                            <p className="text-[8px] text-red-500 mt-1 font-light">Eliminá los items marcados para continuar.</p>
                           </div>
                         </div>
-                      )}
-                      <button 
-                        disabled={hasStockIssues}
-                        onClick={() => {
-                          setShowCart(false);
-                          setShowCheckout(true);
-                        }} 
-                        className={`w-full py-3.5 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none flex items-center justify-center gap-2 ${
-                          hasStockIssues
-                            ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-                            : 'bg-black text-white hover:bg-neutral-800'
-                        }`}
-                      >
-                        {hasStockIssues ? 'Stock insuficiente' : 'Finalizar pedido'}
-                        {!hasStockIssues && <ArrowRight size={13} strokeWidth={1.2} />}
-                      </button>
-                      <div className="flex items-center justify-center gap-1.5 pt-1 text-[8.5px] tracking-[0.15em] uppercase text-neutral-400 font-light">
-                        <Clock size={11} className="text-neutral-500" strokeWidth={1.5} />
-                        <span>{paymentMethod === 'transferencia' ? 'Reserva de stock por 24 hs para transferencia' : 'Reserva de 15 min al continuar al pago'}</span>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            )}
-            {exchangeSession && (
-              <div className="p-6 sm:p-8 border-t border-black/10 space-y-5 bg-neutral-900/5 overflow-y-auto visible-scrollbar max-h-[75vh] flex-shrink-0">
-                <div className="space-y-3 border-b border-black/10 pb-6">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Seleccioná qué devolvés</p>
-                    <span className="text-[8px] uppercase tracking-wider text-black/40 bg-black/5 px-2 py-0.5 rounded">Deslizar para ver más</span>
-                  </div>
-                  <p className="text-[9px] tracking-[1px] uppercase text-black/50">Pedido {new Date(exchangeSession.order.fecha).toLocaleDateString('es-AR')}</p>
-                  <div className="space-y-2 mt-3 max-h-[220px] overflow-y-auto visible-scrollbar pr-1">
-                    {exchangeSession.originalItems.map((item) => {
-                      const disponible = item.cantidad - ((item as any).cantidadDevuelta || 0);
-                      const isYaCambiada = disponible <= 0;
-                      
-                      const sel = exchangeSession.itemsDevueltos.find((i) => i.id === item.id);
-                      const qty = exchangeSession.cantDevueltasInput[item.id] ?? sel?.cantidad ?? 0;
-                      return (
-                        <label
-                          key={item.id}
-                          className={`flex items-center gap-3 p-3 rounded border ${isYaCambiada ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} text-[10px] uppercase tracking-[0.5px] transition-all ${
-                            sel ? 'border-black bg-black/5' : 'border-black/10 hover:border-black/30'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!!sel}
-                            disabled={isYaCambiada}
-                            onChange={() => !isYaCambiada && toggleDevuelto(item, disponible)}
-                            className="accent-black"
-                          />
-                          <span className="flex-1 truncate font-semibold text-black">
-                            {item.descripcion}
-                            {isYaCambiada && <span className="ml-2 text-[9px] text-[#7C5A3E] lowercase font-medium">(Ya cambiada)</span>}
-                          </span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={disponible}
-                            disabled={!sel || isYaCambiada}
-                            value={qty || ''}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => updateDevueltoQty(item, parseInt(e.target.value, 10) || 1, disponible)}
-                            className="w-10 bg-transparent border border-black/20 rounded text-center text-[10px] text-black disabled:opacity-30"
-                          />
-                          <span className="text-black/40">/ {disponible}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={cancelExchange}
-                    className="mt-4 w-full border border-black/20 text-black py-2.5 text-[9px] tracking-[2px] uppercase font-bold hover:bg-black/5 transition-colors"
-                  >
-                    Cancelar cambio
-                  </button>
-                </div>
-                <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Resumen del cambio</p>
-                <div className="max-h-[160px] overflow-y-auto visible-scrollbar pr-1 space-y-2">
-                  {exchangeBreakdown && exchangeBreakdown.matchedPairsCount > 0 && (
-                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
-                      <p className="text-[9.5px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        <span>🤝 {exchangeBreakdown.matchedPairsCount} cambio(s) directo(s) ($0 diferencia)</span>
-                      </p>
-                      <p className="text-[8px] opacity-80 normal-case leading-tight">
-                        Por ley y política comercial, el cambio de talle o color del mismo producto es directo sin recargos.
-                      </p>
-                    </div>
-                  )}
-                  {exchangeSession.itemsDevueltos.length > 0 ? (
-                    <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60">
-                      <p className="font-bold text-black/40">Devolvés</p>
-                      {exchangeSession.itemsDevueltos.map((i) => (
-                        <p key={i.id}>{i.descripcion} × {i.cantidad}</p>
-                      ))}
-                      <p className="text-right font-bold text-black">− ${totalDevueltoExchange.toLocaleString('es-AR')}</p>
-                    </div>
-                  ) : (
-                    <p className="text-[10px] uppercase tracking-[1px] text-amber-700 font-semibold">
-                      Marcá las prendas a devolver en la sección superior.
-                    </p>
-                  )}
-                  {cart.length > 0 && (
-                    <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60 border-t border-black/5 pt-3">
-                      <p className="font-bold text-black/40">Prendas nuevas</p>
-                      {cart.map((c, i) => (
-                        <p key={i}>{c.product.descripcion} × {c.quantity}</p>
-                      ))}
-                      <p className="text-right font-bold text-black">+ ${cartTotal.toLocaleString('es-AR')}</p>
-                    </div>
-                  )}
-                </div>
-                {cart.length === 0 ? (
-                  /* Flujo 1: Sin prendas en carrito -> Canje directo por Gift Card */
-                  <div className="space-y-4 border-t border-black/10 pt-3">
-                    <div className="pt-2 space-y-1.5 text-[10px] uppercase tracking-[0.5px]">
-                      <div className="flex justify-between font-bold text-[11px] text-black">
-                        <span>Saldo a Favor (Gift Card)</span>
-                        <span className="text-emerald-700 font-semibold">${totalDevueltoExchange.toLocaleString('es-AR')}</span>
-                      </div>
-                    </div>
-                    {exchangeSession.itemsDevueltos.length > 0 && (
-                      <div className="space-y-1">
-                        <label className="block text-[8px] tracking-[0.2em] uppercase font-semibold text-neutral-500">
-                          Nombre para la Gift Card
-                        </label>
-                        <input
-                          type="text"
-                          value={exchangeSession.giftDestinatario}
-                          onChange={(e) =>
-                            setExchangeSession((prev) =>
-                              prev ? { ...prev, giftDestinatario: e.target.value } : prev
-                            )
-                          }
-                          placeholder="NOMBRE DEL DESTINATARIO"
-                          className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px] bg-transparent focus:outline-none focus:border-black"
-                        />
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={confirmExchange}
-                      disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0}
-                      className="w-full bg-black text-white py-4 text-[11px] tracking-[3px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
-                    >
-                      {isConfirmingExchange ? (
-                        <Loader2 className="animate-spin" size={14} />
-                      ) : (
-                        <Gift size={14} />
-                      )}
-                      Canjear por Gift Card
-                    </button>
-                  </div>
-                ) : (
-                  /* Flujo 2: Con prendas en carrito -> Cambio de prendas con logística y pago de diferencia si corresponde */
-                  <div className="space-y-3 border-t border-black/10 pt-3">
-                    {/* Selector de Logística del Cambio */}
-                    <div className="space-y-2.5">
-                      <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Logística del Cambio</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setExchangeTipoEnvio('retiro')}
-                          className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                            exchangeTipoEnvio === 'retiro'
-                              ? 'border-black bg-black text-white'
-                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                          }`}
-                        >
-                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'retiro' ? 'text-white' : 'text-black'}`}>Chivilcoy</span>
-                          <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'retiro' ? 'text-white/80' : 'text-neutral-500'}`}>Presencial · Gratis</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setExchangeTipoEnvio('recoleta')}
-                          className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                            exchangeTipoEnvio === 'recoleta'
-                              ? 'border-black bg-black text-white'
-                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                          }`}
-                        >
-                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'recoleta' ? 'text-white' : 'text-black'}`}>Pick Up Recoleta</span>
-                          <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'recoleta' ? 'text-white/80' : 'text-neutral-500'}`}>WhatsApp · Gratis</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setExchangeTipoEnvio('envio')}
-                          className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                            exchangeTipoEnvio === 'envio'
-                              ? 'border-black bg-black text-white'
-                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                          }`}
-                        >
-                          <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'envio' ? 'text-white' : 'text-black'}`}>Envío por Correo</span>
-                          <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'envio' ? 'text-white/70' : 'text-neutral-400'}`}>Cotización Dinámica</span>
-                        </button>
-                      </div>
 
-                      {/* Panel Informativo Pick Up Recoleta */}
-                      {exchangeTipoEnvio === 'recoleta' && (
-                        <div className="p-3 bg-neutral-50 border border-neutral-200 space-y-2 mt-2 text-[10px] uppercase tracking-[0.5px]">
-                          <div className="flex items-center gap-1.5 font-bold text-black text-[10px]">
-                            <MapPin size={12} className="text-black shrink-0" />
-                            <span>Pick Up Recoleta (CABA) · Sin Costo</span>
-                          </div>
-                          <p className="text-[9px] text-neutral-600 font-normal normal-case leading-relaxed">
-                            Punto de entrega/retiro: <strong>{webSettings.locationPickupAddress || 'Recoleta, CABA'}</strong>.
-                            Entrega de la prenda a devolver y retiro del cambio se coordinan sin costo por WhatsApp.
-                          </p>
-                          <a
-                            href={`https://wa.me/${(webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                              'Hola El Ropero! Quisiera coordinar día y horario para realizar la entrega y retiro de mi cambio en el Pick Up de Recoleta.'
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-none hover:bg-emerald-100 transition-colors uppercase tracking-[0.1em]"
-                          >
-                            <MessageCircle size={12} />
-                            <span>Coordinar por WhatsApp</span>
-                          </a>
-                        </div>
-                      )}
-
-                      {/* Configuración Dinámica de Envíos Correo Argentino */}
-                      {exchangeTipoEnvio === 'envio' && (
-                        <div className="p-3 bg-neutral-50 border border-neutral-200 space-y-3 mt-2 text-[10px] uppercase tracking-[0.5px]">
-                          <div>
-                            <label className="block text-[8px] tracking-[0.15em] font-semibold text-neutral-600 mb-1">
-                              Código Postal de tu Domicilio
-                            </label>
-                            <input
-                              type="text"
-                              maxLength={6}
-                              value={exchangeCpCliente}
-                              onChange={(e) => setExchangeCpCliente(e.target.value.toUpperCase().trim())}
-                              placeholder="Ej: 1425"
-                              className="w-full bg-white border border-neutral-300 px-2.5 py-1.5 text-[11px] font-medium text-black focus:outline-none focus:border-black"
-                            />
-                          </div>
-
-                          {/* Tramo 1: Devolución */}
-                          <div className="space-y-1 border-t border-neutral-200 pt-2">
-                            <div className="flex justify-between items-center text-[9px] font-bold text-neutral-700">
-                              <span>1. Devolución (Tus prendas → Chivilcoy)</span>
-                              <span className="text-black font-semibold">
-                                {isCalculatingExchangeShipping ? '...' : `+$${costoEnvioDevolucion.toLocaleString('es-AR')}`}
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                        {/* Colores Section */}
+                        <div>
+                          <div className="flex items-center justify-between mb-4">
+                            <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900">
+                              Colores
+                            </span>
+                            {filterColor && (
                               <button
-                                type="button"
-                                onClick={() => setExchangeTipoDevolucion('S')}
-                                className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
-                                  exchangeTipoDevolucion === 'S'
-                                    ? 'border-black bg-neutral-900 text-white'
-                                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
-                                }`}
+                                onClick={() => setFilterColor('')}
+                                className="text-[10px] text-neutral-400 hover:text-black underline tracking-wider uppercase cursor-pointer"
                               >
-                                Dejo en Sucursal
+                                Borrar
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setExchangeTipoDevolucion('D')}
-                                className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
-                                  exchangeTipoDevolucion === 'D'
-                                    ? 'border-black bg-neutral-900 text-white'
-                                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
-                                }`}
-                              >
-                                Retiro en Domicilio
-                              </button>
-                            </div>
+                            )}
                           </div>
-
-                          {/* Tramo 2: Reenvío de prenda nueva */}
-                          <div className="space-y-1 border-t border-neutral-200 pt-2">
-                            <div className="flex justify-between items-center text-[9px] font-bold text-neutral-700">
-                              <span>2. Reenvío (Chivilcoy → Tu dirección)</span>
-                              <span className="text-black font-semibold">
-                                {isCalculatingExchangeShipping ? '...' : `+$${costoEnvioNuevo.toLocaleString('es-AR')}`}
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                              <button
-                                type="button"
-                                onClick={() => setExchangeTipoNuevo('D')}
-                                className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
-                                  exchangeTipoNuevo === 'D'
-                                    ? 'border-black bg-neutral-900 text-white'
-                                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
-                                }`}
-                              >
-                                Envío a Domicilio
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setExchangeTipoNuevo('S')}
-                                className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${
-                                  exchangeTipoNuevo === 'S'
-                                    ? 'border-black bg-neutral-900 text-white'
-                                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
-                                }`}
-                              >
-                                Retiro en Sucursal
-                              </button>
-                            </div>
-                          </div>
-
-                          {isCalculatingExchangeShipping && (
-                            <div className="flex items-center gap-2 text-neutral-500 text-[9px] font-medium pt-1">
-                              <Loader2 size={12} className="animate-spin" />
-                              <span>Calculando tarifas con Correo Argentino...</span>
-                            </div>
-                          )}
-
-                          {exchangeShippingError && (
-                            <p className="text-red-600 text-[8px] font-medium normal-case tracking-normal">
-                              {exchangeShippingError}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Selector de Medio de Pago (Solo si hay diferencia a abonar) */}
-                    {(() => {
-                      const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
-                      const difFinal = diferenciaExchange + costoEnvioTotal;
-                      if (difFinal <= 0) return null;
-
-                      return (
-                        <div className="space-y-1.5 border-t border-black/10 pt-3">
-                          <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Medio de Pago de Diferencia</p>
                           <div className="grid grid-cols-2 gap-2">
                             <button
-                              type="button"
-                              onClick={() => setExchangePaymentMethod('transferencia')}
-                              className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                                exchangePaymentMethod === 'transferencia'
-                                  ? 'border-black bg-black text-white'
-                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                              }`}
+                              onClick={() => setFilterColor('')}
+                              className={`px-3 py-2 text-xs tracking-wider uppercase text-left transition-all border flex items-center gap-2 cursor-pointer ${filterColor === ''
+                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
+                                  : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
+                                }`}
                             >
-                              <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
-                              <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'transferencia' ? 'text-white/80' : 'text-neutral-500'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
+                              <span className="w-3 h-3 rounded-full bg-neutral-300 inline-block" />
+                              <span>Todos los colores</span>
                             </button>
+                            {availableColores.map(c => {
+                              const isSelected = filterColor.toLowerCase() === c.toLowerCase();
+                              return (
+                                <button
+                                  key={c}
+                                  onClick={() => setFilterColor(isSelected ? '' : c)}
+                                  className={`px-3 py-2 text-xs tracking-wider uppercase text-left transition-all border flex items-center justify-between gap-2 cursor-pointer ${isSelected
+                                      ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs'
+                                      : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                                    }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span
+                                      className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-2xs"
+                                      style={getColorDotStyle(c)}
+                                    />
+                                    <span className="truncate">{c}</span>
+                                  </div>
+                                  {isSelected && <Check size={14} className="shrink-0 text-white" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Ordenar Por Section */}
+                        <div>
+                          <span className="text-[11px] font-medium tracking-[0.2em] uppercase text-neutral-900 block mb-4">
+                            Ordenar Por
+                          </span>
+                          <div className="space-y-2">
+                            {[
+                              { id: 'destacados', label: 'Destacados' },
+                              { id: 'precio-asc', label: 'Precio: Menor a Mayor' },
+                              { id: 'precio-desc', label: 'Precio: Mayor a Menor' },
+                              { id: 'nombre', label: 'Nombre: A - Z' },
+                            ].map(opt => {
+                              const isSelected = sortOption === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  onClick={() => setSortOption(opt.id as any)}
+                                  className={`w-full px-4 py-2.5 text-xs tracking-wider uppercase text-left transition-all border flex items-center justify-between cursor-pointer ${isSelected
+                                      ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
+                                      : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                                    }`}
+                                >
+                                  <span>{opt.label}</span>
+                                  {isSelected && <Check size={14} />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Drawer Footer */}
+                      <div className="p-6 border-t border-neutral-100 bg-white space-y-3">
+                        <button
+                          onClick={() => setIsFilterDrawerOpen(false)}
+                          className="w-full bg-neutral-900 hover:bg-black text-white py-3.5 text-xs uppercase tracking-[0.25em] font-light transition-all cursor-pointer shadow-md"
+                        >
+                          Ver {filteredItems.length} {filteredItems.length === 1 ? 'Producto' : 'Productos'}
+                        </button>
+                        {activeFilterCount > 0 && (
+                          <button
+                            onClick={() => {
+                              setFilterTalle('');
+                              setFilterColor('');
+                              setSortOption('destacados');
+                            }}
+                            className="w-full text-center text-neutral-500 hover:text-black text-[11px] uppercase tracking-widest font-light py-1 cursor-pointer transition-colors"
+                          >
+                            Limpiar Todos los Filtros
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Floating Mobile Filter Pill */}
+                {activeFilterCount > 0 && !isFilterDrawerOpen && (
+                  <div className="fixed bottom-6 right-6 z-[45] sm:hidden">
+                    <button
+                      onClick={() => setIsFilterDrawerOpen(true)}
+                      className="bg-neutral-900 text-white px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 text-xs tracking-widest uppercase font-light border border-white/20 active:scale-95 transition-transform cursor-pointer"
+                    >
+                      <SlidersHorizontal size={14} />
+                      <span>Filtros</span>
+                      <span className="w-4 h-4 rounded-full bg-white text-black text-[9px] font-bold flex items-center justify-center">
+                        {activeFilterCount}
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Si no hay filtro, mostrar por secciones */}
+                {!category && !search ? (
+                  sections.map(sec => {
+                    const secItems = filteredItems.filter(i => i.categoria === sec);
+                    if (secItems.length === 0) return null;
+                    const secDisc = webSettings.discountBySection?.[sec] || 0;
+                    return (
+                      <section key={sec} className="mb-24 sm:mb-32">
+                        <div className="px-4 mb-10 flex flex-col items-center text-center">
+                          <div className="flex items-center justify-center gap-6 w-full max-w-xs mx-auto">
+                            <div className="h-[1px] bg-black/10 flex-1"></div>
+                            <h2 className="text-xs sm:text-sm tracking-[0.25em] uppercase font-light text-neutral-900">{sec}</h2>
+                            <div className="h-[1px] bg-black/10 flex-1"></div>
+                          </div>
+                          {secDisc > 0 && <span className="mt-3 inline-block bg-black text-white px-3 py-1 text-[9px] tracking-[0.2em] uppercase font-light rounded-none">-{secDisc}% OFF</span>}
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-10 sm:gap-y-16 gap-x-3 sm:gap-x-6">
+                          {secItems.map((item, idx) => <ProductCard key={item.id} item={item} idx={idx} onOpen={openQuickView} addedFeedback={addedFeedback} onAddToCart={addToCart} discount={getDiscount(item)} isFavorited={isFavorited(item.id)} onToggleFavorite={handleToggleFavorite} />)}
+                        </div>
+                      </section>
+                    );
+                  }).concat([(() => {
+                    const otherItems = filteredItems.filter(i => !sections.includes(i.categoria));
+                    if (otherItems.length === 0) return null;
+                    return (
+                      <section key="otras-categorias" className="mb-32">
+                        <div className="px-6 mb-16 flex flex-col items-center text-center">
+                          <div className="flex items-center justify-center gap-6 w-full max-w-md mx-auto">
+                            <div className="h-[1px] bg-black/10 flex-1"></div>
+                            <h2 className="text-[18px] sm:text-[24px] tracking-[8px] uppercase font-light text-black/90">Más Categorías</h2>
+                            <div className="h-[1px] bg-black/10 flex-1"></div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-16 sm:gap-y-24 gap-x-6 sm:gap-x-8">
+                          {otherItems.map((item, idx) => <ProductCard key={item.id} item={item} idx={idx} onOpen={openQuickView} addedFeedback={addedFeedback} onAddToCart={addToCart} discount={getDiscount(item)} isFavorited={isFavorited(item.id)} onToggleFavorite={handleToggleFavorite} />)}
+                        </div>
+                      </section>
+                    );
+                  })()])
+                ) : (
+                  <div className="w-full">
+                    {category && (
+                      <div className="px-6 mb-16 flex flex-col items-center text-center fade-in">
+                        <div className="flex items-center justify-center gap-6 w-full max-w-md mx-auto">
+                          <div className="h-[1px] bg-black/10 flex-1"></div>
+                          <h2 className={`text-[20px] sm:text-[28px] tracking-[10px] uppercase font-light ${category === 'SALE' ? 'text-red-600 font-medium' : 'text-black/90'}`}>{category}</h2>
+                          <div className="h-[1px] bg-black/10 flex-1"></div>
+                        </div>
+                      </div>
+                    )}
+                    {search && (
+                      <div className="px-6 mb-16 flex flex-col items-center text-center fade-in">
+                        <div className="flex items-center justify-center gap-6 w-full max-w-md mx-auto">
+                          <div className="h-[1px] bg-black/10 flex-1"></div>
+                          <h2 className="text-[18px] sm:text-[24px] tracking-[8px] uppercase font-light text-black/90">"{search}"</h2>
+                          <div className="h-[1px] bg-black/10 flex-1"></div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-16 sm:gap-y-24 gap-x-6 sm:gap-x-8">
+                      {filteredItems.map((item, idx) => <ProductCard key={item.id} item={item} idx={idx} onOpen={openQuickView} addedFeedback={addedFeedback} onAddToCart={addToCart} discount={getDiscount(item)} isFavorited={isFavorited(item.id)} onToggleFavorite={handleToggleFavorite} />)}
+                    </div>
+                  </div>
+                )}
+              </main>
+            )}
+          </div>
+
+          {/* ══════ PRODUCT MODAL ══════ */}
+          {selectedProduct && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" onClick={closeQuickView} />
+              <div className="relative bg-white w-full max-w-4xl h-full sm:h-[85vh] flex flex-col sm:flex-row overflow-hidden transition-all rounded-none shadow-2xl border border-black/10">
+                <button onClick={closeQuickView} className="absolute top-4 right-4 z-10 opacity-60 hover:opacity-100 p-2 bg-white/90 rounded-none border border-black/10"><X size={16} strokeWidth={1.2} /></button>
+
+                {/* Left: Gallery */}
+                <div className="w-full sm:w-[55%] h-[40vh] sm:h-full bg-neutral-50 relative group">
+                  {selectedProduct.imagenes && selectedProduct.imagenes.length > 0 ? (
+                    <>
+                      <img src={selectedProduct.imagenes[modalImgIdx]} alt="" className={`w-full h-full object-cover transition-all duration-300 ${selectedProduct.cantidad <= 0 ? 'grayscale-[30%]' : ''}`} />
+                      {selectedProduct.cantidad <= 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="bg-neutral-800/80 text-white text-[10px] tracking-[0.3em] uppercase font-medium px-4 py-2">
+                            Agotado
+                          </span>
+                        </div>
+                      )}
+                      {selectedProduct.imagenes.length > 1 && (
+                        <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => setModalImgIdx(prev => (prev - 1 + selectedProduct.imagenes.length) % selectedProduct.imagenes.length)} className="bg-white/90 p-1.5 rounded-none border border-black/10"><ChevronLeft size={16} /></button>
+                          <button onClick={() => setModalImgIdx(prev => (prev + 1) % selectedProduct.imagenes.length)} className="bg-white/90 p-1.5 rounded-none border border-black/10"><ChevronRight size={16} /></button>
+                        </div>
+                      )}
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
+                        {Array.isArray(selectedProduct.imagenes) && selectedProduct.imagenes.map((img, i) => <div key={`img-${i}`} className={`w-1.5 h-1.5 transition-all ${i === modalImgIdx ? 'bg-black w-3' : 'bg-black/20'}`} />)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center p-8 text-center">
+                      <p className="text-xl sm:text-2xl font-light tracking-[0.2em] uppercase text-neutral-300 leading-none">{selectedProduct.descripcion}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: Info */}
+                <div className="w-full sm:w-[45%] flex-1 p-6 sm:p-8 flex flex-col overflow-y-auto no-scrollbar bg-white">
+                  <p className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 font-light mb-1.5">{selectedProduct.categoria}</p>
+                  <h2 className="text-xs sm:text-sm tracking-[0.2em] uppercase font-normal mb-4 leading-relaxed text-black">{selectedProduct.descripcion}</h2>
+
+                  {(() => {
+                    const disc = getDiscount(selectedProduct);
+                    const efDisc = getDiscountedPrice(selectedProduct.ventaEfectivo, disc, true, selectedProduct.costo);
+                    const tarDisc = getDiscountedPrice(selectedProduct.ventaTarjeta, disc, false, selectedProduct.costo);
+                    const cuotas3 = Math.round(tarDisc / 3);
+                    const cuotas6 = Math.round(tarDisc / 6);
+                    return (
+                      <div className="space-y-2 mb-6">
+                        {disc > 0 && (
+                          <div className="inline-flex items-center gap-1.5 bg-black text-white px-2 py-0.5 text-[8px] tracking-[0.2em] uppercase font-light rounded-none">
+                            <span>-{disc}% OFF SALE</span>
+                          </div>
+                        )}
+
+                        {/* PRECIO EFECTIVO */}
+                        <div className="border border-neutral-200 p-3 bg-white">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light">Transferencia (-{DESCUENTO_BASE_TRANSFERENCIA}%)</p>
+                            </div>
+                            <div className="text-right">
+                              {efDisc < selectedProduct.ventaEfectivo && <span className="text-[10px] font-light line-through text-neutral-400 block">${selectedProduct.ventaEfectivo.toLocaleString()}</span>}
+                              <span className="text-sm font-normal tracking-wide text-black">${efDisc.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* PRECIO TARJETA */}
+                        <div className="border border-neutral-200 p-3 bg-white">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light">Tarjeta (3x ${cuotas3.toLocaleString()} ó 6x ${cuotas6.toLocaleString()})</p>
+                            </div>
+                            <div className="text-right">
+                              {tarDisc < selectedProduct.ventaTarjeta && <span className="text-[10px] font-light line-through text-neutral-400 block">${selectedProduct.ventaTarjeta.toLocaleString()}</span>}
+                              <span className="text-sm font-normal tracking-wide text-black">${tarDisc.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Talles */}
+                  {selectedProduct.talles && selectedProduct.talles.length > 0 && (
+                    <div className="mb-5">
+                      <div className="flex items-center justify-between mb-2 border-b border-neutral-100 pb-1.5">
+                        <p className="text-[10px] tracking-[0.2em] uppercase text-black font-light">
+                          Talle <span className="text-neutral-400 ml-1">— {modalTalle || 'Seleccionar'}</span>
+                        </p>
+                        {selectedProduct.medidas && (
+                          <button
+                            type="button"
+                            onClick={() => setShowSizeGuideModal(true)}
+                            className="text-[9px] tracking-[0.2em] uppercase text-neutral-500 hover:text-black underline underline-offset-4 flex items-center gap-1 font-light"
+                          >
+                            <Ruler size={11} strokeWidth={1.2} />
+                            Guía de talles
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 justify-start">
+                        {Array.isArray(selectedProduct.talles) && Array.from(new Set(selectedProduct.talles as string[])).map((t, idx) => {
+                          const isSelected = modalTalle === t;
+                          // Deshabilitar talle si no tiene stock en ningún color (o sin color si no hay colores)
+                          const hasStockForTalle = selectedProduct.colores && selectedProduct.colores.length > 0
+                            ? selectedProduct.colores.some(c => getVariantStock(selectedProduct, t, c) > 0)
+                            : getVariantStock(selectedProduct, t, undefined) > 0;
+                          const isTalleDisabled = !hasStockForTalle;
+
+                          return (
                             <button
-                              type="button"
-                              onClick={() => setExchangePaymentMethod('tarjeta')}
-                              className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${
-                                exchangePaymentMethod === 'tarjeta'
-                                  ? 'border-black bg-black text-white'
-                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
-                              }`}
+                              key={`${t}-${idx}`}
+                              disabled={isTalleDisabled}
+                              onClick={() => {
+                                if (isTalleDisabled) return;
+                                setModalTalle(t);
+                                if (selectedProduct.colores && selectedProduct.colores.length > 0) {
+                                  const isCurrentColorAvailable = modalColor && getVariantStock(selectedProduct, t, modalColor) > 0;
+                                  if (!isCurrentColorAvailable) {
+                                    const nextColor = selectedProduct.colores.find(c => getVariantStock(selectedProduct, t, c) > 0);
+                                    setModalColor(nextColor || '');
+                                  }
+                                }
+                              }}
+                              className={`w-9 h-9 text-[10px] tracking-[0.1em] uppercase font-light transition-all flex items-center justify-center rounded-none relative ${isTalleDisabled
+                                  ? 'bg-neutral-50 border border-neutral-200 text-neutral-300 cursor-not-allowed'
+                                  : isSelected
+                                    ? 'bg-black text-white border border-black'
+                                    : 'bg-white border border-neutral-300 text-black hover:border-black'
+                                }`}
+                              title={isTalleDisabled ? 'Sin stock' : undefined}
                             >
-                              <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Ualá Bis</span>
-                              <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Tarjeta / Cuotas</span>
+                              {isTalleDisabled ? (
+                                <span className="relative">
+                                  {t}
+                                  <span className="absolute inset-x-0 top-1/2 h-px bg-neutral-300 -rotate-12" />
+                                </span>
+                              ) : t}
                             </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Colores */}
+                  {selectedProduct.colores && selectedProduct.colores.length > 0 && (
+                    <div className="mb-5">
+                      <div className="flex items-center justify-between mb-2 border-b border-neutral-100 pb-1.5">
+                        <p className="text-[10px] tracking-[0.2em] uppercase text-black font-light">
+                          Color <span className="text-neutral-400 ml-1">— {modalColor || 'Seleccionar'}</span>
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 justify-start">
+                        {Array.isArray(selectedProduct.colores) && Array.from(new Set(selectedProduct.colores as string[])).map((c, idx) => {
+                          const colorStock = modalTalle ? getVariantStock(selectedProduct, modalTalle, c) : getVariantStock(selectedProduct, undefined, c);
+                          const hasStockTracking = selectedProduct.stockPorVariante !== undefined || selectedProduct.coloresStock !== undefined;
+                          const isOutOfStock = hasStockTracking && colorStock <= 0;
+                          const isSel = modalColor === c;
+                          const dotStyle = getColorDotStyle(c);
+
+                          return (
+                            <button
+                              key={`${c}-${idx}`}
+                              disabled={isOutOfStock}
+                              title={isOutOfStock ? `Sin stock ${modalTalle ? `en talle ${modalTalle}` : ''}` : undefined}
+                              onClick={() => {
+                                if (isOutOfStock) return;
+                                setModalColor(c);
+                                if (selectedProduct.talles && selectedProduct.talles.length > 0) {
+                                  const isCurrentTalleAvailable = modalTalle && getVariantStock(selectedProduct, modalTalle, c) > 0;
+                                  if (!isCurrentTalleAvailable) {
+                                    const nextTalle = selectedProduct.talles.find(t => getVariantStock(selectedProduct, t, c) > 0);
+                                    if (nextTalle) setModalTalle(nextTalle);
+                                  }
+                                }
+                              }}
+                              className={`px-3 py-1.5 text-[9px] tracking-[0.18em] uppercase transition-all font-light rounded-none border flex items-center gap-1.5 ${isSel
+                                  ? 'bg-black text-white border-black shadow-xs'
+                                  : isOutOfStock
+                                    ? 'bg-neutral-50 border-neutral-200 text-neutral-300 opacity-40 cursor-not-allowed line-through'
+                                    : 'bg-white border-neutral-300 text-black hover:border-black'
+                                }`}
+                            >
+                              <span
+                                className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                                style={dotStyle}
+                              />
+                              <span>{c}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-auto space-y-2 pt-4">
+                    {(() => {
+                      const needsTalle = selectedProduct.talles && selectedProduct.talles.length > 0;
+                      const needsColor = selectedProduct.colores && selectedProduct.colores.length > 0;
+                      const hasSelection = (!needsTalle || modalTalle) && (!needsColor || modalColor);
+                      // Verificar stock real de la combinación seleccionada
+                      const liveVariantStock = hasSelection
+                        ? getVariantStock(selectedProduct, modalTalle || undefined, modalColor || undefined)
+                        : -1;
+                      const isVariantOutOfStock = hasSelection && liveVariantStock <= 0;
+                      const canAdd = hasSelection && !isVariantOutOfStock;
+                      return (
+                        <>
+                          <button
+                            disabled={!hasSelection || isVariantOutOfStock}
+                            onClick={() => { addToCart(selectedProduct, modalTalle, modalColor); setSelectedProduct(null); }}
+                            className={`w-full py-3 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none ${isVariantOutOfStock
+                                ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed border border-neutral-200'
+                                : canAdd
+                                  ? 'bg-black text-white hover:bg-neutral-800'
+                                  : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                              }`}
+                          >
+                            {isVariantOutOfStock
+                              ? '✕ Agotado'
+                              : canAdd
+                                ? 'Añadir al carrito'
+                                : 'Seleccioná opciones'}
+                          </button>
+                          {hasSelection && liveVariantStock > 0 && liveVariantStock <= 2 && (
+                            <p className="text-center text-[9px] tracking-[0.15em] uppercase text-[#7C5A3E] font-medium">
+                              ¡Quedan pocas unidades!
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
+                    <p className="text-[9px] tracking-[0.2em] uppercase text-neutral-400 font-light text-center">Ref: {selectedProduct.sku}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════ CART & CAMBIOS DRAWER ══════ */}
+          {showCart && (
+            <>
+              <div className="fixed inset-0 bg-black/30 backdrop-blur-xs z-[110]" onClick={() => setShowCart(false)} />
+              <div className="fixed top-0 right-0 h-[100dvh] max-h-[100dvh] w-full sm:w-[420px] max-w-full bg-white z-[120] shadow-xl flex flex-col drawer-slide-in border-l border-black/10 overflow-hidden">
+                <div className="flex items-center justify-between px-6 h-16 border-b border-black/10 flex-shrink-0 bg-white">
+                  <span className="text-[11px] tracking-[0.25em] uppercase font-light text-black">
+                    {exchangeSession ? `Cambio — nuevas (${cartCount})` : `Carrito (${cartCount})`}
+                  </span>
+                  <button onClick={() => setShowCart(false)} className="opacity-40 hover:opacity-100"><X size={18} strokeWidth={1.2} /></button>
+                </div>
+                {/* Banner de advertencia de stock en tiempo real */}
+                {cartStockWarnings.length > 0 && (
+                  <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex-shrink-0">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" strokeWidth={2} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[9px] tracking-[0.2em] uppercase font-bold text-amber-700 mb-1">Cambio en stock</p>
+                        {cartStockWarnings.map((w, i) => (
+                          <p key={i} className="text-[10px] text-amber-700 leading-relaxed">{w}</p>
+                        ))}
+                      </div>
+                      <button onClick={() => setCartStockWarnings([])} className="text-amber-400 hover:text-amber-700 flex-shrink-0">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="flex-1 overflow-y-auto visible-scrollbar px-6 divide-y divide-neutral-100">
+                  {cart.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center gap-4 text-black/30 px-4 text-center">
+                      <ShoppingBag size={44} strokeWidth={1} />
+                      <p className="text-[12px] tracking-[3px] uppercase font-medium">
+                        {exchangeSession
+                          ? 'Agregá prendas nuevas desde el catálogo o confirmá solo con devolución abajo'
+                          : 'Tu carrito está vacío'}
+                      </p>
+                    </div>
+                  ) : (
+                    cart.map((c, i) => {
+                      const basePrice = paymentMethod === 'transferencia' ? c.product.ventaEfectivo : c.product.ventaTarjeta;
+                      const disc = getDiscount(c.product);
+                      const price = getDiscountedPrice(basePrice, disc, paymentMethod === 'transferencia', c.product.costo);
+                      const hasDiscount = price < basePrice;
+                      const liveStock = getVariantStock(c.product, c.selectedTalle, c.selectedColor);
+                      const isOutOfStock = liveStock <= 0;
+                      const isExceedingStock = c.quantity > liveStock;
+
+                      return (
+                        <div key={i} className={`py-8 flex gap-6 ${isOutOfStock ? 'opacity-70 bg-red-50/40 p-3 rounded' : isExceedingStock ? 'bg-amber-50/40 p-3 rounded' : ''}`}>
+                          <div className="w-20 h-28 bg-neutral-50 flex-shrink-0 flex items-center justify-center relative">
+                            {c.product.imagenes?.[0] ? <img src={c.product.imagenes[0]} alt="" className="w-full h-full object-cover" /> : <span className="text-[6px] opacity-20 uppercase">{c.product.descripcion}</span>}
+                            {isOutOfStock && (
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-[8px] tracking-wider uppercase font-semibold text-center p-1">
+                                Agotado
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 flex flex-col">
+                            <div className="flex justify-between items-start mb-2">
+                              <h4 className="text-[14px] tracking-[1px] uppercase font-bold text-black">{c.product.descripcion}</h4>
+                              <button onClick={() => removeFromCart(c.product.id, c.selectedTalle, c.selectedColor)} className="opacity-30 hover:opacity-100"><Trash2 size={16} /></button>
+                            </div>
+                            <p className="text-[11px] tracking-[2px] uppercase text-black/50 font-medium mb-1">{c.selectedTalle && `Talle ${c.selectedTalle}`} {c.selectedColor && `— ${c.selectedColor}`}</p>
+
+                            {isOutOfStock ? (
+                              <p className="text-[9px] tracking-[1px] uppercase text-red-600 font-bold mb-2">⚠️ Agotado recientemente en showroom</p>
+                            ) : isExceedingStock ? (
+                              <p className="text-[9px] tracking-[1px] uppercase text-amber-600 font-bold mb-2">⚠️ Solo quedan {liveStock} unidad(es) disponible(s)</p>
+                            ) : null}
+
+                            {hasDiscount && <span className="text-[10px] tracking-[2px] uppercase text-red-600 font-bold mb-3">-{disc}% OFF</span>}
+                            <div className="mt-auto flex justify-between items-center">
+                              <div className="flex items-center border border-black/15">
+                                <button onClick={() => updateQty(c.product.id, -1, c.selectedTalle, c.selectedColor)} className="w-9 h-9 flex items-center justify-center hover:bg-black/5"><Minus size={14} /></button>
+                                <span className={`w-10 text-center text-[14px] font-semibold ${isOutOfStock || isExceedingStock ? 'text-red-600 font-bold' : 'text-black'}`}>{c.quantity}</span>
+                                <button
+                                  onClick={() => updateQty(c.product.id, 1, c.selectedTalle, c.selectedColor)}
+                                  disabled={isOutOfStock || c.quantity >= liveStock}
+                                  className="w-9 h-9 flex items-center justify-center hover:bg-black/5 disabled:opacity-20"
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              </div>
+                              <div className="text-right">
+                                {hasDiscount && <span className="text-[12px] font-light line-through text-black/30 block">${(basePrice * c.quantity).toLocaleString()}</span>}
+                                <span className={`text-[18px] font-bold ${hasDiscount ? 'text-red-600' : 'text-black'}`}>${(price * c.quantity).toLocaleString()}</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );
-                    })()}
+                    })
+                  )}
+                </div>
+                {cart.length > 0 && !exchangeSession && (
+                  <div className="p-6 border-t border-black/10 space-y-4 bg-white flex-shrink-0">
+                    {/* Selector de Medio de Pago */}
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-400">Medio de Pago</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('transferencia')}
+                          className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${paymentMethod === 'transferencia'
+                              ? 'border-black bg-black text-white'
+                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                            }`}
+                        >
+                          <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${paymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
+                          <span className={`text-[8px] font-light uppercase tracking-wider ${paymentMethod === 'transferencia' ? 'text-white/80' : 'text-neutral-500'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('tarjeta')}
+                          className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${paymentMethod === 'tarjeta'
+                              ? 'border-black bg-black text-white'
+                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                            }`}
+                        >
+                          <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${paymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Tarjeta</span>
+                          <span className={`text-[8px] font-light uppercase tracking-wider ${paymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Precio lista</span>
+                        </button>
+                      </div>
+                    </div>
 
-                    {/* Desglose Final y Botón de Confirmación */}
+                    {/* Gift Card Coupon Accordion inside Cart */}
+                    <div className="border border-neutral-200 rounded-none overflow-hidden bg-white">
+                      <button
+                        type="button"
+                        onClick={() => setShowCartGiftInput(!showCartGiftInput)}
+                        className="w-full px-3 py-2.5 flex items-center justify-between text-[9px] tracking-[0.2em] uppercase font-light text-neutral-600 hover:bg-neutral-50 transition-all"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Gift size={11} strokeWidth={1.2} /> ¿Tenés una Gift Card?
+                        </span>
+                        <ChevronDown size={12} strokeWidth={1.2} className={`text-neutral-400 transition-transform duration-200 ${showCartGiftInput ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {showCartGiftInput && (
+                        <div className="p-3 border-t border-neutral-200 space-y-2 bg-neutral-50 animate-in fade-in duration-200">
+                          {appliedGiftCard ? (
+                            <div className="flex items-center justify-between bg-white border border-black/10 p-2.5 rounded-none">
+                              <div className="space-y-0.5 text-left">
+                                <p className="text-[8px] font-light text-black tracking-[0.2em] uppercase">
+                                  Gift Card Aplicada
+                                </p>
+                                <p className="text-[9px] font-mono text-black">
+                                  {appliedGiftCard.codigo}
+                                </p>
+                                <p className="text-[8px] text-neutral-500 font-light">
+                                  Descuento: ${cartGiftDiscountAmount.toLocaleString('es-AR')}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleRemoveCartGift}
+                                className="text-[8px] tracking-[0.2em] uppercase font-light text-black underline transition-all"
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={cartGiftCode}
+                                  onChange={(e) => setCartGiftCode(e.target.value.toUpperCase())}
+                                  placeholder="CÓDIGO GIFT CARD"
+                                  disabled={isValidatingCartGift}
+                                  className="flex-1 bg-white border border-neutral-300 px-2.5 py-1.5 text-[9px] tracking-[0.15em] font-mono outline-none focus:border-black uppercase placeholder:text-neutral-300 rounded-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleApplyCartGift}
+                                  disabled={isValidatingCartGift || !cartGiftCode.trim()}
+                                  className="bg-black hover:bg-neutral-800 disabled:opacity-30 text-white px-3 text-[8px] tracking-[0.2em] uppercase font-light transition-all flex items-center justify-center rounded-none"
+                                >
+                                  {isValidatingCartGift ? (
+                                    <Loader2 size={10} className="animate-spin" />
+                                  ) : (
+                                    'Aplicar'
+                                  )}
+                                </button>
+                              </div>
+                              {cartGiftError && (
+                                <p className="text-[8px] uppercase tracking-[0.1em] text-neutral-900 font-light animate-pulse text-left">
+                                  ⚠️ {cartGiftError}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Desglose de Totales del Carrito */}
+                    <div className="space-y-1 border-t border-neutral-100 pt-3 text-[9px] tracking-[0.18em] uppercase font-light">
+                      <div className="flex justify-between text-neutral-500">
+                        <span>Subtotal prendas</span>
+                        <span>${cartTotal.toLocaleString('es-AR')}</span>
+                      </div>
+                      {appliedGiftCard && (
+                        <div className="flex justify-between text-black font-normal">
+                          <span>Descuento Gift Card</span>
+                          <span>-${cartGiftDiscountAmount.toLocaleString('es-AR')}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-baseline border-t border-black/10 pt-2.5">
+                      <span className="text-[9px] tracking-[0.25em] uppercase text-neutral-400 font-light">Total Final</span>
+                      <span className="text-xl font-normal text-black tracking-wide">${finalCartTotal.toLocaleString()}</span>
+                    </div>
+
                     {(() => {
-                      const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
-                      const difFinal = diferenciaExchange + costoEnvioTotal;
+                      const cartStockIssues = cart.filter(c => getVariantStock(c.product, c.selectedTalle, c.selectedColor) < c.quantity);
+                      const hasStockIssues = cartStockIssues.length > 0;
                       return (
                         <>
-                          <div className="border-t border-black/10 pt-3 space-y-1.5 text-[10px] uppercase tracking-[0.5px]">
-                            {exchangeTipoEnvio === 'envio' && costoEnvioTotal > 0 && (
-                              <div className="flex justify-between text-neutral-500">
-                                <span>Envío Total Correo Argentino</span>
-                                <span>+${costoEnvioTotal.toLocaleString('es-AR')}</span>
+                          {hasStockIssues && (
+                            <div className="bg-red-50 border border-red-200 rounded-none px-3 py-2.5 flex items-start gap-2">
+                              <AlertCircle size={13} className="text-red-500 flex-shrink-0 mt-0.5" strokeWidth={2} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[9px] tracking-[0.15em] uppercase font-bold text-red-700 mb-1">Items sin stock</p>
+                                {cartStockIssues.map((c, i) => {
+                                  const liveStock = getVariantStock(c.product, c.selectedTalle, c.selectedColor);
+                                  return (
+                                    <p key={i} className="text-[9px] text-red-600 leading-relaxed">
+                                      {c.product.descripcion}
+                                      {c.selectedTalle && ` — T:${c.selectedTalle}`}
+                                      {c.selectedColor && ` ${c.selectedColor}`}
+                                      {liveStock <= 0 ? ' — Agotado' : ` — Solo ${liveStock} disponible(s)`}
+                                    </p>
+                                  );
+                                })}
+                                <p className="text-[8px] text-red-500 mt-1 font-light">Eliminá los items marcados para continuar.</p>
                               </div>
-                            )}
-                            {exchangeTipoEnvio === 'recoleta' && (
-                              <div className="flex justify-between text-neutral-600 font-medium">
-                                <span>Logística Cambio</span>
-                                <span className="text-emerald-700 font-semibold">Pick Up Recoleta (Gratis)</span>
-                              </div>
-                            )}
-                            <div className="flex justify-between font-bold text-[11px] text-black border-t border-black/5 pt-1.5">
-                              <span>{difFinal > 0 ? 'Diferencia a pagar' : difFinal < 0 ? 'Saldo Gift Card' : 'Sin diferencia'}</span>
-                              <span>${Math.abs(difFinal).toLocaleString('es-AR')}</span>
-                            </div>
-                          </div>
-                          {difFinal < 0 && (
-                            <div className="space-y-1">
-                              <label className="block text-[8px] tracking-[0.2em] uppercase font-semibold text-neutral-500">
-                                Nombre para la Gift Card
-                              </label>
-                              <input
-                                type="text"
-                                value={exchangeSession.giftDestinatario}
-                                onChange={(e) =>
-                                  setExchangeSession((prev) =>
-                                    prev ? { ...prev, giftDestinatario: e.target.value } : prev
-                                  )
-                                }
-                                placeholder="NOMBRE DEL DESTINATARIO"
-                                className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px] bg-transparent focus:outline-none focus:border-black"
-                              />
                             </div>
                           )}
                           <button
-                            type="button"
-                            onClick={confirmExchange}
-                            disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0 || (exchangeTipoEnvio === 'envio' && isCalculatingExchangeShipping)}
-                            className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
+                            disabled={hasStockIssues}
+                            onClick={() => {
+                              setShowCart(false);
+                              setShowCheckout(true);
+                            }}
+                            className={`w-full py-3.5 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none flex items-center justify-center gap-2 ${hasStockIssues
+                                ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                                : 'bg-black text-white hover:bg-neutral-800'
+                              }`}
                           >
-                            {isConfirmingExchange || isCalculatingExchangeShipping ? (
-                              <Loader2 className="animate-spin" size={14} />
-                            ) : (
-                              <RefreshCw size={14} />
-                            )}
-                            {difFinal > 0 && exchangePaymentMethod === 'tarjeta' ? 'Pagar diferencia en Ualá Bis' : 'Confirmar cambio'}
+                            {hasStockIssues ? 'Stock insuficiente' : 'Finalizar pedido'}
+                            {!hasStockIssues && <ArrowRight size={13} strokeWidth={1.2} />}
                           </button>
+                          <div className="flex items-center justify-center gap-1.5 pt-1 text-[8.5px] tracking-[0.15em] uppercase text-neutral-400 font-light">
+                            <Clock size={11} className="text-neutral-500" strokeWidth={1.5} />
+                            <span>{paymentMethod === 'transferencia' ? 'Reserva de stock por 24 hs para transferencia' : 'Reserva de 15 min al continuar al pago'}</span>
+                          </div>
                         </>
                       );
                     })()}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
-        </>
-      )}
+                {exchangeSession && (
+                  <div className="p-6 sm:p-8 border-t border-black/10 space-y-5 bg-neutral-900/5 overflow-y-auto visible-scrollbar max-h-[75vh] flex-shrink-0">
+                    <div className="space-y-3 border-b border-black/10 pb-6">
+                      <div className="flex justify-between items-center">
+                        <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Seleccioná qué devolvés</p>
+                        <span className="text-[8px] uppercase tracking-wider text-black/40 bg-black/5 px-2 py-0.5 rounded">Deslizar para ver más</span>
+                      </div>
+                      <p className="text-[9px] tracking-[1px] uppercase text-black/50">Pedido {new Date(exchangeSession.order.fecha).toLocaleDateString('es-AR')}</p>
+                      <div className="space-y-2 mt-3 max-h-[220px] overflow-y-auto visible-scrollbar pr-1">
+                        {exchangeSession.originalItems.map((item) => {
+                          const disponible = item.cantidad - ((item as any).cantidadDevuelta || 0);
+                          const isYaCambiada = disponible <= 0;
 
-      {/* ══════ SOBRE NOSOTROS ══════ */}
-      {webSettings.aboutUsText && (
-        <section className="mt-32 px-6 sm:px-12 py-24 sm:py-32 bg-neutral-50 border-t border-b border-black/5">
-          <div className="max-w-3xl mx-auto text-center space-y-8 fade-in">
-            <p className="text-[13px] tracking-[6px] uppercase text-black/60 font-bold">Sobre Nosotros</p>
-            <div className="w-12 h-px bg-black/30 mx-auto"></div>
-            {webSettings.aboutUsText.split('\n').filter(Boolean).map((para, idx) => (
-              <p key={idx} className="text-[15px] sm:text-[16px] leading-[2] tracking-[0.5px] text-black/80 font-light">
-                {para}
-              </p>
-            ))}
-            <div className="pt-4 flex items-center justify-center gap-2 opacity-40">
-              <Heart size={14} strokeWidth={1.5} />
-            </div>
-          </div>
-        </section>
-      )}
-      </>
+                          const sel = exchangeSession.itemsDevueltos.find((i) => i.id === item.id);
+                          const qty = exchangeSession.cantDevueltasInput[item.id] ?? sel?.cantidad ?? 0;
+                          return (
+                            <label
+                              key={item.id}
+                              className={`flex items-center gap-3 p-3 rounded border ${isYaCambiada ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} text-[10px] uppercase tracking-[0.5px] transition-all ${sel ? 'border-black bg-black/5' : 'border-black/10 hover:border-black/30'
+                                }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!!sel}
+                                disabled={isYaCambiada}
+                                onChange={() => !isYaCambiada && toggleDevuelto(item, disponible)}
+                                className="accent-black"
+                              />
+                              <span className="flex-1 truncate font-semibold text-black">
+                                {item.descripcion}
+                                {isYaCambiada && <span className="ml-2 text-[9px] text-[#7C5A3E] lowercase font-medium">(Ya cambiada)</span>}
+                              </span>
+                              <input
+                                type="number"
+                                min={1}
+                                max={disponible}
+                                disabled={!sel || isYaCambiada}
+                                value={qty || ''}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => updateDevueltoQty(item, parseInt(e.target.value, 10) || 1, disponible)}
+                                className="w-10 bg-transparent border border-black/20 rounded text-center text-[10px] text-black disabled:opacity-30"
+                              />
+                              <span className="text-black/40">/ {disponible}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={cancelExchange}
+                        className="mt-4 w-full border border-black/20 text-black py-2.5 text-[9px] tracking-[2px] uppercase font-bold hover:bg-black/5 transition-colors"
+                      >
+                        Cancelar cambio
+                      </button>
+                    </div>
+                    <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Resumen del cambio</p>
+                    <div className="max-h-[160px] overflow-y-auto visible-scrollbar pr-1 space-y-2">
+                      {exchangeBreakdown && exchangeBreakdown.matchedPairsCount > 0 && (
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+                          <p className="text-[9.5px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                            <span>🤝 {exchangeBreakdown.matchedPairsCount} cambio(s) directo(s) ($0 diferencia)</span>
+                          </p>
+                          <p className="text-[8px] opacity-80 normal-case leading-tight">
+                            Por ley y política comercial, el cambio de talle o color del mismo producto es directo sin recargos.
+                          </p>
+                        </div>
+                      )}
+                      {exchangeSession.itemsDevueltos.length > 0 ? (
+                        <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60">
+                          <p className="font-bold text-black/40">Devolvés</p>
+                          {exchangeSession.itemsDevueltos.map((i) => (
+                            <p key={i.id}>{i.descripcion} × {i.cantidad}</p>
+                          ))}
+                          <p className="text-right font-bold text-black">− ${totalDevueltoExchange.toLocaleString('es-AR')}</p>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] uppercase tracking-[1px] text-amber-700 font-semibold">
+                          Marcá las prendas a devolver en la sección superior.
+                        </p>
+                      )}
+                      {cart.length > 0 && (
+                        <div className="space-y-2 text-[10px] uppercase tracking-[0.5px] text-black/60 border-t border-black/5 pt-3">
+                          <p className="font-bold text-black/40">Prendas nuevas</p>
+                          {cart.map((c, i) => (
+                            <p key={i}>{c.product.descripcion} × {c.quantity}</p>
+                          ))}
+                          <p className="text-right font-bold text-black">+ ${cartTotal.toLocaleString('es-AR')}</p>
+                        </div>
+                      )}
+                    </div>
+                    {cart.length === 0 ? (
+                      /* Flujo 1: Sin prendas en carrito -> Canje directo por Gift Card */
+                      <div className="space-y-4 border-t border-black/10 pt-3">
+                        <div className="pt-2 space-y-1.5 text-[10px] uppercase tracking-[0.5px]">
+                          <div className="flex justify-between font-bold text-[11px] text-black">
+                            <span>Saldo a Favor (Gift Card)</span>
+                            <span className="text-emerald-700 font-semibold">${totalDevueltoExchange.toLocaleString('es-AR')}</span>
+                          </div>
+                        </div>
+                        {exchangeSession.itemsDevueltos.length > 0 && (
+                          <div className="space-y-1">
+                            <label className="block text-[8px] tracking-[0.2em] uppercase font-semibold text-neutral-500">
+                              Nombre para la Gift Card
+                            </label>
+                            <input
+                              type="text"
+                              value={exchangeSession.giftDestinatario}
+                              onChange={(e) =>
+                                setExchangeSession((prev) =>
+                                  prev ? { ...prev, giftDestinatario: e.target.value } : prev
+                                )
+                              }
+                              placeholder="NOMBRE DEL DESTINATARIO"
+                              className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px] bg-transparent focus:outline-none focus:border-black"
+                            />
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={confirmExchange}
+                          disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0}
+                          className="w-full bg-black text-white py-4 text-[11px] tracking-[3px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
+                        >
+                          {isConfirmingExchange ? (
+                            <Loader2 className="animate-spin" size={14} />
+                          ) : (
+                            <Gift size={14} />
+                          )}
+                          Canjear por Gift Card
+                        </button>
+                      </div>
+                    ) : (
+                      /* Flujo 2: Con prendas en carrito -> Cambio de prendas con logística y pago de diferencia si corresponde */
+                      <div className="space-y-3 border-t border-black/10 pt-3">
+                        {/* Selector de Logística del Cambio */}
+                        <div className="space-y-2.5">
+                          <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Logística del Cambio</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setExchangeTipoEnvio('retiro')}
+                              className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangeTipoEnvio === 'retiro'
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                }`}
+                            >
+                              <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'retiro' ? 'text-white' : 'text-black'}`}>Chivilcoy</span>
+                              <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'retiro' ? 'text-white/80' : 'text-neutral-500'}`}>Presencial · Gratis</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExchangeTipoEnvio('recoleta')}
+                              className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangeTipoEnvio === 'recoleta'
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                }`}
+                            >
+                              <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'recoleta' ? 'text-white' : 'text-black'}`}>Pick Up Recoleta</span>
+                              <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'recoleta' ? 'text-white/80' : 'text-neutral-500'}`}>WhatsApp · Gratis</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExchangeTipoEnvio('envio')}
+                              className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangeTipoEnvio === 'envio'
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                }`}
+                            >
+                              <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'envio' ? 'text-white' : 'text-black'}`}>Envío por Correo</span>
+                              <span className={`text-[8px] font-light uppercase ${exchangeTipoEnvio === 'envio' ? 'text-white/70' : 'text-neutral-400'}`}>Cotización Dinámica</span>
+                            </button>
+                          </div>
+
+                          {/* Panel Informativo Pick Up Recoleta */}
+                          {exchangeTipoEnvio === 'recoleta' && (
+                            <div className="p-3 bg-neutral-50 border border-neutral-200 space-y-2 mt-2 text-[10px] uppercase tracking-[0.5px]">
+                              <div className="flex items-center gap-1.5 font-bold text-black text-[10px]">
+                                <MapPin size={12} className="text-black shrink-0" />
+                                <span>Pick Up Recoleta (CABA) · Sin Costo</span>
+                              </div>
+                              <p className="text-[9px] text-neutral-600 font-normal normal-case leading-relaxed">
+                                Punto de entrega/retiro: <strong>{webSettings.locationPickupAddress || 'Recoleta, CABA'}</strong>.
+                                Entrega de la prenda a devolver y retiro del cambio se coordinan sin costo por WhatsApp.
+                              </p>
+                              <a
+                                href={`https://wa.me/${(webSettings.contactWhatsapp || '5492346685836').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                  'Hola El Ropero! Quisiera coordinar día y horario para realizar la entrega y retiro de mi cambio en el Pick Up de Recoleta.'
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-none hover:bg-emerald-100 transition-colors uppercase tracking-[0.1em]"
+                              >
+                                <MessageCircle size={12} />
+                                <span>Coordinar por WhatsApp</span>
+                              </a>
+                            </div>
+                          )}
+
+                          {/* Configuración Dinámica de Envíos Correo Argentino */}
+                          {exchangeTipoEnvio === 'envio' && (
+                            <div className="p-3 bg-neutral-50 border border-neutral-200 space-y-3 mt-2 text-[10px] uppercase tracking-[0.5px]">
+                              <div>
+                                <label className="block text-[8px] tracking-[0.15em] font-semibold text-neutral-600 mb-1">
+                                  Código Postal de tu Domicilio
+                                </label>
+                                <input
+                                  type="text"
+                                  maxLength={6}
+                                  value={exchangeCpCliente}
+                                  onChange={(e) => setExchangeCpCliente(e.target.value.toUpperCase().trim())}
+                                  placeholder="Ej: 1425"
+                                  className="w-full bg-white border border-neutral-300 px-2.5 py-1.5 text-[11px] font-medium text-black focus:outline-none focus:border-black"
+                                />
+                              </div>
+
+                              {/* Tramo 1: Devolución */}
+                              <div className="space-y-1 border-t border-neutral-200 pt-2">
+                                <div className="flex justify-between items-center text-[9px] font-bold text-neutral-700">
+                                  <span>1. Devolución (Tus prendas → Chivilcoy)</span>
+                                  <span className="text-black font-semibold">
+                                    {isCalculatingExchangeShipping ? '...' : `+$${costoEnvioDevolucion.toLocaleString('es-AR')}`}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExchangeTipoDevolucion('S')}
+                                    className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${exchangeTipoDevolucion === 'S'
+                                        ? 'border-black bg-neutral-900 text-white'
+                                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                      }`}
+                                  >
+                                    Dejo en Sucursal
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExchangeTipoDevolucion('D')}
+                                    className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${exchangeTipoDevolucion === 'D'
+                                        ? 'border-black bg-neutral-900 text-white'
+                                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                      }`}
+                                  >
+                                    Retiro en Domicilio
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Tramo 2: Reenvío de prenda nueva */}
+                              <div className="space-y-1 border-t border-neutral-200 pt-2">
+                                <div className="flex justify-between items-center text-[9px] font-bold text-neutral-700">
+                                  <span>2. Reenvío (Chivilcoy → Tu dirección)</span>
+                                  <span className="text-black font-semibold">
+                                    {isCalculatingExchangeShipping ? '...' : `+$${costoEnvioNuevo.toLocaleString('es-AR')}`}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExchangeTipoNuevo('D')}
+                                    className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${exchangeTipoNuevo === 'D'
+                                        ? 'border-black bg-neutral-900 text-white'
+                                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                      }`}
+                                  >
+                                    Envío a Domicilio
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExchangeTipoNuevo('S')}
+                                    className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${exchangeTipoNuevo === 'S'
+                                        ? 'border-black bg-neutral-900 text-white'
+                                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                      }`}
+                                  >
+                                    Retiro en Sucursal
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isCalculatingExchangeShipping && (
+                                <div className="flex items-center gap-2 text-neutral-500 text-[9px] font-medium pt-1">
+                                  <Loader2 size={12} className="animate-spin" />
+                                  <span>Calculando tarifas con Correo Argentino...</span>
+                                </div>
+                              )}
+
+                              {exchangeShippingError && (
+                                <p className="text-red-600 text-[8px] font-medium normal-case tracking-normal">
+                                  {exchangeShippingError}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Selector de Medio de Pago (Solo si hay diferencia a abonar) */}
+                        {(() => {
+                          const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
+                          const difFinal = diferenciaExchange + costoEnvioTotal;
+                          if (difFinal <= 0) return null;
+
+                          return (
+                            <div className="space-y-1.5 border-t border-black/10 pt-3">
+                              <p className="text-[9px] tracking-[0.2em] uppercase font-light text-neutral-500">Medio de Pago de Diferencia</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setExchangePaymentMethod('transferencia')}
+                                  className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangePaymentMethod === 'transferencia'
+                                      ? 'border-black bg-black text-white'
+                                      : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                    }`}
+                                >
+                                  <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
+                                  <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'transferencia' ? 'text-white/80' : 'text-neutral-500'}`}>-{DESCUENTO_BASE_TRANSFERENCIA}% OFF</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setExchangePaymentMethod('tarjeta')}
+                                  className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangePaymentMethod === 'tarjeta'
+                                      ? 'border-black bg-black text-white'
+                                      : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                    }`}
+                                >
+                                  <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Ualá Bis</span>
+                                  <span className={`text-[8px] font-light uppercase ${exchangePaymentMethod === 'tarjeta' ? 'text-white/70' : 'text-neutral-400'}`}>Tarjeta / Cuotas</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Desglose Final y Botón de Confirmación */}
+                        {(() => {
+                          const costoEnvioTotal = exchangeTipoEnvio === 'envio' ? (costoEnvioDevolucion + costoEnvioNuevo) : 0;
+                          const difFinal = diferenciaExchange + costoEnvioTotal;
+                          return (
+                            <>
+                              <div className="border-t border-black/10 pt-3 space-y-1.5 text-[10px] uppercase tracking-[0.5px]">
+                                {exchangeTipoEnvio === 'envio' && costoEnvioTotal > 0 && (
+                                  <div className="flex justify-between text-neutral-500">
+                                    <span>Envío Total Correo Argentino</span>
+                                    <span>+${costoEnvioTotal.toLocaleString('es-AR')}</span>
+                                  </div>
+                                )}
+                                {exchangeTipoEnvio === 'recoleta' && (
+                                  <div className="flex justify-between text-neutral-600 font-medium">
+                                    <span>Logística Cambio</span>
+                                    <span className="text-emerald-700 font-semibold">Pick Up Recoleta (Gratis)</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between font-bold text-[11px] text-black border-t border-black/5 pt-1.5">
+                                  <span>{difFinal > 0 ? 'Diferencia a pagar' : difFinal < 0 ? 'Saldo Gift Card' : 'Sin diferencia'}</span>
+                                  <span>${Math.abs(difFinal).toLocaleString('es-AR')}</span>
+                                </div>
+                              </div>
+                              {difFinal < 0 && (
+                                <div className="space-y-1">
+                                  <label className="block text-[8px] tracking-[0.2em] uppercase font-semibold text-neutral-500">
+                                    Nombre para la Gift Card
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={exchangeSession.giftDestinatario}
+                                    onChange={(e) =>
+                                      setExchangeSession((prev) =>
+                                        prev ? { ...prev, giftDestinatario: e.target.value } : prev
+                                      )
+                                    }
+                                    placeholder="NOMBRE DEL DESTINATARIO"
+                                    className="w-full border-b border-black/20 py-2 text-[11px] uppercase tracking-[1px] bg-transparent focus:outline-none focus:border-black"
+                                  />
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={confirmExchange}
+                                disabled={isConfirmingExchange || exchangeSession.itemsDevueltos.length === 0 || (exchangeTipoEnvio === 'envio' && isCalculatingExchangeShipping)}
+                                className="w-full bg-black text-white py-5 text-[11px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 disabled:opacity-40 flex items-center justify-center gap-2"
+                              >
+                                {isConfirmingExchange || isCalculatingExchangeShipping ? (
+                                  <Loader2 className="animate-spin" size={14} />
+                                ) : (
+                                  <RefreshCw size={14} />
+                                )}
+                                {difFinal > 0 && exchangePaymentMethod === 'tarjeta' ? 'Pagar diferencia en Ualá Bis' : 'Confirmar cambio'}
+                              </button>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ══════ SOBRE NOSOTROS ══════ */}
+          {webSettings.aboutUsText && (
+            <section className="mt-32 px-6 sm:px-12 py-24 sm:py-32 bg-neutral-50 border-t border-b border-black/5">
+              <div className="max-w-3xl mx-auto text-center space-y-8 fade-in">
+                <p className="text-[13px] tracking-[6px] uppercase text-black/60 font-bold">Sobre Nosotros</p>
+                <div className="w-12 h-px bg-black/30 mx-auto"></div>
+                {webSettings.aboutUsText.split('\n').filter(Boolean).map((para, idx) => (
+                  <p key={idx} className="text-[15px] sm:text-[16px] leading-[2] tracking-[0.5px] text-black/80 font-light">
+                    {para}
+                  </p>
+                ))}
+                <div className="pt-4 flex items-center justify-center gap-2 opacity-40">
+                  <Heart size={14} strokeWidth={1.5} />
+                </div>
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       {/* ══════ INSTAGRAM ══════ */}
@@ -3185,8 +3162,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         </section>
       )}
 
-          {/* ══════ FOOTER PROFESIONAL ══════ */}
-      <Footer 
+      {/* ══════ FOOTER PROFESIONAL ══════ */}
+      <Footer
         webSettings={webSettings}
         onNavigateCatalog={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         onShowLocation={() => setShowLocation(true)}
@@ -3220,10 +3197,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             </div>
             <button onClick={() => setShowTerms(false)} className="w-full bg-black text-white py-4 text-[10px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-colors">Entendido</button>
             <div className="pt-2 border-t border-black/5 text-center">
-              <a 
-                href="https://www.instagram.com/siao.tech" 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <a
+                href="https://www.instagram.com/siao.tech"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-[9px] tracking-[2px] uppercase text-black/40 hover:text-black transition-colors font-medium"
               >
                 Desarrollado por <span className="font-semibold underline underline-offset-2">SIAO Tech</span> (@siao.tech)
@@ -3253,9 +3230,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                     ))}
                   </p>
                   {webSettings.locationShowroomMapUrl && (
-                    <a 
-                      href={webSettings.locationShowroomMapUrl} 
-                      target="_blank" 
+                    <a
+                      href={webSettings.locationShowroomMapUrl}
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="inline-block text-[9px] tracking-[3px] uppercase border-b border-black pb-1 hover:opacity-50 transition-opacity"
                     >
@@ -3276,9 +3253,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                     ))}
                   </p>
                   {webSettings.locationPickupMapUrl && (
-                    <a 
-                      href={webSettings.locationPickupMapUrl} 
-                      target="_blank" 
+                    <a
+                      href={webSettings.locationPickupMapUrl}
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="inline-block text-[9px] tracking-[3px] uppercase border-b border-black pb-1 hover:opacity-50 transition-opacity"
                     >
@@ -3290,10 +3267,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
             </div>
             <button onClick={() => setShowLocation(false)} className="w-full bg-black text-white py-4 text-[10px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-colors">Cerrar</button>
             <div className="pt-2 border-t border-black/5 text-center">
-              <a 
-                href="https://www.instagram.com/siao.tech" 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <a
+                href="https://www.instagram.com/siao.tech"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-[9px] tracking-[2px] uppercase text-black/40 hover:text-black transition-colors font-medium"
               >
                 Desarrollado por <span className="font-semibold underline underline-offset-2">SIAO Tech</span> (@siao.tech)
@@ -3315,7 +3292,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
               <Ruler size={18} strokeWidth={1.5} className="text-black/70" />
               <h3 className="text-[13px] tracking-[4px] uppercase font-semibold text-black">Guía de Talles y Medidas</h3>
             </div>
-            
+
             <div className="space-y-4 text-[12px] tracking-[1px] leading-relaxed uppercase text-black/80">
               <p className="font-semibold text-black/50 text-[10px] tracking-[2px]">{selectedProduct.descripcion}</p>
               {selectedProduct.medidas ? (
@@ -3326,7 +3303,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                 <p className="text-black/50 italic">No hay información detallada de medidas cargada para esta prenda.</p>
               )}
             </div>
-            
+
             <button onClick={() => setShowSizeGuideModal(false)} className="w-full bg-black text-white py-3.5 text-[10px] tracking-[4px] uppercase font-medium hover:bg-neutral-800 transition-colors">
               Cerrar
             </button>
@@ -3399,13 +3376,13 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         aria-label="Contactar por WhatsApp"
       >
         <svg viewBox="0 0 448 512" width="28" height="28" fill="currentColor">
-          <path d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L0 480l117.7-30.9c32.4 17.7 68.9 27 106.1 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157zm-157 341.6c-33.2 0-65.7-8.9-94-25.7l-6.7-4-69.8 18.3L72 359.2l-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.2-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7 .9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/>
+          <path d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L0 480l117.7-30.9c32.4 17.7 68.9 27 106.1 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157zm-157 341.6c-33.2 0-65.7-8.9-94-25.7l-6.7-4-69.8 18.3L72 359.2l-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.2-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7 .9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z" />
         </svg>
       </a>
 
       {/* ══════ AUTHENTICATION MODALS & FLOWS ══════ */}
-      <AuthModal 
-        isOpen={showAuthModal} 
+      <AuthModal
+        isOpen={showAuthModal}
         customTitle={pendingCheckout ? 'INICIAR COMPRA' : pendingBuyGiftCard ? 'COMPRAR GIFT CARD' : undefined}
         customSubtitle={pendingCheckout ? 'Iniciá sesión o registrate para completar tu pedido' : pendingBuyGiftCard ? 'Iniciá sesión o registrate para continuar' : undefined}
         onContinueAsGuest={pendingCheckout ? () => {
@@ -3424,8 +3401,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
           setPendingBuyGiftCard(false);
         }}
       />
-      <UserDashboard 
-        isOpen={showDashboard} 
+      <UserDashboard
+        isOpen={showDashboard}
         onClose={() => setShowDashboard(false)}
         inventory={inventory}
         onAddToCart={addToCart}
@@ -3438,7 +3415,7 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         }}
         onRefreshOrders={refreshOrders}
       />
-      <CheckoutFlow 
+      <CheckoutFlow
         isOpen={showCheckout}
         onClose={() => setShowCheckout(false)}
         cart={cart}
@@ -3451,11 +3428,11 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
         initialPaymentMethod={paymentMethod}
         initialAppliedGiftCard={appliedGiftCard}
       />
-      <SessionExpiryModal 
+      <SessionExpiryModal
         isOpen={showExpiryModal}
         onClose={() => setShowExpiryModal(false)}
       />
-      <BuyGiftCardModal 
+      <BuyGiftCardModal
         isOpen={showBuyGiftCard}
         onClose={() => setShowBuyGiftCard(false)}
         onSuccess={() => setShowBuyGiftCard(false)}
@@ -3538,12 +3515,12 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
   );
 };
 
-const ProductCard: React.FC<{ 
-  item: InventoryItem, 
-  idx: number, 
-  onOpen: (i: InventoryItem) => void, 
-  addedFeedback: string | null, 
-  onAddToCart: any, 
+const ProductCard: React.FC<{
+  item: InventoryItem,
+  idx: number,
+  onOpen: (i: InventoryItem) => void,
+  addedFeedback: string | null,
+  onAddToCart: any,
   discount?: number,
   isFavorited: boolean,
   onToggleFavorite: (id: string) => void
@@ -3558,7 +3535,7 @@ const ProductCard: React.FC<{
     <article className={`fade-in group flex flex-col relative rounded-none transition-opacity duration-300 ${isProductSoldOut ? 'opacity-60' : ''}`} style={{ animationDelay: `${(idx % 8) * 60}ms` }}>
       <div className="relative w-full aspect-[3/4] overflow-hidden bg-neutral-50 cursor-pointer flex items-center justify-center rounded-none" onClick={() => onOpen(item)}>
         {item.imagenes?.[0] ? (
-          <img src={item.imagenes[0]} alt="" className={`w-full h-full object-cover transition-transform duration-500 ${isProductSoldOut ? 'grayscale-[40%]' : 'group-hover:scale-103'}`}/>
+          <img src={item.imagenes[0]} alt="" className={`w-full h-full object-cover transition-transform duration-500 ${isProductSoldOut ? 'grayscale-[40%]' : 'group-hover:scale-103'}`} />
         ) : (
           <div className="w-full h-full flex items-center justify-center p-4 transition-transform duration-500 group-hover:scale-105">
             <p className="text-[11px] font-light tracking-[0.25em] uppercase text-neutral-300 leading-normal select-none text-center break-words px-4">{item.descripcion}</p>
@@ -3575,17 +3552,17 @@ const ProductCard: React.FC<{
             Ver Detalle
           </button>
         )}
-        
+
         {/* Wishlist Heart Icon — solo si no está agotado */}
         {!isProductSoldOut && (
-          <button 
+          <button
             onClick={(e) => { e.stopPropagation(); onToggleFavorite(item.id); }}
             className="absolute top-3 right-3 z-10 bg-white/90 p-1.5 rounded-none border border-black/10 hover:bg-black hover:text-white transition-all flex items-center justify-center"
           >
-            <Heart 
-              size={13} 
-              strokeWidth={1.2} 
-              className={`transition-colors duration-300 ${isFavorited ? 'fill-black text-black' : 'text-neutral-600'}`} 
+            <Heart
+              size={13}
+              strokeWidth={1.2}
+              className={`transition-colors duration-300 ${isFavorited ? 'fill-black text-black' : 'text-neutral-600'}`}
             />
           </button>
         )}
@@ -3609,11 +3586,11 @@ const ProductCard: React.FC<{
           )}
         </div>
       </div>
-      
+
       {/* Info de precio */}
       <div className="mt-2.5 px-0.5 flex flex-col gap-0.5 text-left">
         <h4 className="text-[10px] sm:text-[11px] tracking-[0.16em] uppercase font-light text-neutral-900 truncate">{item.descripcion}</h4>
-        
+
         {isProductSoldOut ? (
           <span className="text-[10px] tracking-[0.1em] uppercase text-neutral-400 font-light">Sin stock</span>
         ) : (

@@ -443,7 +443,7 @@ function isPendingReservation(estado: unknown): boolean {
 export async function executeReleaseExpiredReservations(db: admin.firestore.Firestore, showroomId: string) {
   const showroomRef = db.collection('showrooms').doc(showroomId);
   const ordersCol = showroomRef.collection('orders');
-  
+
   const now = Date.now();
 
   // Solo pendientes: un get() de toda la colección de órdenes hacía timeout (y el browser lo reportaba como CORS).
@@ -495,7 +495,7 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
   // Devolvemos el stock orden por orden usando transacciones
   for (const docSnap of toRelease) {
     const data = docSnap.data();
-    
+
     try {
       await db.runTransaction(async (transaction) => {
         const freshDoc: any = await transaction.get(docSnap.ref);
@@ -530,7 +530,7 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
           if (item.stockPorVariante && oi.talle && oi.color) {
             const varKey = `${oi.talle}-${oi.color}`;
             const matchKey = Object.keys(item.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase()) || varKey;
-            
+
             item.stockPorVariante = { ...item.stockPorVariante };
             item.stockPorVariante[matchKey] = (item.stockPorVariante[matchKey] || 0) + returnQty;
 
@@ -586,8 +586,8 @@ export async function executeReleaseExpiredReservations(db: admin.firestore.Fire
         transaction.update(docSnap.ref, { estado: 'Cancelado', cancelReason: 'expired', updatedAt: new Date().toISOString() });
 
         if (data.customerId && data.customerId !== 'GUEST') {
-           const customerOrderRef = showroomRef.collection('customers').doc(data.customerId).collection('orders').doc(docSnap.id);
-           transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired', updatedAt: new Date().toISOString() }, { merge: true });
+          const customerOrderRef = showroomRef.collection('customers').doc(data.customerId).collection('orders').doc(docSnap.id);
+          transaction.set(customerOrderRef, { estado: 'Cancelado', cancelReason: 'expired', updatedAt: new Date().toISOString() }, { merge: true });
         }
       });
       releasedCount++;
@@ -840,25 +840,30 @@ export function calcExchangeLineTotalServer(
     cantidad?: number;
     descuento?: number;
   },
-  isTransferencia: boolean
+  _isTransferencia: boolean // Ignorado: la base siempre es precioEfectivo
 ): number {
+  // 🏷️ PREMISA COMERCIAL: el valor real de cualquier prenda es su Precio Efectivo.
+  // El recargo de tarjeta solo amortiza la comisión de la pasarela/posnet.
+  // Para los cambios usamos SIEMPRE precioEfectivo como base de comparación.
   const cant = item.cantidad ?? 1;
   const desc = item.descuento || 0;
   const precioEf = item.precioEfectivo ?? item.precioUnitario ?? item.precio ?? 0;
-  const precioTar = item.precioTarjeta ?? item.precioUnitario ?? item.precio ?? 0;
-
-  if (isTransferencia) {
-    const descuentoExtra = Math.max(0, desc - DESCUENTO_BASE_TRANSFERENCIA);
-    return Math.round(precioEf * (1 - descuentoExtra / 100) * cant);
-  } else {
-    return Math.round(precioTar * (1 - desc / 100) * cant);
-  }
+  // Solo se aplica el descuento extra por encima del 20% base de efectivo
+  const descuentoExtra = Math.max(0, desc - DESCUENTO_BASE_TRANSFERENCIA);
+  return Math.round(precioEf * (1 - descuentoExtra / 100) * cant);
 }
 
 /**
  * Calcula oficialmente la diferencia de un cambio web en el servidor,
  * contrastando las prendas devueltas contra la venta original y las prendas nuevas
  * contra el inventario y catálogo oficial.
+ *
+ * 🏷️ PREMISA COMERCIAL:
+ * La ganancia neta es siempre: Precio Efectivo - Costo, sin importar el medio de pago.
+ * El recargo de tarjeta solo amortiza la comisión de la pasarela/posnet.
+ * Por tanto, AMBAS prendas (devuelta y nueva) se valorizan SIEMPRE a Precio Efectivo.
+ * La diferencia se calcula en "pesos efectivo"; si el cliente paga en tarjeta,
+ * el frontend/operador escala al equivalente en Precio Lista antes de cobrar.
  */
 export function calculateExchangeBreakdownServer(options: {
   ventaOriginal: any;
@@ -870,24 +875,7 @@ export function calculateExchangeBreakdownServer(options: {
 }): ExchangeBreakdownServerResult {
   const { ventaOriginal, itemsDevueltos, itemsNuevos, inventory, webSettings, payload } = options;
 
-  let medioPagoOrigen: 'efectivo' | 'tarjeta' | 'mixto' = 'efectivo';
-  if (ventaOriginal?.pago) {
-    if (ventaOriginal.pago.tarjeta === 100) medioPagoOrigen = 'tarjeta';
-    else if (ventaOriginal.pago.efectivo === 100) medioPagoOrigen = 'efectivo';
-    else medioPagoOrigen = 'mixto';
-  } else if (ventaOriginal?.metodoPago) {
-    const mp = String(ventaOriginal.metodoPago).toLowerCase();
-    if (mp.includes('transferencia') || mp.includes('efectivo')) {
-      medioPagoOrigen = 'efectivo';
-    } else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito') || mp.includes('ualá') || mp.includes('uala')) {
-      medioPagoOrigen = 'tarjeta';
-    }
-  }
-
-  const isTransferenciaDev = medioPagoOrigen === 'efectivo';
-  const isTransferenciaNuevo = payload?.pago?.efectivo === 100 || isTransferenciaDev;
-
-  // 1. Expandir prendas devueltas calculando el valor efectivamente pagado en ventaOriginal
+  // 1. Expandir prendas devueltas: siempre a precioEfectivo (con descuento extra si aplica)
   interface ReturnedUnit {
     descripcion: string;
     modelKey: string;
@@ -902,7 +890,7 @@ export function calculateExchangeBreakdownServer(options: {
     const qty = Math.max(1, Number(dev.cantidad || 1));
     const modelKey = extractProductModelKeyServer(dev);
 
-    // Buscar el ítem en la venta original para obtener el precio real abonado
+    // Buscar el ítem en la venta original para obtener precioEfectivo
     const originalMatch = itemsOriginales.find((orig: any) => {
       const origId = orig.productId || orig.id;
       const devId = dev.productId || dev.id;
@@ -910,7 +898,8 @@ export function calculateExchangeBreakdownServer(options: {
       return extractProductModelKeyServer(orig) === modelKey;
     }) || dev;
 
-    const unitPaid = calcExchangeLineTotalServer({ ...originalMatch, cantidad: 1 }, isTransferenciaDev);
+    // Siempre valorizar a precioEfectivo (isTransferencia=true fuerza la rama efectivo)
+    const unitPaid = calcExchangeLineTotalServer({ ...originalMatch, cantidad: 1 }, true);
 
     for (let i = 0; i < qty; i++) {
       returnedUnits.push({
@@ -922,7 +911,7 @@ export function calculateExchangeBreakdownServer(options: {
     }
   }
 
-  // 2. Expandir prendas nuevas valorizadas según catálogo oficial e inventario
+  // 2. Expandir prendas nuevas: siempre a precioEfectivo del catálogo oficial
   interface NewUnit {
     descripcion: string;
     modelKey: string;
@@ -939,30 +928,26 @@ export function calculateExchangeBreakdownServer(options: {
     let unitPrice: number;
 
     if (invItem) {
-      const basePrice = isTransferenciaNuevo
-        ? Number(invItem.ventaEfectivo ?? invItem.precioEfectivo ?? 0)
-        : Number(invItem.ventaTarjeta ?? invItem.precioTarjeta ?? invItem.ventaEfectivo ?? 0);
+      // Base: siempre precioEfectivo (ventaEfectivo del catálogo)
+      const basePrice = Number(invItem.ventaEfectivo ?? invItem.precioEfectivo ?? 0);
 
       const maxDiscountCap = Number(webSettings.maxDiscountPercentage ?? 50);
       const itemDisc = Number(invItem.descuentoWeb || 0);
       const secDisc = Number(webSettings.discountBySection?.[invItem.categoria] || 0);
       const disc = Math.min(maxDiscountCap, Math.max(itemDisc, secDisc));
 
-      if (isTransferenciaNuevo) {
-        const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
-        unitPrice = Math.round(basePrice * (1 - extraDesc / 100));
-      } else {
-        unitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
-      }
+      // Solo se aplica descuento extra por encima del 20% base de efectivo
+      const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
+      unitPrice = Math.round(basePrice * (1 - extraDesc / 100));
 
-      // Bug #5: Protección de Costo Mayorista
+      // Protección de Costo Mayorista: nunca por debajo del costo
       const costo = Number(invItem.costo ?? 0);
       if (costo > 0) {
         unitPrice = Math.max(costo, unitPrice);
       }
     } else {
-      // Fallback si no está en inventario
-      unitPrice = calcExchangeLineTotalServer({ ...neu, cantidad: 1 }, isTransferenciaNuevo);
+      // Fallback si no está en inventario: usar precioEfectivo del payload
+      unitPrice = calcExchangeLineTotalServer({ ...neu, cantidad: 1 }, true);
     }
 
     for (let i = 0; i < qty; i++) {
@@ -1057,23 +1042,23 @@ export async function executeFulfillWebCambio(
   try {
     const {
       ventaOriginalId,
-    itemsDevueltos,
-    itemsNuevos,
-    diferencia,
-    giftDestinatario,
-    originalOrderId,
-    customerId,
-  } = payload;
+      itemsDevueltos,
+      itemsNuevos,
+      diferencia,
+      giftDestinatario,
+      originalOrderId,
+      customerId,
+    } = payload;
 
-  if (!itemsDevueltos || !itemsDevueltos.length) {
-    throw new functions.https.HttpsError('invalid-argument', 'Debés seleccionar al menos una prenda a devolver.');
-  }
+    if (!itemsDevueltos || !itemsDevueltos.length) {
+      throw new functions.https.HttpsError('invalid-argument', 'Debés seleccionar al menos una prenda a devolver.');
+    }
 
-  const showroomRef = db.collection('showrooms').doc(showroomId);
-  const saleId = `sale_cambio_web_${Date.now()}`;
-  let giftCodigo: string | undefined;
+    const showroomRef = db.collection('showrooms').doc(showroomId);
+    const saleId = `sale_cambio_web_${Date.now()}`;
+    let giftCodigo: string | undefined;
 
-  await db.runTransaction(async (transaction) => {
+    await db.runTransaction(async (transaction) => {
       // ─────────────────────────────────────────────────────────────────
       // 1. TODAS LAS LECTURAS (READS) AL INICIO DE LA TRANSACCIÓN
       // ─────────────────────────────────────────────────────────────────
@@ -1163,7 +1148,7 @@ export async function executeFulfillWebCambio(
           if (!isIdMatch) {
             const candDesc = (candidate.descripcion || '').toLowerCase().trim();
             const devDesc = (devuelto.descripcion || '').toLowerCase().trim();
-            
+
             const baseCandDesc = candDesc.replace(/\(.*\)/, '').trim();
             const baseDevDesc = devDesc.replace(/\(.*\)/, '').trim();
 
@@ -1410,18 +1395,18 @@ export async function executeFulfillWebCambio(
         const nextItems = (originalOrderData.items || []).map((item: any) => {
           const dev = itemsDevueltos.find((d: any) => matchOrderItem(item, d));
           if (dev) {
-             item.cantidadDevuelta = (item.cantidadDevuelta || 0) + dev.cantidad;
+            item.cantidadDevuelta = (item.cantidadDevuelta || 0) + dev.cantidad;
           }
           if ((item.cantidadDevuelta || 0) < item.cantidad) {
-             allExchanged = false;
+            allExchanged = false;
           }
           return item;
         });
-        
+
         updatedOriginalOrderPayload = sanitize({
-           items: nextItems,
-           isExchanged: allExchanged,
-           estado: allExchanged ? 'Completado' : 'parcialmente_cambiado'
+          items: nextItems,
+          isExchanged: allExchanged,
+          estado: allExchanged ? 'Completado' : 'parcialmente_cambiado'
         });
       }
 

@@ -1,9 +1,10 @@
 import React from 'react';
 import { InventoryItem, Sale, Expense, GiftCard, MonthlyClosure, WebSettings } from '../types';
 import MetricCard from './MetricCard';
-import { Edit2, Trash2, X, Search, TrendingUp, TrendingDown, DollarSign, Calendar, CreditCard, Banknote, ChevronLeft, ChevronRight, Filter, Download, Plus, Minus, Eye, EyeOff, AlertTriangle, PackageCheck, Layers } from 'lucide-react';
+import { Edit2, Trash2, X, Search, TrendingUp, TrendingDown, DollarSign, Calendar, CreditCard, Banknote, ChevronLeft, ChevronRight, Filter, Download, Plus, Minus, Eye, EyeOff, PackageCheck, Layers } from 'lucide-react';
 import { computeSaleBreakdown, isMonth, calcTrend, calculatePricesFromCost } from '../services/finance';
 import { useModal } from '../contexts/ModalContext';
+import { usePrivacy } from '../contexts/PrivacyContext';
 
 interface DashboardProps {
   inventory: InventoryItem[];
@@ -33,6 +34,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onNavigateToWebManager
 }) => {
   const { showAlert } = useModal();
+  const { hideFinancials, togglePrivacy } = usePrivacy();
   const [editingItem, setEditingItem] = React.useState<InventoryItem | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
@@ -45,7 +47,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
 
   const isCurrentMonth = (dateStr: string) => isMonth(dateStr, currentMonth, currentYear);
-  
+
   // Mes anterior para comparación
   let prevMonth = currentMonth - 1;
   let prevYear = currentYear;
@@ -143,9 +145,9 @@ const Dashboard: React.FC<DashboardProps> = ({
       const matchesSearch = (item.descripcion?.toLowerCase() || "").includes(q) ||
         (item.proveedor?.toLowerCase() || "").includes(q) ||
         (item.sku?.toLowerCase() || "").includes(q);
-      
+
       const matchesCategory = !activeCategory || item.categoria === activeCategory;
-      
+
       return matchesSearch && matchesCategory;
     });
 
@@ -205,14 +207,36 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-6 text-left">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-1 border-b border-stone-200/60">
+        <div>
+          <h2 className="font-serif text-2xl italic font-normal text-stone-900">Panel de Control</h2>
+          <p className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-light mt-0.5">
+            Resumen de rendimiento y estado del showroom
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={togglePrivacy}
+          data-testid="toggle-privacy-btn"
+          title={hideFinancials ? "Mostrar datos de ganancia, caja y egresos" : "Ocultar datos de ganancia, caja y egresos"}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[10px] uppercase tracking-[0.15em] font-medium transition-all duration-200 border shadow-2xs ${hideFinancials
+              ? 'bg-amber-500/10 text-amber-900 border-amber-300 hover:bg-amber-500/20'
+              : 'bg-white text-stone-700 border-stone-200/80 hover:bg-stone-50 hover:border-stone-300'
+            }`}
+        >
+          {hideFinancials ? <EyeOff size={14} strokeWidth={1.5} className="text-amber-700" /> : <Eye size={14} strokeWidth={1.5} className="text-stone-500" />}
+          <span>{hideFinancials ? 'Datos Ocultos (Privacidad)' : 'Ocultar Ganancia / Caja'}</span>
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <MetricCard
           label="Ganancia Neta (Mes)"
-          value={`$ ${gNetaMes.toLocaleString()}`}
+          value={hideFinancials ? '$ ••••••' : `$ ${gNetaMes.toLocaleString()}`}
           subValue={`${currentMonth}/${currentYear}`}
           clickable={true}
           onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'ganancia' })}
-          trend={{
+          trend={hideFinancials ? undefined : {
             value: trendGanancia.value,
             label: `mes anterior`,
             isPositive: trendGanancia.isPositive
@@ -221,9 +245,9 @@ const Dashboard: React.FC<DashboardProps> = ({
         />
         <MetricCard
           label="Caja Efectivo"
-          value={`$ ${totalEfectivo.toLocaleString()}`}
+          value={hideFinancials ? '$ ••••••' : `$ ${totalEfectivo.toLocaleString()}`}
           subValue="Física"
-          trend={{
+          trend={hideFinancials ? undefined : {
             value: trendEfectivo.value,
             label: `mes anterior`,
             isPositive: trendEfectivo.isPositive
@@ -234,9 +258,9 @@ const Dashboard: React.FC<DashboardProps> = ({
         />
         <MetricCard
           label="Caja Tarjeta"
-          value={`$ ${totalTarjeta.toLocaleString()}`}
+          value={hideFinancials ? '$ ••••••' : `$ ${totalTarjeta.toLocaleString()}`}
           subValue="Digital"
-          trend={{
+          trend={hideFinancials ? undefined : {
             value: trendTarjeta.value,
             label: `mes anterior`,
             isPositive: trendTarjeta.isPositive
@@ -251,128 +275,6 @@ const Dashboard: React.FC<DashboardProps> = ({
           subValue="Unidades"
         />
       </div>
-
-      {/* Alertas y Tareas Rápidas */}
-      {(sinStock.length > 0 || conStock.some(i => i.cantidad <= 2)) && (
-        <div className="bg-stone-100/90 border border-stone-200/80 rounded-2xl px-4 py-2.5 sm:px-5 sm:py-3 flex items-center justify-between gap-3 sm:gap-4 shadow-2xs">
-          <div className="flex items-center gap-3 shrink-0 min-w-0">
-            <div className="p-1.5 bg-stone-200/80 text-stone-700 rounded-xl shrink-0">
-              <AlertTriangle size={16} strokeWidth={1.5} />
-            </div>
-            <div className="flex items-center gap-2 truncate">
-              <h4 className="font-serif text-sm italic font-medium text-stone-900 leading-none shrink-0 whitespace-nowrap">
-                Cinta de Alertas Operativas
-              </h4>
-              <span className="hidden md:inline text-[9px] text-stone-400 font-light">•</span>
-              <p className="text-[9px] text-stone-500 uppercase tracking-[0.12em] font-light truncate whitespace-nowrap">
-                Atención requerida en inventario y reposición del showroom
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {sinStock.length > 0 && (
-              <button
-                onClick={() => setShowSinStock(true)}
-                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100/70 text-rose-700 border border-rose-200/80 rounded-xl text-[9px] font-medium uppercase tracking-[0.15em] transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                <span>Agotados ({sinStock.length})</span>
-              </button>
-            )}
-            {conStock.filter(i => i.cantidad <= 2).length > 0 && (
-              <button
-                onClick={() => {
-                  setShowSinStock(false);
-                  setSearchTerm('');
-                }}
-                className="px-3 py-1.5 bg-white hover:bg-stone-50 text-stone-800 border border-stone-200/80 rounded-xl text-[9px] font-medium uppercase tracking-[0.15em] transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <span>Stock Crítico ({conStock.filter(i => i.cantidad <= 2).length})</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Comparación mensual */}
-      <div className="bg-white border border-stone-200/60 rounded-2xl p-6 md:p-7 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)]">
-        <div className="flex items-center justify-between mb-6 border-b border-stone-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-stone-100 rounded-xl text-stone-700">
-              <Calendar size={18} strokeWidth={1.5} />
-            </div>
-            <div>
-              <h3 className="font-serif text-xl italic font-normal text-stone-900">Comparación Mensual</h3>
-              <p className="text-[9px] text-stone-400 uppercase tracking-[0.18em] font-light">
-                Mes {currentMonth}/{currentYear} vs Mes {prevMonth}/{prevYear}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <div 
-            data-testid="compare-ganancia"
-            onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'ganancia' })}
-            className="group relative overflow-hidden text-left p-5 bg-white hover:bg-stone-50/70 rounded-xl border border-stone-200/70 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_8px_25px_-5px_rgba(0,0,0,0.06)] hover:border-stone-300 active:translate-y-0 shadow-2xs"
-          >
-            <div className="flex items-center justify-between gap-1 mb-2.5">
-              <span className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-medium group-hover:text-stone-700">Ganancia Neta</span>
-              <span className={`px-2 py-0.5 rounded-full text-[8px] font-medium ${trendGanancia.isPositive ? 'bg-emerald-50 text-emerald-800 border border-emerald-500/20' : 'bg-rose-50 text-rose-800 border border-rose-500/20'}`}>
-                {trendGanancia.isPositive ? '↑' : '↓'} {trendGanancia.value.toFixed(1)}%
-              </span>
-            </div>
-            <p className="font-serif text-2xl font-medium text-stone-900 mb-1">${gNetaMes.toLocaleString()}</p>
-            <p className="text-[9px] text-stone-400 font-light tracking-wide">vs ${prevGNeta.toLocaleString()} <span className="opacity-70 italic">ant.</span></p>
-          </div>
-
-          <div 
-            data-testid="compare-efectivo"
-            onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'efectivo' })}
-            className="group relative overflow-hidden text-left p-5 bg-white hover:bg-stone-50/70 rounded-xl border border-stone-200/70 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_8px_25px_-5px_rgba(0,0,0,0.06)] hover:border-stone-300 active:translate-y-0 shadow-2xs"
-          >
-            <div className="flex items-center justify-between gap-1 mb-2.5">
-              <span className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-medium group-hover:text-stone-700">Caja Efectivo</span>
-              <span className={`px-2 py-0.5 rounded-full text-[8px] font-medium ${trendEfectivo.isPositive ? 'bg-emerald-50 text-emerald-800 border border-emerald-500/20' : 'bg-rose-50 text-rose-800 border border-rose-500/20'}`}>
-                {trendEfectivo.isPositive ? '↑' : '↓'} {trendEfectivo.value.toFixed(1)}%
-              </span>
-            </div>
-            <p className="font-serif text-2xl font-medium text-stone-900 mb-1">${totalEfectivo.toLocaleString()}</p>
-            <p className="text-[9px] text-stone-400 font-light tracking-wide">vs ${prevTotalEfectivo.toLocaleString()} <span className="opacity-70 italic">ant.</span></p>
-          </div>
-
-          <div 
-            data-testid="compare-tarjeta"
-            onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'tarjeta' })}
-            className="group relative overflow-hidden text-left p-5 bg-white hover:bg-stone-50/70 rounded-xl border border-stone-200/70 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_8px_25px_-5px_rgba(0,0,0,0.06)] hover:border-stone-300 active:translate-y-0 shadow-2xs"
-          >
-            <div className="flex items-center justify-between gap-1 mb-2.5">
-              <span className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-medium group-hover:text-stone-700">Caja Tarjeta</span>
-              <span className={`px-2 py-0.5 rounded-full text-[8px] font-medium ${trendTarjeta.isPositive ? 'bg-emerald-50 text-emerald-800 border border-emerald-500/20' : 'bg-rose-50 text-rose-800 border border-rose-500/20'}`}>
-                {trendTarjeta.isPositive ? '↑' : '↓'} {trendTarjeta.value.toFixed(1)}%
-              </span>
-            </div>
-            <p className="font-serif text-2xl font-medium text-stone-900 mb-1">${totalTarjeta.toLocaleString()}</p>
-            <p className="text-[9px] text-stone-400 font-light tracking-wide">vs ${prevTotalTarjeta.toLocaleString()} <span className="opacity-70 italic">ant.</span></p>
-          </div>
-
-          <div 
-            data-testid="compare-gastos"
-            onClick={() => setDetailView({ month: currentMonth, year: currentYear, type: 'gastos' })}
-            className="group relative overflow-hidden text-left p-5 bg-white hover:bg-stone-50/70 rounded-xl border border-stone-200/70 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_8px_25px_-5px_rgba(0,0,0,0.06)] hover:border-stone-300 active:translate-y-0 shadow-2xs"
-          >
-            <div className="flex items-center justify-between gap-1 mb-2.5">
-              <span className="text-[9px] uppercase tracking-[0.18em] text-stone-400 font-medium group-hover:text-stone-700">Gastos Operativos</span>
-              <span className="px-2 py-0.5 rounded-full text-[8px] font-medium bg-stone-100 text-stone-600 border border-stone-200/50">
-                {expensesThisMonth <= prevExpensesTotal ? '↓' : '↑'} {calcTrend(expensesThisMonth, prevExpensesTotal).value.toFixed(1)}%
-              </span>
-            </div>
-            <p className="font-serif text-2xl font-medium text-rose-700 mb-1">${expensesThisMonth.toLocaleString()}</p>
-            <p className="text-[9px] text-stone-400 font-light tracking-wide">vs ${prevExpensesTotal.toLocaleString()} <span className="opacity-70 italic">ant.</span></p>
-          </div>
-        </div>
-      </div>
       <div className="space-y-5 mt-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-stone-200/60 pb-4 gap-4">
           <div className="flex items-center gap-4">
@@ -380,11 +282,10 @@ const Dashboard: React.FC<DashboardProps> = ({
             {sinStock.length > 0 && (
               <button
                 onClick={() => setShowSinStock(v => !v)}
-                className={`text-[9px] uppercase tracking-[0.15em] font-medium px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs ${
-                  showSinStock
+                className={`text-[9px] uppercase tracking-[0.15em] font-medium px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs ${showSinStock
                     ? 'bg-rose-600 text-white border-rose-600'
                     : 'bg-white text-stone-600 border border-stone-200/70 hover:border-stone-400 hover:text-stone-900'
-                }`}
+                  }`}
               >
                 {showSinStock ? <EyeOff size={13} strokeWidth={1.5} /> : <Eye size={13} strokeWidth={1.5} />}
                 <span>{showSinStock ? '✕ Ver disponibles' : `Ver agotadas (${sinStock.length})`}</span>
@@ -423,11 +324,10 @@ const Dashboard: React.FC<DashboardProps> = ({
             </span>
             <button
               onClick={() => handleCategoryChange('')}
-              className={`px-3 py-1.5 rounded-xl text-[9px] tracking-[0.15em] uppercase font-medium transition-all ${
-                !activeCategory
+              className={`px-3 py-1.5 rounded-xl text-[9px] tracking-[0.15em] uppercase font-medium transition-all ${!activeCategory
                   ? 'bg-stone-900 text-white shadow-2xs'
                   : 'bg-stone-100/60 text-stone-600 hover:bg-stone-200/60 hover:text-stone-900 border border-stone-200/50'
-              }`}
+                }`}
             >
               Todas ({baseInventory.length})
             </button>
@@ -437,16 +337,14 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <button
                   key={cat}
                   onClick={() => handleCategoryChange(cat)}
-                  className={`px-3 py-1.5 rounded-xl text-[9px] tracking-[0.15em] uppercase font-medium transition-all flex items-center gap-1.5 ${
-                    activeCategory === cat
+                  className={`px-3 py-1.5 rounded-xl text-[9px] tracking-[0.15em] uppercase font-medium transition-all flex items-center gap-1.5 ${activeCategory === cat
                       ? 'bg-[#C5B4A0] text-stone-900 shadow-2xs font-semibold'
                       : 'bg-stone-100/60 text-stone-600 hover:bg-stone-200/60 hover:text-stone-900 border border-stone-200/50'
-                  }`}
+                    }`}
                 >
                   <span>{cat}</span>
-                  <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-mono font-medium ${
-                    activeCategory === cat ? 'bg-stone-900 text-white' : 'bg-stone-200/80 text-stone-700'
-                  }`}>
+                  <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-mono font-medium ${activeCategory === cat ? 'bg-stone-900 text-white' : 'bg-stone-200/80 text-stone-700'
+                    }`}>
                     {count}
                   </span>
                 </button>
@@ -478,7 +376,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <td className="px-4 py-3 font-mono font-medium text-stone-900 text-[11px]">{item.sku}</td>
                   <td className="px-4 py-3 font-medium text-stone-800 text-[11px]">{item.descripcion}</td>
                   <td className="px-4 py-3 text-stone-500 font-normal">{item.proveedor}</td>
-                  <td className="px-4 py-3 text-right font-mono font-normal text-stone-500">$ {item.costo.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-mono font-normal text-stone-500">{hideFinancials ? '••••••' : `$ ${item.costo.toLocaleString()}`}</td>
                   <td className="px-4 py-3 text-right font-mono font-semibold text-stone-900 bg-emerald-500/5">$ {item.ventaEfectivo.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right font-mono font-medium text-stone-800">$ {(item.ventaTarjeta ?? item.ventaEfectivo).toLocaleString()}</td>
                   <td className="px-4 py-3 text-center">
@@ -497,11 +395,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                           Agotado
                         </span>
                       ) : (
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-medium inline-flex items-center gap-1 ${
-                          item.cantidad <= 2 
-                            ? 'bg-amber-50 text-amber-800 border border-amber-200/60' 
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-medium inline-flex items-center gap-1 ${item.cantidad <= 2
+                            ? 'bg-amber-50 text-amber-800 border border-amber-200/60'
                             : 'bg-emerald-50 text-emerald-800 border border-emerald-200/60'
-                        }`}>
+                          }`}>
                           <span>{item.cantidad}</span>
                           <span className="text-[8px] font-normal opacity-60 uppercase">u.</span>
                         </span>
@@ -518,19 +415,18 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="inline-flex items-center gap-1 bg-stone-50 border border-stone-200/60 rounded-xl p-1 shadow-2xs">
-                      <button 
-                        onClick={() => setEditingItem(item)} 
+                      <button
+                        onClick={() => setEditingItem(item)}
                         title="Editar producto"
                         className="p-1 hover:bg-white text-stone-600 hover:text-stone-900 rounded-lg transition-all"
                       >
                         <Edit2 size={12} strokeWidth={1.5} />
                       </button>
-                      <button 
-                        onClick={() => handleDelete(item.id)} 
+                      <button
+                        onClick={() => handleDelete(item.id)}
                         title={pendingDeleteId === item.id ? "Confirmar eliminación" : "Eliminar producto"}
-                        className={`p-1 rounded-lg transition-all ${
-                          pendingDeleteId === item.id ? 'bg-rose-600 text-white font-medium' : 'hover:bg-rose-50 text-rose-600'
-                        }`}
+                        className={`p-1 rounded-lg transition-all ${pendingDeleteId === item.id ? 'bg-rose-600 text-white font-medium' : 'hover:bg-rose-50 text-rose-600'
+                          }`}
                       >
                         <Trash2 size={12} strokeWidth={1.5} />
                       </button>
@@ -554,18 +450,18 @@ const Dashboard: React.FC<DashboardProps> = ({
         let pMonth = vMonth - 1;
         let pYear = vYear;
         if (pMonth === 0) { pMonth = 12; pYear -= 1; }
-        
+
         const pClosure = closures.find(c => c.month === pMonth && c.year === pYear);
         const pSales = sales.filter(s => isMonth(s.fecha, pMonth, pYear));
         const pExpensesList = expenses.filter(e => isMonth(e.fecha, pMonth, pYear));
 
         // Cálculos Mes Seleccionado
         const vGastos = vClosure ? vClosure.gastos : vExpensesList.reduce((acc, e) => acc + e.monto, 0);
-        
+
         const vBreakdown = vSales.reduce((acc, s) => {
           const { efectivo, tarjeta, ganancia } = computeSaleBreakdown(s, sales);
           const signo = (s.tipo === 'devolucion' || s.tipo === 'anulacion') ? -1 : 1;
-          
+
           let prendas = 0;
           if (s.tipo === 'cambio') {
             prendas = (s.itemsNuevos ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
@@ -591,12 +487,12 @@ const Dashboard: React.FC<DashboardProps> = ({
         const pBreakdown = pSales.reduce((acc, s) => {
           const { efectivo, tarjeta, ganancia } = computeSaleBreakdown(s, sales);
           const signo = (s.tipo === 'devolucion' || s.tipo === 'anulacion') ? -1 : 1;
-          
+
           let prendas = 0;
           if (s.tipo === 'cambio') {
-             prendas = (s.itemsNuevos ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
+            prendas = (s.itemsNuevos ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
           } else if (s.tipo === 'venta') {
-             prendas = (s.items ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
+            prendas = (s.items ?? []).reduce((sum, i) => sum + (i.cantidad ?? 1), 0);
           }
 
           return {
@@ -632,7 +528,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         };
 
         // Preparar lista con saldo acumulado (solo relevante en caja efectivo)
-        const sortedSales = vSales.slice().sort((a,b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+        const sortedSales = vSales.slice().sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
         let runningBalance = 0;
         const salesWithBalance = sortedSales.map(sale => {
           const b = computeSaleBreakdown(sale, sales);
@@ -658,7 +554,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   {diff >= 0 ? '↑' : '↓'} {prefix}{Math.abs(diff).toLocaleString()} ({diffPct.toFixed(1)}%)
                 </div>
               </div>
-              
+
               <div className="space-y-4">
                 {/* BARRA ACTUAL */}
                 <div className="space-y-1.5">
@@ -667,7 +563,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <span>{prefix}{val.toLocaleString()}</span>
                   </div>
                   <div className="h-4 bg-[#F5F1EB] rounded-full overflow-hidden border border-[#C9B8A8]/20">
-                    <div 
+                    <div
                       className="h-full bg-[#1A1A1A] transition-all duration-1000 ease-out"
                       style={{ width: `${valPct}%` }}
                     />
@@ -681,7 +577,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <span>{prefix}{prev.toLocaleString()}</span>
                   </div>
                   <div className="h-4 bg-[#F5F1EB] rounded-full overflow-hidden border border-[#C9B8A8]/20">
-                    <div 
+                    <div
                       className="h-full bg-[#C9B8A8] transition-all duration-1000 ease-out"
                       style={{ width: `${prevPct}%` }}
                     />
@@ -695,7 +591,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         return (
           <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setDetailView(null)}>
             <div className="bg-white/95 backdrop-blur-md border border-[#C9B8A8]/50 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-              
+
               {/* HEADER ESPECIALIZADO CON NAVEGACIÓN */}
               <div className="sticky top-0 bg-white/95 backdrop-blur-md border-b-2 border-[#C9B8A8]/30 p-6 flex justify-between items-center z-10">
                 <div className="flex items-center gap-6">
@@ -733,7 +629,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               </div>
 
               <div className="p-8 space-y-10">
-                
+
                 {/* 1. SECCIÓN DE GRÁFICOS COMPARATIVOS */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {detailView.type === 'ganancia' && RenderBarChart(vGNeta, pGNeta, 'Ganancia Neta Mensual')}
@@ -747,11 +643,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <>
                         <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
                           <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Ganancia Bruta</p>
-                          <p className="text-lg font-bold font-mono">${vGBruta.toLocaleString()}</p>
+                          <p className="text-lg font-bold font-mono">{hideFinancials ? '$ ••••••' : `$${vGBruta.toLocaleString()}`}</p>
                         </div>
                         <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
                           <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Gastos Totales</p>
-                          <p className="text-lg font-bold font-mono text-red-700">-${vGastos.toLocaleString()}</p>
+                          <p className="text-lg font-bold font-mono text-red-700">{hideFinancials ? '-$ ••••••' : `-${vGastos.toLocaleString()}`}</p>
                         </div>
                       </>
                     )}
@@ -759,11 +655,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <>
                         <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
                           <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Ventas Brutas</p>
-                          <p className="text-lg font-bold font-mono text-emerald-800">${vBreakdown.efectivo.toLocaleString()}</p>
+                          <p className="text-lg font-bold font-mono text-emerald-800">{hideFinancials ? '$ ••••••' : `$${vBreakdown.efectivo.toLocaleString()}`}</p>
                         </div>
                         <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
                           <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Gastos Pagados</p>
-                          <p className="text-lg font-bold font-mono text-red-700">-${vGastos.toLocaleString()}</p>
+                          <p className="text-lg font-bold font-mono text-red-700">{hideFinancials ? '-$ ••••••' : `-${vGastos.toLocaleString()}`}</p>
                         </div>
                       </>
                     )}
@@ -771,7 +667,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <>
                         <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
                           <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Egresos Efectivo</p>
-                          <p className="text-lg font-bold font-mono text-red-700">${vGastos.toLocaleString()}</p>
+                          <p className="text-lg font-bold font-mono text-red-700">{hideFinancials ? '$ ••••••' : `$${vGastos.toLocaleString()}`}</p>
                         </div>
                         <div className="p-4 bg-[#F5F1EB]/40 rounded-xl border border-[#C9B8A8]/20">
                           <p className="text-[8px] uppercase tracking-widest text-gray-500 mb-1">Frecuencia</p>
@@ -789,85 +685,85 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </h4>
                   <div className="border border-[#C9B8A8]/50 rounded-2xl overflow-auto max-h-[400px] shadow-sm bg-white">
                     {detailView.type === 'gastos' ? (
-                       <table className="w-full text-sm">
-                       <thead className="bg-[#C9B8A8]/20 sticky top-0 backdrop-blur-md">
-                         <tr>
-                           <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Fecha</th>
-                           <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Concepto</th>
-                           <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Monto</th>
-                         </tr>
-                       </thead>
-                       <tbody className="divide-y divide-[#C9B8A8]/10 text-xs text-left">
-                         {vExpensesList.slice().sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).map(exp => (
-                           <tr key={exp.id} className="hover:bg-[#F5F1EB]/30 transition-colors">
-                             <td className="px-4 py-3 text-gray-500 font-medium">{new Date(exp.fecha).toLocaleDateString('es-AR')}</td>
-                             <td className="px-4 py-3 uppercase tracking-tighter font-bold">{exp.concepto}</td>
-                             <td className="px-4 py-3 text-right font-mono font-bold text-red-700">-${exp.monto.toLocaleString()}</td>
-                           </tr>
-                         ))}
-                       </tbody>
-                     </table>
+                      <table className="w-full text-sm">
+                        <thead className="bg-[#C9B8A8]/20 sticky top-0 backdrop-blur-md">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Fecha</th>
+                            <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Concepto</th>
+                            <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Monto</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#C9B8A8]/10 text-xs text-left">
+                          {vExpensesList.slice().sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).map(exp => (
+                            <tr key={exp.id} className="hover:bg-[#F5F1EB]/30 transition-colors">
+                              <td className="px-4 py-3 text-gray-500 font-medium">{new Date(exp.fecha).toLocaleDateString('es-AR')}</td>
+                              <td className="px-4 py-3 uppercase tracking-tighter font-bold">{exp.concepto}</td>
+                              <td className="px-4 py-3 text-right font-mono font-bold text-red-700">{hideFinancials ? '-$ ••••••' : `-${exp.monto.toLocaleString()}`}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     ) : (
                       <table className="w-full text-sm">
-                      <thead className="bg-[#C9B8A8]/20 sticky top-0 backdrop-blur-md">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Fecha</th>
-                          <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Tipo</th>
-                          <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">
-                            {detailView.type === 'efectivo' ? 'Impacto Efectivo' : detailView.type === 'tarjeta' ? 'Cobrado Tarj.' : 'Total'}
-                          </th>
-                          {detailView.type === 'efectivo' && (
-                            <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Saldo Acum.</th>
-                          )}
-                          {detailView.type === 'ganancia' && (
-                            <>
-                              <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Costo</th>
-                              <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Ganancia</th>
-                            </>
-                          )}
-                          {detailView.type === 'prendas' && (
-                            <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Prendas</th>
-                          )}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#C9B8A8]/10 text-xs text-left">
-                        {salesWithBalance.map(item => {
-                              return (
-                                <tr key={item.id} className="hover:bg-[#F5F1EB]/30 transition-colors" title={`Tipo: ${item.tipo} | Fecha: ${new Date(item.fecha).toLocaleDateString('es-AR')} | Impacto: $${item.impact?.toLocaleString() ?? ''} | Tarjeta: $${(item.breakdown?.tarjeta ?? 0).toLocaleString()} | Ganancia: $${(item.breakdown?.ganancia ?? 0).toLocaleString()}`}>
-                                  <td className="px-4 py-3 text-gray-500 font-medium">{new Date(item.fecha).toLocaleDateString('es-AR')}</td>
-                                  <td className="px-4 py-3">
-                                    <span className="px-2 py-0.5 bg-[#C9B8A8]/10 text-[#1A1A1A] rounded text-[9px] font-bold uppercase tracking-tighter">
-                                      {item.tipo}
-                                    </span>
+                        <thead className="bg-[#C9B8A8]/20 sticky top-0 backdrop-blur-md">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Fecha</th>
+                            <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Tipo</th>
+                            <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">
+                              {detailView.type === 'efectivo' ? 'Impacto Efectivo' : detailView.type === 'tarjeta' ? 'Cobrado Tarj.' : 'Total'}
+                            </th>
+                            {detailView.type === 'efectivo' && (
+                              <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Saldo Acum.</th>
+                            )}
+                            {detailView.type === 'ganancia' && (
+                              <>
+                                <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Costo</th>
+                                <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Ganancia</th>
+                              </>
+                            )}
+                            {detailView.type === 'prendas' && (
+                              <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#1A1A1A]/60 font-bold">Prendas</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#C9B8A8]/10 text-xs text-left">
+                          {salesWithBalance.map(item => {
+                            return (
+                              <tr key={item.id} className="hover:bg-[#F5F1EB]/30 transition-colors" title={`Tipo: ${item.tipo} | Fecha: ${new Date(item.fecha).toLocaleDateString('es-AR')} | Impacto: $${item.impact?.toLocaleString() ?? ''} | Tarjeta: $${(item.breakdown?.tarjeta ?? 0).toLocaleString()} | Ganancia: $${(item.breakdown?.ganancia ?? 0).toLocaleString()}`}>
+                                <td className="px-4 py-3 text-gray-500 font-medium">{new Date(item.fecha).toLocaleDateString('es-AR')}</td>
+                                <td className="px-4 py-3">
+                                  <span className="px-2 py-0.5 bg-[#C9B8A8]/10 text-[#1A1A1A] rounded text-[9px] font-bold uppercase tracking-tighter">
+                                    {item.tipo}
+                                  </span>
+                                </td>
+                                <td className={`px-4 py-3 text-right font-mono font-bold ${item.impact >= 0 ? 'text-[#1A1A1A]' : 'text-rose-600'}`}>
+                                  {hideFinancials ? '$ ••••••' : (detailView.type === 'efectivo' ? `$${item.impact.toLocaleString()}` :
+                                    detailView.type === 'tarjeta' ? `$${(item.breakdown.tarjeta * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}` :
+                                      `$${(item.breakdown.totalCobrado * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}`)}
+                                </td>
+                                {detailView.type === 'efectivo' && (
+                                  <td className="px-4 py-3 text-right font-mono text-gray-500 font-bold">
+                                    {hideFinancials ? '$ ••••••' : `$${item.balance.toLocaleString()}`}
                                   </td>
-                                  <td className={`px-4 py-3 text-right font-mono font-bold ${item.impact >= 0 ? 'text-[#1A1A1A]' : 'text-rose-600'}`}>
-                                    {detailView.type === 'efectivo' ? `$${item.impact.toLocaleString()}` : 
-                                     detailView.type === 'tarjeta' ? `$${(item.breakdown.tarjeta * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}` : 
-                                     `$${(item.breakdown.totalCobrado * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}`}
+                                )}
+                                {detailView.type === 'ganancia' && (
+                                  <>
+                                    <td className="px-4 py-3 text-right text-gray-400 font-mono">{hideFinancials ? '$ ••••••' : `$${(item.breakdown.costoTotal * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}`}</td>
+                                    <td className={`px-4 py-3 text-right font-mono font-bold ${item.breakdown.ganancia * (item.tipo.includes('devolucion') ? -1 : 1) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                      {hideFinancials ? '$ ••••••' : `$${(item.breakdown.ganancia * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}`}
+                                    </td>
+                                  </>
+                                )}
+                                {detailView.type === 'gastos' && (
+                                  <td className="px-4 py-3 text-right font-mono font-bold">
+                                    -
                                   </td>
-                                  {detailView.type === 'efectivo' && (
-                                    <td className="px-4 py-3 text-right font-mono text-gray-500 font-bold">
-                                      ${item.balance.toLocaleString()}
-                                    </td>
-                                  )}
-                                  {detailView.type === 'ganancia' && (
-                                    <>
-                                      <td className="px-4 py-3 text-right text-gray-400 font-mono">${(item.breakdown.costoTotal * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}</td>
-                                      <td className={`px-4 py-3 text-right font-mono font-bold ${item.breakdown.ganancia * (item.tipo.includes('devolucion') ? -1 : 1) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        ${(item.breakdown.ganancia * (item.tipo.includes('devolucion') ? -1 : 1)).toLocaleString()}
-                                      </td>
-                                    </>
-                                  )}
-                                  {detailView.type === 'gastos' && (
-                                    <td className="px-4 py-3 text-right font-mono font-bold">
-                                      -
-                                    </td>
-                                  )}
-                                </tr>
-                              );
-                            })}
-                      </tbody>
-                    </table>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     )}
                   </div>
                 </div>
@@ -880,7 +776,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       {editingItem && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex justify-center items-center p-4 animate-in fade-in duration-200">
           <div className="bg-white p-8 w-full max-w-xl rounded-3xl border border-stone-200 shadow-2xl relative overflow-hidden space-y-6">
-            
+
             <div className="flex items-center justify-between border-b border-[#C9B8A8]/30 pb-4">
               <div>
                 <h3 className="font-serif text-2xl italic font-extrabold text-[#1A1A1A]">Editar Producto</h3>
@@ -899,22 +795,22 @@ const Dashboard: React.FC<DashboardProps> = ({
             <div className="space-y-4">
               <div>
                 <label className="text-[9px] uppercase tracking-[2px] font-bold text-[#1A1A1A]/70 mb-1.5 block">Descripción del Producto</label>
-                <input 
-                  className="w-full bg-[#F5F1EB]/50 border border-[#C9B8A8]/60 rounded-xl px-3.5 py-2.5 text-xs font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/20 focus:border-[#1A1A1A] transition-all" 
-                  value={editingItem.descripcion} 
-                  onChange={e => setEditingItem({...editingItem, descripcion: e.target.value})} 
+                <input
+                  className="w-full bg-[#F5F1EB]/50 border border-[#C9B8A8]/60 rounded-xl px-3.5 py-2.5 text-xs font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/20 focus:border-[#1A1A1A] transition-all"
+                  value={editingItem.descripcion}
+                  onChange={e => setEditingItem({ ...editingItem, descripcion: e.target.value })}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[9px] uppercase tracking-[2px] font-bold text-[#1A1A1A]/70 mb-1.5 block">Costo Base ($)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     step="any"
                     autoComplete="off"
-                    className="w-full bg-[#F5F1EB]/50 border border-[#C9B8A8]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/20 focus:border-[#1A1A1A] transition-all" 
-                    value={editingItem.costo} 
+                    className="w-full bg-[#F5F1EB]/50 border border-[#C9B8A8]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/20 focus:border-[#1A1A1A] transition-all"
+                    value={editingItem.costo}
                     onChange={e => {
                       const newCost = Number(e.target.value);
                       const { ventaEfectivo, ventaTarjeta } = calculatePricesFromCost(newCost);
@@ -924,16 +820,16 @@ const Dashboard: React.FC<DashboardProps> = ({
                         ventaEfectivo,
                         ventaTarjeta
                       });
-                    }} 
+                    }}
                   />
                 </div>
                 <div>
                   <label className="text-[9px] uppercase tracking-[2px] font-bold text-[#1A1A1A]/70 mb-1.5 block">Stock Actual (Unidades)</label>
-                  <input 
-                    type="number" 
-                    className="w-full bg-[#F5F1EB]/50 border border-[#C9B8A8]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/20 focus:border-[#1A1A1A] transition-all" 
-                    value={editingItem.cantidad} 
-                    onChange={e => setEditingItem({...editingItem, cantidad: Number(e.target.value)})} 
+                  <input
+                    type="number"
+                    className="w-full bg-[#F5F1EB]/50 border border-[#C9B8A8]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/20 focus:border-[#1A1A1A] transition-all"
+                    value={editingItem.cantidad}
+                    onChange={e => setEditingItem({ ...editingItem, cantidad: Number(e.target.value) })}
                   />
                 </div>
               </div>
@@ -941,20 +837,20 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[#C9B8A8]/20">
                 <div>
                   <label className="text-[9px] uppercase tracking-[2px] font-bold text-emerald-800 mb-1.5 block">Precio Efectivo ($)</label>
-                  <input 
-                    type="number" 
-                    className="w-full bg-emerald-50/50 border border-emerald-300/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-extrabold text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all" 
-                    value={editingItem.ventaEfectivo} 
-                    onChange={e => setEditingItem({...editingItem, ventaEfectivo: Number(e.target.value)})} 
+                  <input
+                    type="number"
+                    className="w-full bg-emerald-50/50 border border-emerald-300/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-extrabold text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
+                    value={editingItem.ventaEfectivo}
+                    onChange={e => setEditingItem({ ...editingItem, ventaEfectivo: Number(e.target.value) })}
                   />
                 </div>
                 <div>
                   <label className="text-[9px] uppercase tracking-[2px] font-bold text-[#1A1A1A]/70 mb-1.5 block">Precio Tarjeta ($)</label>
-                  <input 
-                    type="number" 
-                    className="w-full bg-[#F5F1EB]/50 border border-[#C9B8A8]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-extrabold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/20 focus:border-[#1A1A1A] transition-all" 
-                    value={editingItem.ventaTarjeta} 
-                    onChange={e => setEditingItem({...editingItem, ventaTarjeta: Number(e.target.value)})} 
+                  <input
+                    type="number"
+                    className="w-full bg-[#F5F1EB]/50 border border-[#C9B8A8]/60 rounded-xl px-3.5 py-2.5 text-xs font-mono font-extrabold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1A1A1A]/20 focus:border-[#1A1A1A] transition-all"
+                    value={editingItem.ventaTarjeta}
+                    onChange={e => setEditingItem({ ...editingItem, ventaTarjeta: Number(e.target.value) })}
                   />
                 </div>
               </div>
@@ -980,15 +876,15 @@ const Dashboard: React.FC<DashboardProps> = ({
               </button>
 
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <button 
-                  onClick={() => setEditingItem(null)} 
+                <button
+                  onClick={() => setEditingItem(null)}
                   type="button"
                   className="px-5 py-2.5 rounded-xl border border-transparent hover:bg-gray-100 text-[#1A1A1A]/70 hover:text-[#1A1A1A] text-[10px] uppercase font-bold tracking-[2px] transition-all"
                 >
                   Cancelar
                 </button>
-                <button 
-                  onClick={async () => { 
+                <button
+                  onClick={async () => {
                     const originalItem = inventory.find(i => i.id === editingItem.id);
                     if (originalItem && originalItem.cantidad !== editingItem.cantidad) {
                       if (editingItem.visible !== false) {
@@ -1001,9 +897,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                         return;
                       }
                     }
-                    onUpdateItem(editingItem); 
-                    setEditingItem(null); 
-                  }} 
+                    onUpdateItem(editingItem);
+                    setEditingItem(null);
+                  }}
                   type="button"
                   className="px-6 py-2.5 rounded-xl bg-[#1A1A1A] hover:bg-black text-white text-[10px] uppercase font-extrabold tracking-[2px] transition-all shadow-md hover:scale-[1.02] active:scale-95"
                 >
