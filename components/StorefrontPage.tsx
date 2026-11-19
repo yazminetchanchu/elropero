@@ -2002,8 +2002,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                             <button
                               onClick={() => setFilterTalle('')}
                               className={`px-3 py-2 text-xs tracking-wider uppercase transition-all border cursor-pointer ${filterTalle === ''
-                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
-                                  : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
+                                ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
+                                : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
                                 }`}
                             >
                               Todos
@@ -2015,8 +2015,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                   key={t}
                                   onClick={() => setFilterTalle(isSelected ? '' : t)}
                                   className={`min-w-[42px] px-3.5 py-2 text-xs tracking-wider uppercase transition-all border cursor-pointer ${isSelected
-                                      ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs'
-                                      : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                                    ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs'
+                                    : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
                                     }`}
                                 >
                                   {t}
@@ -2045,8 +2045,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                             <button
                               onClick={() => setFilterColor('')}
                               className={`px-3 py-2 text-xs tracking-wider uppercase text-left transition-all border flex items-center gap-2 cursor-pointer ${filterColor === ''
-                                  ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
-                                  : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
+                                ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
+                                : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-black font-light'
                                 }`}
                             >
                               <span className="w-3 h-3 rounded-full bg-neutral-300 inline-block" />
@@ -2059,8 +2059,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                   key={c}
                                   onClick={() => setFilterColor(isSelected ? '' : c)}
                                   className={`px-3 py-2 text-xs tracking-wider uppercase text-left transition-all border flex items-center justify-between gap-2 cursor-pointer ${isSelected
-                                      ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs'
-                                      : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                                    ? 'bg-neutral-900 text-white border-neutral-900 font-medium shadow-xs'
+                                    : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
                                     }`}
                                 >
                                   <div className="flex items-center gap-2 min-w-0">
@@ -2095,8 +2095,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                   key={opt.id}
                                   onClick={() => setSortOption(opt.id as any)}
                                   className={`w-full px-4 py-2.5 text-xs tracking-wider uppercase text-left transition-all border flex items-center justify-between cursor-pointer ${isSelected
-                                      ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
-                                      : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
+                                    ? 'bg-neutral-900 text-white border-neutral-900 font-medium'
+                                    : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black font-light'
                                     }`}
                                 >
                                   <span>{opt.label}</span>
@@ -2346,10 +2346,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                 }
                               }}
                               className={`w-9 h-9 text-[10px] tracking-[0.1em] uppercase font-light transition-all flex items-center justify-center rounded-none relative ${isTalleDisabled
-                                  ? 'bg-neutral-50 border border-neutral-200 text-neutral-300 cursor-not-allowed'
-                                  : isSelected
-                                    ? 'bg-black text-white border border-black'
-                                    : 'bg-white border border-neutral-300 text-black hover:border-black'
+                                ? 'bg-neutral-50 border border-neutral-200 text-neutral-300 cursor-not-allowed'
+                                : isSelected
+                                  ? 'bg-black text-white border border-black'
+                                  : 'bg-white border border-neutral-300 text-black hover:border-black'
                                 }`}
                               title={isTalleDisabled ? 'Sin stock' : undefined}
                             >
@@ -2400,10 +2400,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                 }
                               }}
                               className={`px-3 py-1.5 text-[9px] tracking-[0.18em] uppercase transition-all font-light rounded-none border flex items-center gap-1.5 ${isSel
-                                  ? 'bg-black text-white border-black shadow-xs'
-                                  : isOutOfStock
-                                    ? 'bg-neutral-50 border-neutral-200 text-neutral-300 opacity-40 cursor-not-allowed line-through'
-                                    : 'bg-white border-neutral-300 text-black hover:border-black'
+                                ? 'bg-black text-white border-black shadow-xs'
+                                : isOutOfStock
+                                  ? 'bg-neutral-50 border-neutral-200 text-neutral-300 opacity-40 cursor-not-allowed line-through'
+                                  : 'bg-white border-neutral-300 text-black hover:border-black'
                                 }`}
                             >
                               <span
@@ -2435,10 +2435,10 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                             disabled={!hasSelection || isVariantOutOfStock}
                             onClick={() => { addToCart(selectedProduct, modalTalle, modalColor); setSelectedProduct(null); }}
                             className={`w-full py-3 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none ${isVariantOutOfStock
-                                ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed border border-neutral-200'
-                                : canAdd
-                                  ? 'bg-black text-white hover:bg-neutral-800'
-                                  : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                              ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed border border-neutral-200'
+                              : canAdd
+                                ? 'bg-black text-white hover:bg-neutral-800'
+                                : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
                               }`}
                           >
                             {isVariantOutOfStock
@@ -2567,8 +2567,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                           type="button"
                           onClick={() => setPaymentMethod('transferencia')}
                           className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${paymentMethod === 'transferencia'
-                              ? 'border-black bg-black text-white'
-                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                            ? 'border-black bg-black text-white'
+                            : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                             }`}
                         >
                           <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${paymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
@@ -2578,8 +2578,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                           type="button"
                           onClick={() => setPaymentMethod('tarjeta')}
                           className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${paymentMethod === 'tarjeta'
-                              ? 'border-black bg-black text-white'
-                              : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                            ? 'border-black bg-black text-white'
+                            : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                             }`}
                         >
                           <span className={`text-[9px] tracking-[0.2em] uppercase font-light ${paymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Tarjeta</span>
@@ -2710,8 +2710,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                               setShowCheckout(true);
                             }}
                             className={`w-full py-3.5 text-[10px] tracking-[0.25em] uppercase font-light transition-all rounded-none flex items-center justify-center gap-2 ${hasStockIssues
-                                ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
-                                : 'bg-black text-white hover:bg-neutral-800'
+                              ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                              : 'bg-black text-white hover:bg-neutral-800'
                               }`}
                           >
                             {hasStockIssues ? 'Stock insuficiente' : 'Finalizar pedido'}
@@ -2733,7 +2733,9 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                         <p className="text-[10px] tracking-[2px] uppercase font-bold text-black">Seleccioná qué devolvés</p>
                         <span className="text-[8px] uppercase tracking-wider text-black/40 bg-black/5 px-2 py-0.5 rounded">Deslizar para ver más</span>
                       </div>
-                      <p className="text-[9px] tracking-[1px] uppercase text-black/50">Pedido {new Date(exchangeSession.order.fecha).toLocaleDateString('es-AR')}</p>
+                      <p className="text-[9px] tracking-[1px] uppercase text-black/50">
+                        Pedido {new Date(exchangeSession.order.fecha).toLocaleDateString('es-AR')} · Pagó con: <span className="font-semibold text-black/70">{exchangePaymentMethod === 'transferencia' ? 'Transferencia / Efectivo' : 'Tarjeta'}</span>
+                      </p>
                       <div className="space-y-2 mt-3 max-h-[220px] overflow-y-auto visible-scrollbar pr-1">
                         {exchangeSession.originalItems.map((item) => {
                           const disponible = item.cantidad - ((item as any).cantidadDevuelta || 0);
@@ -2868,8 +2870,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                               type="button"
                               onClick={() => setExchangeTipoEnvio('retiro')}
                               className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangeTipoEnvio === 'retiro'
-                                  ? 'border-black bg-black text-white'
-                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                ? 'border-black bg-black text-white'
+                                : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                                 }`}
                             >
                               <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'retiro' ? 'text-white' : 'text-black'}`}>Chivilcoy</span>
@@ -2879,8 +2881,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                               type="button"
                               onClick={() => setExchangeTipoEnvio('recoleta')}
                               className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangeTipoEnvio === 'recoleta'
-                                  ? 'border-black bg-black text-white'
-                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                ? 'border-black bg-black text-white'
+                                : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                                 }`}
                             >
                               <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'recoleta' ? 'text-white' : 'text-black'}`}>Pick Up Recoleta</span>
@@ -2890,8 +2892,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                               type="button"
                               onClick={() => setExchangeTipoEnvio('envio')}
                               className={`p-2.5 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangeTipoEnvio === 'envio'
-                                  ? 'border-black bg-black text-white'
-                                  : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                ? 'border-black bg-black text-white'
+                                : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                                 }`}
                             >
                               <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangeTipoEnvio === 'envio' ? 'text-white' : 'text-black'}`}>Envío por Correo</span>
@@ -2954,8 +2956,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                     type="button"
                                     onClick={() => setExchangeTipoDevolucion('S')}
                                     className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${exchangeTipoDevolucion === 'S'
-                                        ? 'border-black bg-neutral-900 text-white'
-                                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                      ? 'border-black bg-neutral-900 text-white'
+                                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
                                       }`}
                                   >
                                     Dejo en Sucursal
@@ -2964,8 +2966,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                     type="button"
                                     onClick={() => setExchangeTipoDevolucion('D')}
                                     className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${exchangeTipoDevolucion === 'D'
-                                        ? 'border-black bg-neutral-900 text-white'
-                                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                      ? 'border-black bg-neutral-900 text-white'
+                                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
                                       }`}
                                   >
                                     Retiro en Domicilio
@@ -2986,8 +2988,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                     type="button"
                                     onClick={() => setExchangeTipoNuevo('D')}
                                     className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${exchangeTipoNuevo === 'D'
-                                        ? 'border-black bg-neutral-900 text-white'
-                                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                      ? 'border-black bg-neutral-900 text-white'
+                                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
                                       }`}
                                   >
                                     Envío a Domicilio
@@ -2996,8 +2998,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                     type="button"
                                     onClick={() => setExchangeTipoNuevo('S')}
                                     className={`py-1 px-2 border text-[8px] text-center font-medium transition-all ${exchangeTipoNuevo === 'S'
-                                        ? 'border-black bg-neutral-900 text-white'
-                                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
+                                      ? 'border-black bg-neutral-900 text-white'
+                                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400'
                                       }`}
                                   >
                                     Retiro en Sucursal
@@ -3035,8 +3037,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                   type="button"
                                   onClick={() => setExchangePaymentMethod('transferencia')}
                                   className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangePaymentMethod === 'transferencia'
-                                      ? 'border-black bg-black text-white'
-                                      : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                    ? 'border-black bg-black text-white'
+                                    : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                                     }`}
                                 >
                                   <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'transferencia' ? 'text-white' : 'text-black'}`}>Transferencia</span>
@@ -3046,8 +3048,8 @@ const StorefrontPage: React.FC<StorefrontProps> = ({ inventoryProp, settingsProp
                                   type="button"
                                   onClick={() => setExchangePaymentMethod('tarjeta')}
                                   className={`p-2 border text-left flex flex-col gap-0.5 rounded-none transition-all ${exchangePaymentMethod === 'tarjeta'
-                                      ? 'border-black bg-black text-white'
-                                      : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
+                                    ? 'border-black bg-black text-white'
+                                    : 'border-neutral-200 bg-white hover:border-black text-neutral-800'
                                     }`}
                                 >
                                   <span className={`text-[9px] tracking-[0.15em] uppercase font-medium ${exchangePaymentMethod === 'tarjeta' ? 'text-white' : 'text-black'}`}>Ualá Bis</span>

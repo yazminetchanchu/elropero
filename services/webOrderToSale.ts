@@ -1,5 +1,5 @@
 import { CustomerOrder } from '../contexts/AuthContext';
-import { InventoryItem, SaleItem } from '../types';
+import { InventoryItem, SaleItem, Sale } from '../types';
 
 export type CustomerOrderItem = CustomerOrder['items'][number];
 
@@ -49,14 +49,30 @@ export function getOrderSaleId(order: CustomerOrder): string | null {
   return `sale_web_${order.id}`;
 }
 
-export function isGiftCardOrder(order: CustomerOrder): boolean {
-  return order.items.some(
-    (item) =>
-      (item as any).isVirtualGiftCard ||
-      item.sku === 'GIFT-CARD' ||
-      !!(item as any).giftCardData ||
-      item.productId.startsWith('virtual_gift_card_')
+export function isGiftCardItem(item: { sku?: string; descripcion?: string; id?: string; productId?: string }): boolean {
+  if (!item) return false;
+  const sku = (item.sku || '').toUpperCase();
+  const desc = (item.descripcion || '').toLowerCase();
+  const id = (item.id || item.productId || '');
+  return (
+    sku.startsWith('GIFT-') ||
+    sku === 'GIFT-CARD' ||
+    desc.includes('gift card') ||
+    Boolean((item as any).isVirtualGiftCard) ||
+    Boolean((item as any).giftCardData) ||
+    id.startsWith('virtual_gift_card_')
   );
+}
+
+export function isGiftCardOrder(order: CustomerOrder): boolean {
+  return order.items.some(item => isGiftCardItem(item));
+}
+
+export function isGiftCardSale(sale: Sale): boolean {
+  if (!sale) return false;
+  if (sale.tipo === 'gift' || sale.tipo === 'ajuste-gift') return true;
+  if (!sale.items || sale.items.length === 0) return false;
+  return sale.items.every(item => isGiftCardItem(item));
 }
 
 /**

@@ -18,6 +18,7 @@ import WebOrdersManager from './components/WebOrdersManager';
 import InnovativeLoader from './components/InnovativeLoader';
 import { computeSaleBreakdown, isMonth, getItemSnapshot, recalculateSaleWithPaymentMethod } from './services/finance';
 import { deductSaleFromInventory, restoreSaleToInventory } from './services/webOrderFulfillment';
+import { isGiftCardSale } from './services/webOrderToSale';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ModalProvider } from './contexts/ModalContext';
@@ -804,6 +805,12 @@ const App: React.FC = () => {
         throw new Error(msg);
       }
 
+      if (ventaOriginal.tipo === 'gift' || ventaOriginal.tipo === 'ajuste-gift' || isGiftCardSale(ventaOriginal)) {
+        const msg = 'No se pueden realizar cambios o devoluciones sobre Gift Cards.';
+        alert(msg);
+        throw new Error(msg);
+      }
+
       const diasTranscurridos = Math.floor(
         (Date.now() - new Date(ventaOriginal.fecha).getTime()) / (1000 * 60 * 60 * 24)
       );
@@ -1300,8 +1307,8 @@ const App: React.FC = () => {
                                 value={password}
                                 onChange={(e) => { setPassword(e.target.value); setAuthError(null); }}
                                 className={`w-full bg-transparent border-b py-3 text-[13px] focus:outline-none tracking-[6px] transition-all ${authError
-                                    ? 'border-red-400 text-red-600 focus:border-red-500'
-                                    : 'border-black/10 text-black focus:border-black'
+                                  ? 'border-red-400 text-red-600 focus:border-red-500'
+                                  : 'border-black/10 text-black focus:border-black'
                                   }`}
                                 placeholder="••••••••"
                                 required
@@ -1354,8 +1361,8 @@ const App: React.FC = () => {
                                   setAuthError(null);
                                 }}
                                 className={`w-full bg-transparent border-b text-center text-[22px] font-mono tracking-[12px] py-3 focus:outline-none transition-all ${authError
-                                    ? 'border-red-400 text-red-600 focus:border-red-500'
-                                    : 'border-black/20 text-black focus:border-black'
+                                  ? 'border-red-400 text-red-600 focus:border-red-500'
+                                  : 'border-black/20 text-black focus:border-black'
                                   }`}
                                 placeholder="••••••"
                                 autoFocus

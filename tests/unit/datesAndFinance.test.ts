@@ -172,7 +172,8 @@ describe('Suite 1: Unit Tests - Fechas y Lógica Financiera (datesAndFinance.tes
         expect(result.tarjeta).toBe(0);
         expect(result.totalCobrado).toBe(0);
         expect(result.costoTotal).toBe(5000);
-        expect(result.ganancia).toBe(-5000); // 0 cobrado - 5000 costo
+        // Ganancia imputada: ingresoTotal (10.000) - costo (5.000) = 5.000
+        expect(result.ganancia).toBe(5000);
       });
 
       it('calcula venta con Gift Card parcial (pago 100% Efectivo)', () => {
@@ -192,7 +193,8 @@ describe('Suite 1: Unit Tests - Fechas y Lógica Financiera (datesAndFinance.tes
         expect(result.tarjeta).toBe(0);
         expect(result.totalCobrado).toBe(15000);
         expect(result.costoTotal).toBe(12000);
-        expect(result.ganancia).toBe(3000); // 15000 - 12000
+        // Ganancia real: ingresoTotal (10.000 GC + 15.000 efec = 25.000) - 12.000 costo = 13.000
+        expect(result.ganancia).toBe(13000);
       });
 
       it('calcula venta con Gift Card parcial (pago 100% Tarjeta)', () => {
@@ -211,7 +213,8 @@ describe('Suite 1: Unit Tests - Fechas y Lógica Financiera (datesAndFinance.tes
         expect(result.tarjeta).toBe(15000);
         expect(result.totalCobrado).toBe(15000);
         expect(result.costoTotal).toBe(12000);
-        expect(result.ganancia).toBe(3000);
+        // Ganancia real: ingresoTotal (25.000) - 12.000 costo = 13.000
+        expect(result.ganancia).toBe(13000);
       });
 
       it('prorratea proporcionalmente el descuento de la Gift Card en ventas con pago mixto (efectivo y tarjeta)', () => {
@@ -234,7 +237,8 @@ describe('Suite 1: Unit Tests - Fechas y Lógica Financiera (datesAndFinance.tes
         expect(result.tarjeta).toBe(6000);
         expect(result.totalCobrado).toBe(15000);
         expect(result.costoTotal).toBe(10000); // 5000 * 2
-        expect(result.ganancia).toBe(5000); // 15000 - 10000
+        // Ganancia real: ingresoTotal (20.000) - 10.000 costo = 10.000
+        expect(result.ganancia).toBe(10000);
       });
 
       it('soporta giftCardUsada definida como número directo', () => {

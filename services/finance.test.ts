@@ -102,7 +102,8 @@ describe('Lógica Financiera Avanzada (finance.ts)', () => {
     const { efectivo, totalCobrado, ganancia } = computeSaleBreakdown(sale, salesHistory);
     expect(efectivo).toBe(0);
     expect(totalCobrado).toBe(0);
-    expect(ganancia).toBe(500);
+    // Ganancia neutralizada en balance: diferencia (-1000) - deltaCosto (1000 - 1500 = -500) = -500
+    expect(ganancia).toBe(-500);
   });
 
   it('Bug 9: Cambio con Gift Card 100% de la diferencia no genera saldo en efectivo ni tarjeta (caja cuadrada)', () => {
@@ -209,7 +210,7 @@ describe('Lógica Financiera Avanzada (finance.ts)', () => {
     expect(totalCobrado).toBe(3000);
   });
 
-  it('Venta 100% Tarjeta con Gift Card: no debe restar dos veces la Gift Card de la ganancia', () => {
+  it('Venta 100% Tarjeta con Gift Card: computa ganancia sobre la prenda entregada y respeta caja física', () => {
     const item: SaleItem = {
       id: 'p_card',
       sku: 'SKU_CARD',
@@ -233,17 +234,18 @@ describe('Lógica Financiera Avanzada (finance.ts)', () => {
 
     const { efectivo, tarjeta, totalCobrado, costoTotal, ganancia } = computeSaleBreakdown(sale, []);
 
+    // Arqueo de caja física: solo lo cobrado por tarjeta
     // Tarjeta: 25000 - 10000 = 15000
     // Efectivo: 0
     // Total Cobrado: 15000
     // Costo Total: 10000
-    // Ganancia real: basada en Precio Efectivo ($20.000) - Gift Card ($10.000) = $10.000 neto.
-    // Menos costo ($10.000) = $0 de ganancia en esta transacción (la ganancia de la Gift Card ya se registró al venderse).
+    // Ingreso neto imputado = Total bruto (25.000) - comision recargo tarjeta (5.000) = 20.000
+    // Ganancia real = Ingreso neto (20.000) - Costo (10.000) = 10.000
     expect(efectivo).toBe(0);
     expect(tarjeta).toBe(15000);
     expect(totalCobrado).toBe(15000);
     expect(costoTotal).toBe(10000);
-    expect(ganancia).toBe(0);
+    expect(ganancia).toBe(10000);
   });
 
   it('calcTrend: calcula tendencia correctamente', () => {
@@ -665,7 +667,191 @@ describe('Lógica Financiera Avanzada (finance.ts)', () => {
       expect(breakdown.costoTotal).toBe(0);
       expect(breakdown.costoMercaderia).toBe(3000);
       expect(breakdown.deltaCosto).toBe(-7000);
-      expect(breakdown.gananciaNeta).toBe(7000); // 10000 costo recuperado - 3000 costo entregado
+      // gananciaNeta neutralizada: diferencia (-12.000) - deltaCosto (-7.000) = -5.000
+      expect(breakdown.gananciaNeta).toBe(-5000);
+    });
+  });
+
+  describe('Ciclo Completo: Venta 1 -> Devolución con Gift Card -> Canje posterior', () => {
+    const prendaA: SaleItem = {
+      id: 'prenda_a',
+      sku: 'SKU_A',
+      descripcion: 'Vestido Seda A',
+      cantidad: 1,
+      costo: 4000,
+      precioEfectivo: 10000,
+      precioTarjeta: 12500,
+      descuento: 0
+    };
+
+    const prendaB: SaleItem = {
+      id: 'prenda_b',
+      sku: 'SKU_B',
+      descripcion: 'Campera Cuero B',
+      cantidad: 1,
+      costo: 5000,
+      precioEfectivo: 13000,
+      precioTarjeta: 16000,
+      descuento: 0
+    };
+
+    const prendaBMisma: SaleItem = {
+      id: 'prenda_b_misma',
+      sku: 'SKU_B_MISMA',
+      descripcion: 'Vestido Seda B',
+      cantidad: 1,
+      costo: 4000,
+      precioEfectivo: 10000,
+      precioTarjeta: 12500,
+      descuento: 0
+    };
+
+    it('Paso 1: Venta original de Prenda A', () => {
+      const venta1: Sale = {
+        id: 'venta_1',
+        fecha: '2026-05-01T10:00:00',
+        tipo: 'venta',
+        items: [prendaA],
+        total: 10000,
+        pago: { efectivo: 100, tarjeta: 0 }
+      };
+
+      const b1 = computeSaleBreakdown(venta1);
+      expect(b1.efectivo).toBe(10000);
+      expect(b1.tarjeta).toBe(0);
+      expect(b1.totalCobrado).toBe(10000); // Entra a caja física
+      expect(b1.costoTotal).toBe(4000);
+      expect(b1.ganancia).toBe(6000); // 10.000 - 4.000
+    });
+
+    it('Paso 2: Devolución de Prenda A generando Gift Card (saldoGiftCard = precioReconocidoA)', () => {
+      // Clienta devuelve Prenda A, no lleva prendas nuevas (cart = []).
+      // Diferencia: 0 - 10.000 = -10.000 a favor del cliente
+      const devolucionGC: Sale = {
+        id: 'devolucion_gc',
+        fecha: '2026-05-05T10:00:00',
+        tipo: 'cambio',
+        items: [],
+        itemsDevueltos: [prendaA],
+        itemsNuevos: [],
+        diferencia: -10000,
+        total: 0,
+        giftGeneradaId: 'gc_10000',
+        pago: { efectivo: 100, tarjeta: 0 }
+      };
+
+      const b2 = computeSaleBreakdown(devolucionGC);
+
+      // Caja física: No se devuelve plata física; la caja no se mueve
+      expect(b2.efectivo).toBe(0);
+      expect(b2.tarjeta).toBe(0);
+      expect(b2.totalCobrado).toBe(0);
+
+      // Stock: deltaCosto = 0 - 4000 = -4000 (se recupera costoA)
+      expect(b2.deltaCosto).toBe(-4000);
+
+      // Ajuste de ganancia: anula la ganancia de la Venta 1: ΔGanancia = -(precioReconocidoA - costoA) = -6000
+      expect(b2.ganancia).toBe(-6000);
+      expect(b2.gananciaNeta).toBe(-6000);
+    });
+
+    it('Paso 3A: Canje posterior con diferencia a pagar (precioB > saldoGiftCard)', () => {
+      // Clienta lleva Prenda B ($13.000, costo $5.000) usando Gift Card de $10.000
+      // Diferencia abonada en efectivo: $3.000
+      const canjeParcial: Sale = {
+        id: 'venta_canje_parcial',
+        fecha: '2026-05-10T10:00:00',
+        tipo: 'venta',
+        items: [prendaB],
+        total: 3000,
+        pago: { efectivo: 100, tarjeta: 0 },
+        giftCardUsada: { codigo: 'GC-10K', montoUsado: 10000 }
+      };
+
+      const b3 = computeSaleBreakdown(canjeParcial);
+
+      // Cobro en caja: solo la diferencia física cobrada
+      expect(b3.efectivo).toBe(3000);
+      expect(b3.tarjeta).toBe(0);
+      expect(b3.totalCobrado).toBe(3000);
+
+      // Ingreso total imputado a la venta: montoUsadoGiftCard (10000) + diferenciaCobrada (3000) = 13000
+      expect(b3.precioVentaBruto).toBe(13000);
+      expect(b3.ingresoNeto).toBe(13000);
+
+      // Stock / Costo: egresa Prenda B (costoB = 5000)
+      expect(b3.costoMercaderia).toBe(5000);
+      expect(b3.costoTotal).toBe(5000);
+
+      // Ganancia de esta operación: Ganancia_2 = ingresoTotal - costoB = 13000 - 5000 = 8000
+      expect(b3.ganancia).toBe(8000);
+      expect(b3.gananciaNeta).toBe(8000);
+    });
+
+    it('Paso 3B: Canje posterior 100% cubierto con Gift Card (precioB <= saldoGiftCard)', () => {
+      // Clienta lleva Prenda B ($10.000, costo $4.000) usando Gift Card de $10.000
+      const canjeTotal: Sale = {
+        id: 'venta_canje_total',
+        fecha: '2026-05-10T10:00:00',
+        tipo: 'venta',
+        items: [prendaBMisma],
+        total: 0,
+        pago: { efectivo: 100, tarjeta: 0 },
+        giftCardUsada: { codigo: 'GC-10K', montoUsado: 10000 }
+      };
+
+      const b3 = computeSaleBreakdown(canjeTotal);
+
+      // Caja física: No entra dinero nuevo (totalCobrado = 0)
+      expect(b3.efectivo).toBe(0);
+      expect(b3.tarjeta).toBe(0);
+      expect(b3.totalCobrado).toBe(0);
+
+      // Ingreso total imputado: $10.000
+      expect(b3.precioVentaBruto).toBe(10000);
+      expect(b3.ingresoNeto).toBe(10000);
+
+      // Costo de Prenda B: $4.000
+      expect(b3.costoMercaderia).toBe(4000);
+      expect(b3.costoTotal).toBe(4000);
+
+      // Ganancia: 10000 - 4000 = 6000
+      expect(b3.ganancia).toBe(6000);
+      expect(b3.gananciaNeta).toBe(6000);
+    });
+
+    it('Consolidación del ciclo completo en el Balance General', () => {
+      // Venta 1: 10.000 cobrado, 6.000 ganancia
+      const v1: Sale = {
+        id: 'v1', fecha: '2026-05-01', tipo: 'venta',
+        items: [prendaA], total: 10000, pago: { efectivo: 100, tarjeta: 0 }
+      };
+      // Devolución: 0 cobrado, -6.000 ganancia
+      const v2: Sale = {
+        id: 'v2', fecha: '2026-05-02', tipo: 'cambio',
+        items: [], itemsDevueltos: [prendaA], itemsNuevos: [],
+        diferencia: -10000, total: 0, pago: { efectivo: 100, tarjeta: 0 }
+      };
+      // Canje con Prenda B ($13.000) usando Gift Card ($10.000) + $3.000 efectivo
+      const v3: Sale = {
+        id: 'v3', fecha: '2026-05-03', tipo: 'venta',
+        items: [prendaB], total: 3000, pago: { efectivo: 100, tarjeta: 0 },
+        giftCardUsada: { codigo: 'GC-10K', montoUsado: 10000 }
+      };
+
+      const b1 = computeSaleBreakdown(v1);
+      const b2 = computeSaleBreakdown(v2);
+      const b3 = computeSaleBreakdown(v3);
+
+      const cajaTotal = b1.efectivo + b2.efectivo + b3.efectivo;
+      const gananciaTotal = b1.ganancia + b2.ganancia + b3.ganancia;
+
+      // Caja física total: 10.000 (v1) + 0 (v2) + 3.000 (v3) = 13.000
+      expect(cajaTotal).toBe(13000);
+
+      // Ganancia total del ciclo: 6.000 (v1) - 6.000 (v2) + 8.000 (v3) = 8.000
+      // Lo cual equivale exactamente a: $13.000 recaudados - $5.000 costo Prenda B entregada = $8.000
+      expect(gananciaTotal).toBe(8000);
     });
   });
 });

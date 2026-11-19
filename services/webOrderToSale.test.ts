@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildSaleItemsFromOrder, getOrderSaleId, isOrderEligibleForExchange, isGiftCardOrder, parseSafeDate } from './webOrderToSale';
+import {
+  buildSaleItemsFromOrder,
+  getOrderSaleId,
+  isOrderEligibleForExchange,
+  isGiftCardOrder,
+  isGiftCardSale,
+  isGiftCardItem,
+  parseSafeDate,
+} from './webOrderToSale';
 import { CustomerOrder } from '../contexts/AuthContext';
 import { InventoryItem } from '../types';
 
@@ -138,6 +146,56 @@ describe('webOrderToSale Service', () => {
 
     it('returns false for normal physical product orders', () => {
       expect(isGiftCardOrder(mockOrder)).toBe(false);
+    });
+  });
+
+  describe('isGiftCardItem and isGiftCardSale', () => {
+    it('isGiftCardItem detects GIFT- sku and Gift Card descriptions', () => {
+      expect(isGiftCardItem({ sku: 'GIFT-6UA75', descripcion: 'Gift Card: carlo' })).toBe(true);
+      expect(isGiftCardItem({ sku: 'GIFT-CARD', descripcion: 'Tarjeta de Regalo' })).toBe(true);
+      expect(isGiftCardItem({ sku: 'REM-01', descripcion: 'Remera Negra' })).toBe(false);
+    });
+
+    it('isGiftCardSale returns true for sale with tipo gift or gift items', () => {
+      const giftSale = {
+        id: 'sale_gift_1',
+        tipo: 'gift' as const,
+        fecha: new Date().toISOString(),
+        total: 6700,
+        items: [
+          {
+            id: 'GIFT-6UA75',
+            sku: 'GIFT-6UA75',
+            descripcion: 'Gift Card: carlo',
+            cantidad: 1,
+            costo: 0,
+            precioEfectivo: 6700,
+            precioTarjeta: 8375,
+            descuento: 0,
+          },
+        ],
+      };
+      expect(isGiftCardSale(giftSale as any)).toBe(true);
+
+      const normalSale = {
+        id: 'sale_1',
+        tipo: 'venta' as const,
+        fecha: new Date().toISOString(),
+        total: 15000,
+        items: [
+          {
+            id: 'prod-1',
+            sku: 'SKU1',
+            descripcion: 'Remera Negra',
+            cantidad: 1,
+            costo: 5000,
+            precioEfectivo: 15000,
+            precioTarjeta: 18000,
+            descuento: 0,
+          },
+        ],
+      };
+      expect(isGiftCardSale(normalSale as any)).toBe(false);
     });
   });
 

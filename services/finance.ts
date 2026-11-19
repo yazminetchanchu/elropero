@@ -126,7 +126,7 @@ export const computeSaleBreakdown = (sale: Sale, sales?: Sale[]): SaleBreakdown 
     const pctT = sale.pago?.tarjeta ?? 0;
     const efectivo = Math.round(diferenciaCobrada * (pctE / 100));
     const tarjeta = Math.round(diferenciaCobrada * (pctT / 100));
-    const precioVentaBruto = Math.round(efectivo + tarjeta);
+    const totalCobrado = Math.round(efectivo + tarjeta);
 
     // Costo de adquisición/reposición de prendas involucradas (siempre >= 0)
     const costoDevueltos = (sale.itemsDevueltos ?? []).reduce((sum, item: any) => {
@@ -156,16 +156,25 @@ export const computeSaleBreakdown = (sale: Sale, sales?: Sale[]): SaleBreakdown 
       comisionMedioPago = Math.max(0, tarjeta - tarjetaEquivEfectivo);
     }
 
-    const ingresoNeto = Math.max(0, precioVentaBruto - comisionMedioPago);
-
-    // gananciaCambio = (diferenciaCobrada - comisionMedioPago) - deltaCosto
-    // Si un cliente solo abona una diferencia (ej. $1.500), esa diferencia es un ingreso por ajuste de precio
     let gananciaCambio: number;
+    let ingresoNeto: number;
+    let precioVentaBruto: number;
+
     if (diferenciaBruta < 0) {
-      // Diferencia a favor del cliente: no se cobró dinero, la ganancia refleja el balance del costo recuperado
-      gananciaCambio = -deltaCosto; // = costoDevueltos - costoNuevos
+      // Saldo a favor del cliente / Devolución que genera Gift Card:
+      // No se cobra dinero físico (caja = $0). Se anula la ganancia de la prenda devuelta en el balance:
+      // ΔGanancia = diferenciaBruta - deltaCosto = -(precioReconocido - costoRecuperado)
+      gananciaCambio = diferenciaBruta - deltaCosto;
+      precioVentaBruto = diferenciaBruta;
+      ingresoNeto = diferenciaBruta;
     } else {
-      gananciaCambio = (diferenciaCobrada - comisionMedioPago) - deltaCosto;
+      // Canje o cambio con diferencia a pagar (cubierta parcial o totalmente con Gift Card y/o caja):
+      // ingresoTotal = montoUsadoGiftCard + diferenciaCobrada
+      const montoUsadoGiftCard = Math.min(giftCardDiscount, diferenciaBruta);
+      const ingresoTotal = montoUsadoGiftCard + diferenciaCobrada;
+      precioVentaBruto = ingresoTotal;
+      ingresoNeto = Math.max(0, ingresoTotal - comisionMedioPago);
+      gananciaCambio = ingresoNeto - deltaCosto;
     }
 
     // Regla crítica: costoTotal nunca debe ser negativo.
@@ -175,7 +184,7 @@ export const computeSaleBreakdown = (sale: Sale, sales?: Sale[]): SaleBreakdown 
     return {
       efectivo,
       tarjeta,
-      totalCobrado: precioVentaBruto,
+      totalCobrado,
       costoTotal,
       ganancia: Math.round(gananciaCambio),
       precioVentaBruto,
@@ -210,31 +219,39 @@ export const computeSaleBreakdown = (sale: Sale, sales?: Sale[]): SaleBreakdown 
     costoMercaderiaAcum += Math.max(0, costo) * cant;
   });
 
+  const totalBrutoItems = efectivo + tarjeta;
+
   // Aplicar uso de Gift Card si corresponde
   const rawGift = (sale as any).giftCardUsada;
   const gift = typeof rawGift === 'number'
     ? rawGift
     : (rawGift?.montoUsado ?? 0);
 
+  const montoUsadoGiftCard = Math.min(gift, totalBrutoItems);
+
   if (gift > 0) {
-    const totalAntes = efectivo + tarjeta;
-    if (totalAntes > 0) {
-      efectivo = Math.max(0, efectivo - gift * (efectivo / totalAntes));
-      tarjeta = Math.max(0, tarjeta - gift * (tarjeta / totalAntes));
+    if (totalBrutoItems > 0) {
+      efectivo = Math.max(0, efectivo - gift * (efectivo / totalBrutoItems));
+      tarjeta = Math.max(0, tarjeta - gift * (tarjeta / totalBrutoItems));
     }
   }
 
-  const precioVentaBruto = Math.round(efectivo + tarjeta);
-  const valorEfectivoNeto = Math.max(0, valorEfectivoTotal - gift);
+  const diferenciaCobrada = Math.round(efectivo + tarjeta);
+  const totalCobrado = diferenciaCobrada; // Arqueo de caja física
+  const ingresoTotal = Math.round(montoUsadoGiftCard + diferenciaCobrada);
+  const precioVentaBruto = ingresoTotal;
 
   // Comisión medio de pago: si no está explicitada en la venta,
-  // es la retención/recargo financiero de tarjeta sobre el precio neto en efectivo
-  const comisionMedioPago = sale.comisionMedioPago !== undefined
-    ? Math.max(0, Number(sale.comisionMedioPago) || 0)
-    : Math.max(0, precioVentaBruto - Math.round(valorEfectivoNeto));
+  // es la retención/recargo financiero de tarjeta sobre el precio base en efectivo
+  let comisionMedioPago = 0;
+  if (sale.comisionMedioPago !== undefined) {
+    comisionMedioPago = Math.max(0, Number(sale.comisionMedioPago) || 0);
+  } else {
+    comisionMedioPago = Math.max(0, Math.round(totalBrutoItems - valorEfectivoTotal));
+  }
 
-  // ingresoNeto = precioVentaBruto - comisionMedioPago
-  const ingresoNeto = Math.max(0, precioVentaBruto - comisionMedioPago);
+  // ingresoNeto = ingresoTotal - comisionMedioPago
+  const ingresoNeto = Math.max(0, ingresoTotal - comisionMedioPago);
   const costoMercaderia = Math.max(0, Math.round(costoMercaderiaAcum));
 
   // gananciaNeta = ingresoNeto - costoMercaderia
@@ -243,7 +260,7 @@ export const computeSaleBreakdown = (sale: Sale, sales?: Sale[]): SaleBreakdown 
   return {
     efectivo: Math.round(efectivo),
     tarjeta: Math.round(tarjeta),
-    totalCobrado: precioVentaBruto,
+    totalCobrado,
     costoTotal: costoMercaderia,
     ganancia: gananciaNeta,
     precioVentaBruto,
@@ -251,6 +268,7 @@ export const computeSaleBreakdown = (sale: Sale, sales?: Sale[]): SaleBreakdown 
     comisionMedioPago,
     ingresoNeto,
     gananciaNeta,
+    diferenciaCobrada,
   };
 };
 

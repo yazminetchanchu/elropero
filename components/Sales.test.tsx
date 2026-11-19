@@ -827,5 +827,100 @@ describe('Componente Sales', () => {
       expect(payload.total).toBe(4000);
       expect(payload.pago).toEqual({ efectivo: 100, tarjeta: 0 });
     });
+
+    it('no muestra el botón de Cambio para ventas de tipo Gift Card en el historial', () => {
+      const giftSale: Sale = {
+        id: 'sale-gift-1',
+        fecha: new Date().toISOString(),
+        tipo: 'gift',
+        total: 6700,
+        pago: { efectivo: 100, tarjeta: 0 },
+        items: [
+          {
+            id: 'GIFT-6UA75',
+            sku: 'GIFT-6UA75',
+            descripcion: 'Gift Card: carlo',
+            cantidad: 1,
+            costo: 0,
+            precioEfectivo: 6700,
+            precioTarjeta: 8375,
+            descuento: 0,
+          },
+        ],
+      };
+
+      render(
+        <Sales
+          inventory={[]}
+          onAddSale={vi.fn()}
+          onDeleteSale={vi.fn()}
+          recentSales={[giftSale]}
+          giftCards={[]}
+        />
+      );
+
+      // Debe figurar en el historial como registro
+      expect(screen.getByText('GIFT-6UA75 - Gift Card: carlo')).toBeInTheDocument();
+      expect(screen.getByText(/\$ 6\.700/i)).toBeInTheDocument();
+
+      // Pero NO debe tener la opción de Cambio
+      expect(screen.queryByRole('button', { name: /^cambio$/i })).not.toBeInTheDocument();
+    });
+
+    it('muestra el botón de Cambio para ventas de prendas pero lo oculta para Gift Cards', () => {
+      const normalSale: Sale = {
+        id: 'sale-normal-1',
+        fecha: new Date().toISOString(),
+        tipo: 'venta',
+        total: 10000,
+        pago: { efectivo: 100, tarjeta: 0 },
+        items: [
+          {
+            id: 'prod-1',
+            sku: 'SKU1',
+            descripcion: 'Remera Negra',
+            cantidad: 1,
+            costo: 1000,
+            precioEfectivo: 10000,
+            precioTarjeta: 12500,
+            descuento: 0,
+          },
+        ],
+      };
+
+      const giftSale: Sale = {
+        id: 'sale-gift-2',
+        fecha: new Date().toISOString(),
+        tipo: 'gift',
+        total: 6700,
+        pago: { efectivo: 100, tarjeta: 0 },
+        items: [
+          {
+            id: 'GIFT-6UA75',
+            sku: 'GIFT-6UA75',
+            descripcion: 'Gift Card: carlo',
+            cantidad: 1,
+            costo: 0,
+            precioEfectivo: 6700,
+            precioTarjeta: 8375,
+            descuento: 0,
+          },
+        ],
+      };
+
+      render(
+        <Sales
+          inventory={mockInventory}
+          onAddSale={vi.fn()}
+          onDeleteSale={vi.fn()}
+          recentSales={[normalSale, giftSale]}
+          giftCards={[]}
+        />
+      );
+
+      // Solo debe existir UN botón de "Cambio" (el correspondiente a normalSale)
+      const cambioButtons = screen.getAllByRole('button', { name: /^cambio$/i });
+      expect(cambioButtons).toHaveLength(1);
+    });
   });
 });

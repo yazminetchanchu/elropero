@@ -23,9 +23,13 @@ vi.mock('../services/finance', () => ({
 }));
 
 // Mock simple de WebOrderToSale para Sales
-vi.mock('../services/webOrderToSale', () => ({
-  parseSafeDate: vi.fn((d) => new Date(d || '2026-11-10T12:00:00Z'))
-}));
+vi.mock('../services/webOrderToSale', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/webOrderToSale')>();
+  return {
+    ...actual,
+    parseSafeDate: vi.fn((d) => new Date(d || '2026-11-10T12:00:00Z'))
+  };
+});
 
 describe('Modo Privacidad: Ocultar datos de ganancia, caja, etc.', () => {
   beforeEach(() => {
