@@ -33,11 +33,10 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyAdmin2FACode = exports.sendAdmin2FACode = exports.requestWelcomeEmail = exports.sendCustomWelcomeEmail = exports.requestPasswordReset = exports.sendCustomPasswordResetEmail = exports.processEmailQueue = exports.createUalaCheckout = exports.ualaWebhook = exports.fulfillWebOrderServer = exports.fulfillWebCambioServer = exports.cancelWebOrder = exports.cancelWebOrderReservationServer = exports.releaseExpiredReservationsServer = exports.releaseExpiredReservationsCron = exports.obtenerTracking = exports.generarEnvioManual = exports.obtenerEtiquetaPdf = exports.importarEnvioMiCorreo = exports.obtenerSucursales = exports.cotizarEnvio = void 0;
+exports.verifyAdmin2FACode = exports.sendAdmin2FACode = exports.requestWelcomeEmail = exports.sendCustomWelcomeEmail = exports.requestPasswordReset = exports.sendCustomPasswordResetEmail = exports.processEmailQueue = exports.createUalaCheckout = exports.ualaWebhook = exports.fulfillWebOrderServer = exports.fulfillWebCambioServer = exports.cancelWebOrder = exports.cancelWebOrderReservationServer = exports.releaseExpiredReservationsServer = exports.releaseExpiredReservationsCron = exports.reserveWebOrder = exports.obtenerTracking = exports.generarEnvioManual = exports.obtenerEtiquetaPdf = exports.importarEnvioMiCorreo = exports.obtenerSucursales = exports.cotizarEnvio = void 0;
 exports.enqueueBackendTransferReservation = enqueueBackendTransferReservation;
 const functionsV1 = __importStar(require("firebase-functions/v1"));
-const functions = __importStar(require("firebase-functions")); // v2 functions
-const https_1 = require("firebase-functions/v2/https");
+const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const nodemailer = __importStar(require("nodemailer"));
 const crypto = __importStar(require("crypto"));
@@ -52,6 +51,7 @@ Object.defineProperty(exports, "obtenerTracking", { enumerable: true, get: funct
 const micorreo_2 = require("./micorreo");
 // Importar y exportar funciones de reservas y ordenes web
 var orders_1 = require("./orders");
+Object.defineProperty(exports, "reserveWebOrder", { enumerable: true, get: function () { return orders_1.reserveWebOrder; } });
 Object.defineProperty(exports, "releaseExpiredReservationsCron", { enumerable: true, get: function () { return orders_1.releaseExpiredReservationsCron; } });
 Object.defineProperty(exports, "releaseExpiredReservationsServer", { enumerable: true, get: function () { return orders_1.releaseExpiredReservationsServer; } });
 Object.defineProperty(exports, "cancelWebOrderReservationServer", { enumerable: true, get: function () { return orders_1.cancelWebOrderReservationServer; } });
@@ -74,20 +74,18 @@ const db = new Proxy({}, {
 // Assume Ualá Webhook sends data as a POST request
 // Payload usually contains { id: "payment_id", status: "APPROVED", external_reference: "orderId" }
 // Or might be nested. We parse it safely and verify signatures.
-exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
-    const data = request.data;
-    // request.auth is unused; suppress lint warning
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    // const _ = request.auth;
-    if (((_a = request.raw) === null || _a === void 0 ? void 0 : _a.method) !== 'POST') {
-        throw new https_1.HttpsError('unauthenticated', 'Method Not Allowed');
+exports.ualaWebhook = functionsV1.https.onRequest(async (req, res) => {
+    var _a, _b, _c, _d;
+    if (req.method !== 'POST') {
+        res.status(405).send('Method Not Allowed');
+        return;
     }
+    const data = req.body;
     // Validación de secreto y firma HMAC SHA-256 si está configurado en variables de entorno
     const webhookSecret = process.env.UALA_WEBHOOK_SECRET;
     if (webhookSecret) {
-        const receivedSecret = (((_b = request.raw) === null || _b === void 0 ? void 0 : _b.headers['x-webhook-secret']) || ((_c = request.raw) === null || _c === void 0 ? void 0 : _c.headers['authorization']) || '').toString();
-        const receivedSig = (((_d = request.raw) === null || _d === void 0 ? void 0 : _d.headers['x-uala-signature']) || ((_e = request.raw) === null || _e === void 0 ? void 0 : _e.headers['x-signature']) || '').toString();
+        const receivedSecret = (req.headers['x-webhook-secret'] || req.headers['authorization'] || '').toString();
+        const receivedSig = (req.headers['x-uala-signature'] || req.headers['x-signature'] || '').toString();
         let isValid = false;
         // 1. Coincidencia directa de secreto en encabezado
         if (receivedSecret === webhookSecret || receivedSecret === `Bearer ${webhookSecret}`) {
@@ -96,9 +94,9 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
         // 2. Verificación de firma HMAC SHA-256
         if (!isValid && receivedSig) {
             try {
-                const rawBody = typeof ((_f = request.raw) === null || _f === void 0 ? void 0 : _f.rawBody) === 'string'
-                    ? (_g = request.raw) === null || _g === void 0 ? void 0 : _g.rawBody
-                    : (((_h = request.raw) === null || _h === void 0 ? void 0 : _h.rawBody) ? (_j = request.raw) === null || _j === void 0 ? void 0 : _j.rawBody.toString('utf8') : JSON.stringify(data || {}));
+                const rawBody = typeof req.rawBody === 'string'
+                    ? req.rawBody
+                    : (req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(data || {}));
                 const calculatedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
                 const bufReceived = Buffer.from(receivedSig.toLowerCase(), 'utf8');
                 const bufCalculated = Buffer.from(calculatedSig.toLowerCase(), 'utf8');
@@ -112,7 +110,8 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
         }
         if (!isValid) {
             console.warn("Unauthorized webhook call with invalid signature or secret");
-            throw new https_1.HttpsError('unauthenticated', "Unauthorized");
+            res.status(401).send("Unauthorized");
+            return;
         }
     }
     try {
@@ -124,7 +123,8 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
         const webhookAmount = Number(payload.amount || payload.total_amount || payload.amount_total || body.amount || 0);
         if (!externalReference || typeof externalReference !== 'string' || !/^[a-zA-Z0-9_-]{3,64}$/.test(externalReference)) {
             console.warn("No valid external_reference provided in webhook:", externalReference);
-            return { status: "OK - Invalid or missing external reference" };
+            res.status(200).json({ status: "OK - Invalid or missing external reference" });
+            return;
         }
         // Buscar la orden en cualquier showroom usando Collection Group Query.
         const ordersQuery = await db.collectionGroup('orders')
@@ -139,14 +139,16 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
                 const cambioData = cambioSnap.data() || {};
                 if (cambioData.estado === 'Confirmado') {
                     console.log(`[ualaWebhook] Cambio ${externalReference} ya está confirmado.`);
-                    return { status: 'OK - Already processed' };
+                    res.status(200).json({ status: 'OK - Already processed' });
+                    return;
                 }
                 if (status !== 'APPROVED' && status !== 'SUCCESS' && status !== 'PAID') {
                     if (['REJECTED', 'CANCELLED', 'FAILED', 'EXPIRED', 'REFUNDED'].includes(status)) {
                         await cambioRef.update({ estado: 'Cancelado', paymentStatus: status });
                         console.log(`[ualaWebhook] Cambio ${externalReference} cancelado por estado de pago: ${status}`);
                     }
-                    return { status: 'OK - Cambio not approved' };
+                    res.status(200).json({ status: 'OK - Cambio not approved' });
+                    return;
                 }
                 // Pago aprobado: procesar fulfillment atómico en backend
                 try {
@@ -158,10 +160,10 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
                         fulfilledAt: new Date().toISOString()
                     });
                     if (cambioResult.giftCodigo) {
-                        const targetEmail = cambioData.customerEmail || ((_k = cambioData.payload) === null || _k === void 0 ? void 0 : _k.customerEmail);
+                        const targetEmail = cambioData.customerEmail || ((_a = cambioData.payload) === null || _a === void 0 ? void 0 : _a.customerEmail);
                         if (targetEmail) {
-                            const destinatario = ((_l = cambioData.payload) === null || _l === void 0 ? void 0 : _l.giftDestinatario) || cambioData.customerNombre || 'Cliente';
-                            const montoGift = Math.abs(((_m = cambioData.payload) === null || _m === void 0 ? void 0 : _m.diferencia) || 0);
+                            const destinatario = ((_b = cambioData.payload) === null || _b === void 0 ? void 0 : _b.giftDestinatario) || cambioData.customerNombre || 'Cliente';
+                            const montoGift = Math.abs(((_c = cambioData.payload) === null || _c === void 0 ? void 0 : _c.diferencia) || 0);
                             try {
                                 // @ts-ignore
                                 await enqueueBackendGiftCardDelivery({
@@ -179,15 +181,18 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
                         }
                     }
                     console.log(`[ualaWebhook] Cambio ${externalReference} procesado exitosamente por webhook.`);
-                    return { status: 'OK' };
+                    res.status(200).json({ status: 'OK' });
+                    return;
                 }
                 catch (cambioErr) {
                     console.error(`[ualaWebhook] Error procesando cambio ${externalReference}:`, cambioErr);
-                    throw new https_1.HttpsError('internal', 'Error processing exchange');
+                    res.status(500).json({ error: 'Error processing exchange' });
+                    return;
                 }
             }
             console.warn(`[ualaWebhook] No se encontró ninguna orden ni cambio con orderId: ${externalReference}`);
-            return { status: 'OK - Order not found' };
+            res.status(200).json({ status: 'OK - Order not found' });
+            return;
         }
         // Identificar la orden raíz del showroom por path (4 segmentos: showrooms/{showroomId}/orders/{orderId})
         let mainOrderDoc = ordersQuery.docs.find(doc => {
@@ -199,10 +204,11 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
         }
         if (!mainOrderDoc) {
             console.warn(`[ualaWebhook] No se pudo resolver la orden para orderId: ${externalReference}`);
-            return { status: 'OK - Order not resolved' };
+            res.status(200).json({ status: 'OK - Order not resolved' });
+            return;
         }
         const orderDoc = mainOrderDoc;
-        const showroomId = ((_o = mainOrderDoc.ref.parent.parent) === null || _o === void 0 ? void 0 : _o.id) || orderDoc.data().showroomId || process.env.SHOWROOM_ID || 'ROPERO';
+        const showroomId = ((_d = mainOrderDoc.ref.parent.parent) === null || _d === void 0 ? void 0 : _d.id) || orderDoc.data().showroomId || process.env.SHOWROOM_ID || 'ROPERO';
         const showroomRef = db.collection('showrooms').doc(showroomId);
         const orderRef = mainOrderDoc.ref;
         if (status !== 'APPROVED' && status !== 'SUCCESS' && status !== 'PAID') {
@@ -273,7 +279,8 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
                     console.error("Error updating cancelled order on webhook:", err);
                 }
             }
-            return { status: "OK - Not approved" };
+            res.status(200).json({ status: "OK - Not approved" });
+            return;
         }
         const result = await db.runTransaction(async (transaction) => {
             const orderSnap = await transaction.get(orderRef);
@@ -495,18 +502,20 @@ exports.ualaWebhook = (0, https_1.onCall)(async (request) => {
             }
         }
         console.log(`Successfully processed webhook for order ${externalReference}`);
-        return { status: "OK" };
+        res.status(200).json({ status: "OK" });
+        return;
     }
     catch (error) {
         console.error("Webhook processing error:", error);
-        throw new https_1.HttpsError('internal', "Internal Server Error");
+        res.status(500).send("Internal Server Error");
+        return;
     }
 });
 /**
  * Endpoint HTTP seguro para generar cobros con Ualá Bis desde el backend.
  * Oculta completamente UALA_CLIENT_ID y UALA_CLIENT_SECRET del navegador del cliente.
  */
-exports.createUalaCheckout = functions.https.onRequest(async (req, res) => {
+exports.createUalaCheckout = functionsV1.https.onRequest(async (req, res) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
     if (req.method === "OPTIONS") {
         res.status(204).send("");
@@ -1215,7 +1224,7 @@ function getSafeCorsOrigin(req) {
     }
     return "https://elropero.ar";
 }
-exports.sendCustomPasswordResetEmail = functions.https.onRequest(async (req, res) => {
+exports.sendCustomPasswordResetEmail = functionsV1.https.onRequest(async (req, res) => {
     var _a, _b, _c;
     const safeOrigin = getSafeCorsOrigin(req);
     res.set("Access-Control-Allow-Origin", safeOrigin);
@@ -1321,8 +1330,7 @@ exports.sendCustomPasswordResetEmail = functions.https.onRequest(async (req, res
 /**
  * Versión Callable (onCall) del reseteo personalizado para ser llamada vía Firebase SDK.
  */
-exports.requestPasswordReset = (0, https_1.onCall)(async (request) => {
-    const data = request.data;
+exports.requestPasswordReset = functionsV1.https.onCall(async (data, context) => {
     const email = data === null || data === void 0 ? void 0 : data.email;
     const continueUrl = (data === null || data === void 0 ? void 0 : data.continueUrl) || "https://elropero.ar";
     if (!email || typeof email !== "string") {
@@ -1489,8 +1497,7 @@ exports.sendCustomWelcomeEmail = functionsV1.https.onRequest(async (req, res) =>
 /**
  * Versión Callable (onCall) del envío de correo de bienvenida.
  */
-exports.requestWelcomeEmail = (0, https_1.onCall)(async (request) => {
-    const data = request.data;
+exports.requestWelcomeEmail = functionsV1.https.onCall(async (data, context) => {
     const email = data === null || data === void 0 ? void 0 : data.email;
     const userName = (data === null || data === void 0 ? void 0 : data.userName) || (data === null || data === void 0 ? void 0 : data.nombre) || "Cliente";
     if (!email || typeof email !== "string") {
@@ -1557,20 +1564,26 @@ exports.requestWelcomeEmail = (0, https_1.onCall)(async (request) => {
 /**
  * Genera y envía un código OTP de 6 dígitos por email para autenticación de dos factores (2FA) en el panel de administración.
  */
-exports.sendAdmin2FACode = (0, https_1.onCall)(async (request) => {
-    var _a;
-    const data = request.data;
+exports.sendAdmin2FACode = functionsV1.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const email = data === null || data === void 0 ? void 0 : data.email;
     const cleanEmail = String(email || "").trim().toLowerCase();
-    // Guard: only admins or service account can run
-    if (!request.auth || !(((_a = request.auth.token) === null || _a === void 0 ? void 0 : _a.admin) || request.auth.uid === 'service-account')) {
-        throw new https_1.HttpsError('permission-denied', 'Only administrators can run this migration');
+    const allowedAdmins = ["elropero.informacion@gmail.com", "yazminetchanchu@gmail.com"];
+    const callerEmail = String(((_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) || "").trim().toLowerCase();
+    const targetEmail = cleanEmail || callerEmail;
+    if (!targetEmail) {
+        throw new functionsV1.https.HttpsError("invalid-argument", "Email es obligatorio.");
+    }
+    const isAllowedEmail = allowedAdmins.includes(targetEmail) || targetEmail.endsWith("@elropero.com");
+    const isAdminClaim = Boolean(((_d = (_c = context.auth) === null || _c === void 0 ? void 0 : _c.token) === null || _d === void 0 ? void 0 : _d.admin) || ((_f = (_e = context.auth) === null || _e === void 0 ? void 0 : _e.token) === null || _f === void 0 ? void 0 : _f.role) === "admin" || ((_h = (_g = context.auth) === null || _g === void 0 ? void 0 : _g.token) === null || _h === void 0 ? void 0 : _h.role) === "manager");
+    if (!isAdminClaim && !isAllowedEmail) {
+        throw new functionsV1.https.HttpsError("permission-denied", "Email no autorizado para acceso administrativo.");
     }
     // Generar código numérico de 6 dígitos
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutos de validez
     // Guardar en colección oculta _admin_otp
-    await db.collection("_admin_otp").doc(cleanEmail).set({
+    await db.collection("_admin_otp").doc(targetEmail).set({
         code: otpCode,
         expiresAt,
         attempts: 0,
@@ -1600,7 +1613,7 @@ exports.sendAdmin2FACode = (0, https_1.onCall)(async (request) => {
     </div>
   `;
     await db.collection("mail").add({
-        to: cleanEmail,
+        to: targetEmail,
         message: {
             subject: "🔒 Código de Verificación 2FA - El Ropero Admin",
             html: htmlContent
@@ -1611,8 +1624,8 @@ exports.sendAdmin2FACode = (0, https_1.onCall)(async (request) => {
 /**
  * Valida el código OTP ingresado por el administrador.
  */
-exports.verifyAdmin2FACode = (0, https_1.onCall)(async (request) => {
-    const data = request.data;
+exports.verifyAdmin2FACode = functionsV1.https.onCall(async (data, context) => {
+    var _a;
     const email = data === null || data === void 0 ? void 0 : data.email;
     const code = data === null || data === void 0 ? void 0 : data.code;
     const cleanEmail = String(email || "").trim().toLowerCase();
@@ -1640,6 +1653,14 @@ exports.verifyAdmin2FACode = (0, https_1.onCall)(async (request) => {
     }
     // Código válido -> Eliminar documento de OTP usado
     await docRef.delete();
+    if ((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) {
+        try {
+            await admin.auth().setCustomUserClaims(context.auth.uid, { admin: true, role: 'admin' });
+        }
+        catch (claimErr) {
+            console.warn("No se pudo asignar custom claim admin:", claimErr);
+        }
+    }
     return { success: true, verified: true, message: "Autenticación 2FA exitosa." };
 });
 //# sourceMappingURL=index.js.map

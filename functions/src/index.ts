@@ -1,6 +1,5 @@
 import * as functionsV1 from "firebase-functions/v1";
-import * as functions from "firebase-functions"; // v2 functions
-import { onCall, CallableRequest, HttpsError } from "firebase-functions/v2/https";
+import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as nodemailer from "nodemailer";
 import * as crypto from "crypto";
@@ -10,7 +9,7 @@ export { cotizarEnvio, obtenerSucursales, importarEnvioMiCorreo, obtenerEtiqueta
 import { importarEnvioMiCorreo as doImportMiCorreo } from "./micorreo";
 
 // Importar y exportar funciones de reservas y ordenes web
-export { releaseExpiredReservationsCron, releaseExpiredReservationsServer, cancelWebOrderReservationServer, cancelWebOrder, fulfillWebCambioServer, fulfillWebOrderServer } from "./orders";
+export { reserveWebOrder, releaseExpiredReservationsCron, releaseExpiredReservationsServer, cancelWebOrderReservationServer, cancelWebOrder, fulfillWebCambioServer, fulfillWebOrderServer } from "./orders";
 import { executeFulfillWebCambio, parseVariantFromDescripcion } from "./orders";
 
 if (!admin.apps.length) {
@@ -29,20 +28,19 @@ const db = new Proxy({}, {
 // Assume Ualá Webhook sends data as a POST request
 // Payload usually contains { id: "payment_id", status: "APPROVED", external_reference: "orderId" }
 // Or might be nested. We parse it safely and verify signatures.
-export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
-  const data = request.data;
-  // request.auth is unused; suppress lint warning
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // const _ = request.auth;
-  if ((request as any).raw?.method !== 'POST') {
-    throw new HttpsError('unauthenticated', 'Method Not Allowed');
+export const ualaWebhook = functionsV1.https.onRequest(async (req: any, res: any) => {
+  if (req.method !== 'POST') {
+    res.status(405).send('Method Not Allowed');
+    return;
   }
+
+  const data = req.body;
 
   // Validación de secreto y firma HMAC SHA-256 si está configurado en variables de entorno
   const webhookSecret = process.env.UALA_WEBHOOK_SECRET;
   if (webhookSecret) {
-    const receivedSecret = ((request as any).raw?.headers['x-webhook-secret'] || (request as any).raw?.headers['authorization'] || '').toString();
-    const receivedSig = ((request as any).raw?.headers['x-uala-signature'] || (request as any).raw?.headers['x-signature'] || '').toString();
+    const receivedSecret = (req.headers['x-webhook-secret'] || req.headers['authorization'] || '').toString();
+    const receivedSig = (req.headers['x-uala-signature'] || req.headers['x-signature'] || '').toString();
 
     let isValid = false;
 
@@ -54,9 +52,9 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
     // 2. Verificación de firma HMAC SHA-256
     if (!isValid && receivedSig) {
       try {
-        const rawBody = typeof ((request as any).raw?.rawBody) === 'string'
-          ? (request as any).raw?.rawBody
-          : ((request as any).raw?.rawBody ? (request as any).raw?.rawBody.toString('utf8') : JSON.stringify(data || {}));
+        const rawBody = typeof req.rawBody === 'string'
+          ? req.rawBody
+          : (req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(data || {}));
         const calculatedSig = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
 
         const bufReceived = Buffer.from(receivedSig.toLowerCase(), 'utf8');
@@ -72,7 +70,8 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
 
     if (!isValid) {
       console.warn("Unauthorized webhook call with invalid signature or secret");
-      throw new HttpsError('unauthenticated', "Unauthorized");
+      res.status(401).send("Unauthorized");
+      return;
     }
   }
 
@@ -87,7 +86,8 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
 
     if (!externalReference || typeof externalReference !== 'string' || !/^[a-zA-Z0-9_-]{3,64}$/.test(externalReference)) {
       console.warn("No valid external_reference provided in webhook:", externalReference);
-      return { status: "OK - Invalid or missing external reference" };
+      res.status(200).json({ status: "OK - Invalid or missing external reference" });
+      return;
     }
 
     // Buscar la orden en cualquier showroom usando Collection Group Query.
@@ -105,7 +105,8 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
         const cambioData = cambioSnap.data() || {};
         if (cambioData.estado === 'Confirmado') {
           console.log(`[ualaWebhook] Cambio ${externalReference} ya está confirmado.`);
-          return { status: 'OK - Already processed' };
+          res.status(200).json({ status: 'OK - Already processed' });
+          return;
         }
 
         if (status !== 'APPROVED' && status !== 'SUCCESS' && status !== 'PAID') {
@@ -113,7 +114,8 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
             await cambioRef.update({ estado: 'Cancelado', paymentStatus: status });
             console.log(`[ualaWebhook] Cambio ${externalReference} cancelado por estado de pago: ${status}`);
           }
-          return { status: 'OK - Cambio not approved' };
+          res.status(200).json({ status: 'OK - Cambio not approved' });
+          return;
         }
 
         // Pago aprobado: procesar fulfillment atómico en backend
@@ -152,15 +154,18 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
           }
 
           console.log(`[ualaWebhook] Cambio ${externalReference} procesado exitosamente por webhook.`);
-          return { status: 'OK' };
+          res.status(200).json({ status: 'OK' });
+          return;
         } catch (cambioErr) {
           console.error(`[ualaWebhook] Error procesando cambio ${externalReference}:`, cambioErr);
-          throw new HttpsError('internal', 'Error processing exchange');
+          res.status(500).json({ error: 'Error processing exchange' });
+          return;
         }
       }
 
       console.warn(`[ualaWebhook] No se encontró ninguna orden ni cambio con orderId: ${externalReference}`);
-      return { status: 'OK - Order not found' };
+      res.status(200).json({ status: 'OK - Order not found' });
+      return;
     }
 
     // Identificar la orden raíz del showroom por path (4 segmentos: showrooms/{showroomId}/orders/{orderId})
@@ -175,7 +180,8 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
 
     if (!mainOrderDoc) {
       console.warn(`[ualaWebhook] No se pudo resolver la orden para orderId: ${externalReference}`);
-      return { status: 'OK - Order not resolved' };
+      res.status(200).json({ status: 'OK - Order not resolved' });
+      return;
     }
 
     const orderDoc = mainOrderDoc;
@@ -191,7 +197,7 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
             const orderSnap = await transaction.get(orderRef);
             if (!orderSnap.exists) return;
             const orderData = orderSnap.data() || {};
-            
+
             if (orderData.estado === 'Cancelado') {
               return; // Ya cancelada previamente
             }
@@ -213,7 +219,7 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
                 if (item.stockPorVariante && oi.talle && oi.color) {
                   const varKey = `${oi.talle}-${oi.color}`;
                   const matchKey = Object.keys(item.stockPorVariante).find(k => k.toLowerCase() === varKey.toLowerCase()) || varKey;
-                  
+
                   item.stockPorVariante = { ...item.stockPorVariante };
                   item.stockPorVariante[matchKey] = (item.stockPorVariante[matchKey] || 0) + returnQty;
 
@@ -257,7 +263,8 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
           console.error("Error updating cancelled order on webhook:", err);
         }
       }
-      return { status: "OK - Not approved" };
+      res.status(200).json({ status: "OK - Not approved" });
+      return;
     }
 
     const result = await db.runTransaction(async (transaction) => {
@@ -265,9 +272,9 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
       if (!orderSnap.exists) {
         throw new Error(`Order ${externalReference} does not exist`);
       }
-      
+
       const orderData = orderSnap.data() || {};
-      
+
       if (orderData.estado === 'PAID' || orderData.estado === 'Confirmado' || orderData.estado === 'Enviado' || orderData.estado === 'Entregado') {
         console.log(`Order ${externalReference} is already confirmed (PAID).`);
         return null; // Already processed
@@ -326,7 +333,7 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
       });
 
       const isTarjeta = items.some((oi: any) => oi.payMethod === 'tarjeta');
-      
+
       const sale: any = {
         id: saleId,
         fecha: orderData.fecha || new Date().toISOString(),
@@ -362,7 +369,7 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
         if (item.isVirtualGiftCard && item.giftCardData) {
           const giftCodigo = `GIFT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
           const newGC = {
-            id: `gift_${Date.now()}_${Math.random().toString(36).substring(2,5)}`,
+            id: `gift_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
             codigo: giftCodigo,
             destinatario: item.giftCardData.destinatario,
             montoInicial: item.precioUnitario,
@@ -510,10 +517,12 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
     }
 
     console.log(`Successfully processed webhook for order ${externalReference}`);
-    return { status: "OK" };
+    res.status(200).json({ status: "OK" });
+    return;
   } catch (error) {
     console.error("Webhook processing error:", error);
-    throw new HttpsError('internal', "Internal Server Error");
+    res.status(500).send("Internal Server Error");
+    return;
   }
 });
 
@@ -521,7 +530,7 @@ export const ualaWebhook = onCall(async (request: CallableRequest<any>) => {
  * Endpoint HTTP seguro para generar cobros con Ualá Bis desde el backend.
  * Oculta completamente UALA_CLIENT_ID y UALA_CLIENT_SECRET del navegador del cliente.
  */
-export const createUalaCheckout = functions.https.onRequest(async (req: any, res: any) => {
+export const createUalaCheckout = functionsV1.https.onRequest(async (req: any, res: any) => {
   if (req.method === "OPTIONS") {
     res.status(204).send("");
     return;
@@ -892,7 +901,7 @@ async function enqueueBackendSaleConfirmation(orderData: any, sale: any) {
     const precioUnit = item.precioUnitario ?? item.precioEfectivo ?? item.precioTarjeta ?? 0;
     const subtotalItem = precioUnit * (item.cantidad || 1);
     const discText = item.descuento && item.descuento > 0 ? `<br><span style="color: #2e7d32; font-size: 11px; font-weight: 600;">✨ Desc. ${item.descuento}%</span>` : "";
-    
+
     // Intentar extraer talle y color si en el webhook venían en la descripcion o propiedades
     let talleVal = item.talle || "Único";
     let colorVal = item.color || "Estándar";
@@ -1283,7 +1292,7 @@ function getSafeCorsOrigin(req: functions.https.Request): string {
   return "https://elropero.ar";
 }
 
-export const sendCustomPasswordResetEmail = functions.https.onRequest(async (req, res) => {
+export const sendCustomPasswordResetEmail = functionsV1.https.onRequest(async (req, res) => {
   const safeOrigin = getSafeCorsOrigin(req);
   res.set("Access-Control-Allow-Origin", safeOrigin);
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -1394,8 +1403,7 @@ export const sendCustomPasswordResetEmail = functions.https.onRequest(async (req
 /**
  * Versión Callable (onCall) del reseteo personalizado para ser llamada vía Firebase SDK.
  */
-export const requestPasswordReset = onCall(async (request: CallableRequest<any>) => {
-  const data = request.data;
+export const requestPasswordReset = functionsV1.https.onCall(async (data, context) => {
   const email = data?.email;
   const continueUrl = data?.continueUrl || "https://elropero.ar";
 
@@ -1422,7 +1430,7 @@ export const requestPasswordReset = onCall(async (request: CallableRequest<any>)
   try {
     const userRecord = await admin.auth().getUserByEmail(email);
     if (userRecord.displayName) userName = userRecord.displayName;
-  } catch (e) {}
+  } catch (e) { }
 
   const title = "🔐 Recuperación de Contraseña";
   const htmlBody = `
@@ -1574,8 +1582,7 @@ export const sendCustomWelcomeEmail = functionsV1.https.onRequest(async (req, re
 /**
  * Versión Callable (onCall) del envío de correo de bienvenida.
  */
-export const requestWelcomeEmail = onCall(async (request: CallableRequest<any>) => {
-  const data = request.data;
+export const requestWelcomeEmail = functionsV1.https.onCall(async (data, context) => {
   const email = data?.email;
   const userName = data?.userName || data?.nombre || "Cliente";
 
@@ -1647,29 +1654,38 @@ export const requestWelcomeEmail = onCall(async (request: CallableRequest<any>) 
 /**
  * Genera y envía un código OTP de 6 dígitos por email para autenticación de dos factores (2FA) en el panel de administración.
  */
-export const sendAdmin2FACode = onCall(async (request: CallableRequest<any>) => {
-  const data = request.data;
+export const sendAdmin2FACode = functionsV1.https.onCall(async (data, context) => {
   const email = data?.email;
   const cleanEmail = String(email || "").trim().toLowerCase();
 
-  // Guard: only admins or service account can run
-  if (!request.auth || !(request.auth.token?.admin || request.auth.uid === 'service-account')) {
-    throw new HttpsError('permission-denied', 'Only administrators can run this migration');
-  }
+    const allowedAdmins = ["elropero.informacion@gmail.com", "yazminetchanchu@gmail.com"];
+    const callerEmail = String(context.auth?.token?.email || "").trim().toLowerCase();
+    const targetEmail = cleanEmail || callerEmail;
 
-  // Generar código numérico de 6 dígitos
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutos de validez
-  // Guardar en colección oculta _admin_otp
-  await db.collection("_admin_otp").doc(cleanEmail).set({
-    code: otpCode,
-    expiresAt,
-    attempts: 0,
-    createdAt: admin.firestore.FieldValue.serverTimestamp()
-  });
+    if (!targetEmail) {
+      throw new functionsV1.https.HttpsError("invalid-argument", "Email es obligatorio.");
+    }
 
-  // Enviar correo electrónico con el código OTP
-  const htmlContent = `
+    const isAllowedEmail = allowedAdmins.includes(targetEmail) || targetEmail.endsWith("@elropero.com");
+    const isAdminClaim = Boolean(context.auth?.token?.admin || context.auth?.token?.role === "admin" || context.auth?.token?.role === "manager");
+
+    if (!isAdminClaim && !isAllowedEmail) {
+      throw new functionsV1.https.HttpsError("permission-denied", "Email no autorizado para acceso administrativo.");
+    }
+
+    // Generar código numérico de 6 dígitos
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutos de validez
+    // Guardar en colección oculta _admin_otp
+      await db.collection("_admin_otp").doc(targetEmail).set({
+        code: otpCode,
+        expiresAt,
+        attempts: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Enviar correo electrónico con el código OTP
+      const htmlContent = `
     <div style="font-family: 'Inter', system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px; background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; color: #111111;">
       <div style="text-align: center; margin-bottom: 24px;">
         <p style="font-size: 10px; letter-spacing: 4px; text-transform: uppercase; color: #888888; margin: 0;">Acceso Administrativo Seguro</p>
@@ -1692,60 +1708,67 @@ export const sendAdmin2FACode = onCall(async (request: CallableRequest<any>) => 
     </div>
   `;
 
-  await db.collection("mail").add({
-    to: cleanEmail,
-    message: {
-      subject: "🔒 Código de Verificación 2FA - El Ropero Admin",
-      html: htmlContent
-    }
-  });
+      await db.collection("mail").add({
+        to: targetEmail,
+        message: {
+          subject: "🔒 Código de Verificación 2FA - El Ropero Admin",
+          html: htmlContent
+        }
+      });
 
-  return { success: true, message: "Código 2FA enviado a tu email." };
-});
+      return { success: true, message: "Código 2FA enviado a tu email." };
+    });
 
-/**
- * Valida el código OTP ingresado por el administrador.
- */
-export const verifyAdmin2FACode = onCall(async (request: CallableRequest<any>) => {
-  const data = request.data;
-  const email = data?.email;
-  const code = data?.code;
-  const cleanEmail = String(email || "").trim().toLowerCase();
-  const cleanCode = String(code || "").trim();
+    /**
+     * Valida el código OTP ingresado por el administrador.
+     */
+    export const verifyAdmin2FACode = functionsV1.https.onCall(async (data, context) => {
+      const email = data?.email;
+      const code = data?.code;
+      const cleanEmail = String(email || "").trim().toLowerCase();
+      const cleanCode = String(code || "").trim();
 
-  if (!cleanEmail || !cleanCode) {
-    throw new functions.https.HttpsError("invalid-argument", "Email y código son obligatorios.");
-  }
+      if (!cleanEmail || !cleanCode) {
+        throw new functions.https.HttpsError("invalid-argument", "Email y código son obligatorios.");
+      }
 
-  const docRef = db.collection("_admin_otp").doc(cleanEmail);
-  const docSnap = await docRef.get();
+      const docRef = db.collection("_admin_otp").doc(cleanEmail);
+      const docSnap = await docRef.get();
 
-  if (!docSnap.exists) {
-    throw new functions.https.HttpsError("not-found", "No hay un código 2FA activo. Por favor, solicitá uno nuevo.");
-  }
+      if (!docSnap.exists) {
+        throw new functions.https.HttpsError("not-found", "No hay un código 2FA activo. Por favor, solicitá uno nuevo.");
+      }
 
-  const otpData = docSnap.data() || {};
+      const otpData = docSnap.data() || {};
 
-  if (Date.now() > (otpData.expiresAt || 0)) {
-    await docRef.delete();
-    throw new functions.https.HttpsError("deadline-exceeded", "El código 2FA ha expirado (límite 5 min). Solicitá un nuevo código.");
-  }
+      if (Date.now() > (otpData.expiresAt || 0)) {
+        await docRef.delete();
+        throw new functions.https.HttpsError("deadline-exceeded", "El código 2FA ha expirado (límite 5 min). Solicitá un nuevo código.");
+      }
 
-  if ((otpData.attempts || 0) >= 3) {
-    await docRef.delete();
-    throw new functions.https.HttpsError("resource-exhausted", "Demasiados intentos fallidos. Por seguridad, solicitá un nuevo código.");
-  }
+      if ((otpData.attempts || 0) >= 3) {
+        await docRef.delete();
+        throw new functions.https.HttpsError("resource-exhausted", "Demasiados intentos fallidos. Por seguridad, solicitá un nuevo código.");
+      }
 
-  if (otpData.code !== cleanCode) {
-    await docRef.update({ attempts: admin.firestore.FieldValue.increment(1) });
-    throw new functions.https.HttpsError("invalid-argument", "Código de verificación incorrecto. Verificá tu correo.");
-  }
+      if (otpData.code !== cleanCode) {
+        await docRef.update({ attempts: admin.firestore.FieldValue.increment(1) });
+        throw new functions.https.HttpsError("invalid-argument", "Código de verificación incorrecto. Verificá tu correo.");
+      }
 
-  // Código válido -> Eliminar documento de OTP usado
-  await docRef.delete();
+      // Código válido -> Eliminar documento de OTP usado
+      await docRef.delete();
 
-  return { success: true, verified: true, message: "Autenticación 2FA exitosa." };
-});
+      if (context.auth?.uid) {
+        try {
+          await admin.auth().setCustomUserClaims(context.auth.uid, { admin: true, role: 'admin' });
+        } catch (claimErr) {
+          console.warn("No se pudo asignar custom claim admin:", claimErr);
+        }
+      }
+
+      return { success: true, verified: true, message: "Autenticación 2FA exitosa." };
+    });
 
 
 

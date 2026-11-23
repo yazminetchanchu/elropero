@@ -666,62 +666,40 @@ function extractProductModelKeyServer(item) {
     const desc = (item.descripcion || '').toLowerCase().replace(/\(.*?\)/g, '').trim();
     return desc || (item.id || '').toLowerCase().trim();
 }
-function calcExchangeLineTotalServer(item, isTransferencia) {
-    var _a, _b, _c, _d, _e, _f, _g;
+function calcExchangeLineTotalServer(item, _isTransferencia // Ignorado: la base siempre es precioEfectivo
+) {
+    var _a, _b, _c, _d;
+    // 🏷️ PREMISA COMERCIAL: el valor real de cualquier prenda es su Precio Efectivo.
+    // El recargo de tarjeta solo amortiza la comisión de la pasarela/posnet.
+    // Para los cambios usamos SIEMPRE precioEfectivo como base de comparación.
     const cant = (_a = item.cantidad) !== null && _a !== void 0 ? _a : 1;
     const desc = item.descuento || 0;
     const precioEf = (_d = (_c = (_b = item.precioEfectivo) !== null && _b !== void 0 ? _b : item.precioUnitario) !== null && _c !== void 0 ? _c : item.precio) !== null && _d !== void 0 ? _d : 0;
-    const precioTar = (_g = (_f = (_e = item.precioTarjeta) !== null && _e !== void 0 ? _e : item.precioUnitario) !== null && _f !== void 0 ? _f : item.precio) !== null && _g !== void 0 ? _g : 0;
-    if (isTransferencia) {
-        const descuentoExtra = Math.max(0, desc - DESCUENTO_BASE_TRANSFERENCIA);
-        return Math.round(precioEf * (1 - descuentoExtra / 100) * cant);
-    }
-    else {
-        return Math.round(precioTar * (1 - desc / 100) * cant);
-    }
+    // Solo se aplica el descuento extra por encima del 20% base de efectivo
+    const descuentoExtra = Math.max(0, desc - DESCUENTO_BASE_TRANSFERENCIA);
+    return Math.round(precioEf * (1 - descuentoExtra / 100) * cant);
 }
 /**
  * Calcula oficialmente la diferencia de un cambio web en el servidor,
  * contrastando las prendas devueltas contra la venta original y las prendas nuevas
  * contra el inventario y catálogo oficial.
+ *
+ * 🏷️ PREMISA COMERCIAL:
+ * La ganancia neta es siempre: Precio Efectivo - Costo, sin importar el medio de pago.
+ * El recargo de tarjeta solo amortiza la comisión de la pasarela/posnet.
+ * Por tanto, AMBAS prendas (devuelta y nueva) se valorizan SIEMPRE a Precio Efectivo.
+ * La diferencia se calcula en "pesos efectivo"; si el cliente paga en tarjeta,
+ * el frontend/operador escala al equivalente en Precio Lista antes de cobrar.
  */
 function calculateExchangeBreakdownServer(options) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var _a, _b, _c, _d, _e;
     const { ventaOriginal, itemsDevueltos, itemsNuevos, inventory, webSettings, payload } = options;
-    let medioPagoOrigen = 'efectivo';
-    if (ventaOriginal === null || ventaOriginal === void 0 ? void 0 : ventaOriginal.pago) {
-        if (ventaOriginal.pago.tarjeta === 100)
-            medioPagoOrigen = 'tarjeta';
-        else if (ventaOriginal.pago.efectivo === 100)
-            medioPagoOrigen = 'efectivo';
-        else
-            medioPagoOrigen = 'mixto';
-    }
-    else if (ventaOriginal === null || ventaOriginal === void 0 ? void 0 : ventaOriginal.metodoPago) {
-        const mp = String(ventaOriginal.metodoPago).toLowerCase();
-        if (mp.includes('transferencia') || mp.includes('efectivo')) {
-            medioPagoOrigen = 'efectivo';
-        }
-        else if (mp.includes('tarjeta') || mp.includes('crédito') || mp.includes('debito') || mp.includes('ualá') || mp.includes('uala')) {
-            medioPagoOrigen = 'tarjeta';
-        }
-    }
-    const isTransferenciaDev = medioPagoOrigen === 'efectivo';
-    const isTransferenciaNuevo = ((_a = payload === null || payload === void 0 ? void 0 : payload.pago) === null || _a === void 0 ? void 0 : _a.tarjeta) === 100 ? false : (((_b = payload === null || payload === void 0 ? void 0 : payload.pago) === null || _b === void 0 ? void 0 : _b.efectivo) === 100 ? true : isTransferenciaDev);
-    const hasNewItems = (itemsNuevos || []).length > 0;
-    // Reglas de negocio para cambios:
-    // - Si la prenda original se pagó en Efectivo y la nueva en Efectivo: se compara Precio Efectivo vs Precio Efectivo.
-    // - Si la prenda original se pagó en Efectivo y la nueva en Tarjeta: la devuelta se toma a Precio de Lista vs Precio de Lista de la nueva.
-    // - Si la prenda original se pagó con Tarjeta y la nueva en Tarjeta: se compara Precio Lista vs Precio Lista.
-    // - Si la prenda original se pagó con Tarjeta y la nueva en Efectivo: se calcula sobre los precios en Efectivo de ambas para aplicar el descuento solo al excedente.
-    // - Si no hay prendas nuevas (devolución pura para Gift Card), se toma el valor pagado original.
-    const isTransferenciaDevUnits = hasNewItems ? isTransferenciaNuevo : isTransferenciaDev;
     const returnedUnits = [];
     const itemsOriginales = ventaOriginal.items || [];
     for (const dev of itemsDevueltos || []) {
         const qty = Math.max(1, Number(dev.cantidad || 1));
         const modelKey = extractProductModelKeyServer(dev);
-        // Buscar el ítem en la venta original para obtener el precio real abonado
+        // Buscar el ítem en la venta original para obtener precioEfectivo
         const originalMatch = itemsOriginales.find((orig) => {
             const origId = orig.productId || orig.id;
             const devId = dev.productId || dev.id;
@@ -729,7 +707,8 @@ function calculateExchangeBreakdownServer(options) {
                 return true;
             return extractProductModelKeyServer(orig) === modelKey;
         }) || dev;
-        const unitPaid = calcExchangeLineTotalServer(Object.assign(Object.assign({}, originalMatch), { cantidad: 1 }), isTransferenciaDevUnits);
+        // Siempre valorizar a precioEfectivo (isTransferencia=true fuerza la rama efectivo)
+        const unitPaid = calcExchangeLineTotalServer(Object.assign(Object.assign({}, originalMatch), { cantidad: 1 }), true);
         for (let i = 0; i < qty; i++) {
             returnedUnits.push({
                 descripcion: dev.descripcion || originalMatch.descripcion || 'Prenda devuelta',
@@ -746,29 +725,24 @@ function calculateExchangeBreakdownServer(options) {
         const invItem = inventory.find((i) => i.id === (neu.id || neu.productId));
         let unitPrice;
         if (invItem) {
-            const basePrice = isTransferenciaNuevo
-                ? Number((_d = (_c = invItem.ventaEfectivo) !== null && _c !== void 0 ? _c : invItem.precioEfectivo) !== null && _d !== void 0 ? _d : 0)
-                : Number((_g = (_f = (_e = invItem.ventaTarjeta) !== null && _e !== void 0 ? _e : invItem.precioTarjeta) !== null && _f !== void 0 ? _f : invItem.ventaEfectivo) !== null && _g !== void 0 ? _g : 0);
-            const maxDiscountCap = Number((_h = webSettings.maxDiscountPercentage) !== null && _h !== void 0 ? _h : 50);
+            // Base: siempre precioEfectivo (ventaEfectivo del catálogo)
+            const basePrice = Number((_b = (_a = invItem.ventaEfectivo) !== null && _a !== void 0 ? _a : invItem.precioEfectivo) !== null && _b !== void 0 ? _b : 0);
+            const maxDiscountCap = Number((_c = webSettings.maxDiscountPercentage) !== null && _c !== void 0 ? _c : 50);
             const itemDisc = Number(invItem.descuentoWeb || 0);
-            const secDisc = Number(((_j = webSettings.discountBySection) === null || _j === void 0 ? void 0 : _j[invItem.categoria]) || 0);
+            const secDisc = Number(((_d = webSettings.discountBySection) === null || _d === void 0 ? void 0 : _d[invItem.categoria]) || 0);
             const disc = Math.min(maxDiscountCap, Math.max(itemDisc, secDisc));
-            if (isTransferenciaNuevo) {
-                const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
-                unitPrice = Math.round(basePrice * (1 - extraDesc / 100));
-            }
-            else {
-                unitPrice = disc > 0 ? Math.round(basePrice * (1 - disc / 100)) : basePrice;
-            }
-            // Bug #5: Protección de Costo Mayorista
-            const costo = Number((_k = invItem.costo) !== null && _k !== void 0 ? _k : 0);
+            // Solo se aplica descuento extra por encima del 20% base de efectivo
+            const extraDesc = Math.max(0, disc - DESCUENTO_BASE_TRANSFERENCIA);
+            unitPrice = Math.round(basePrice * (1 - extraDesc / 100));
+            // Protección de Costo Mayorista: nunca por debajo del costo
+            const costo = Number((_e = invItem.costo) !== null && _e !== void 0 ? _e : 0);
             if (costo > 0) {
                 unitPrice = Math.max(costo, unitPrice);
             }
         }
         else {
-            // Fallback si no está en inventario
-            unitPrice = calcExchangeLineTotalServer(Object.assign(Object.assign({}, neu), { cantidad: 1 }), isTransferenciaNuevo);
+            // Fallback si no está en inventario: usar precioEfectivo del payload
+            unitPrice = calcExchangeLineTotalServer(Object.assign(Object.assign({}, neu), { cantidad: 1 }), true);
         }
         for (let i = 0; i < qty; i++) {
             newUnits.push({
